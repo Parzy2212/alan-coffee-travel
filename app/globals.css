@@ -1,36 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  /* Fonts */
   --font-heading: 'Plus Jakarta Sans', sans-serif;
   --font-body: 'Inter', sans-serif;
 
-  /* Primary — Warm Slate */
-  --color-primary-500: #8c7f6e;
-  --color-primary-600: #7a6d5e;
+  /* Alan Coffee — Warm White + Wood + Black + Gold */
+  --color-black:        #0f0f0f;
+  --color-black-soft:   #1a1a1a;
+  --color-black-muted:  #2d2d2d;
 
-  /* Accent — Deep Forest Green */
-  --color-accent-500: #3d7a47;
-  --color-accent-600: #2f6238;
+  --color-gold:         #c9a84c;
+  --color-gold-light:   #e8c97a;
+  --color-gold-dark:    #a07830;
 
-  /* Neutral */
-  --color-neutral-0:   #ffffff;
-  --color-neutral-50:  #fafaf8;
-  --color-neutral-100: #f4f3f0;
-  --color-neutral-200: #e8e6e1;
-  --color-neutral-300: #d1cec7;
-  --color-neutral-500: #8a8680;
-  --color-neutral-700: #4a4843;
-  --color-neutral-900: #1c1b18;
+  --color-wood:         #8B6343;
+  --color-wood-light:   #c4956a;
 
-  /* Semantic */
-  --color-success: #3d7a47;
-  --color-warning: #c47c2b;
-  --color-error:   #c0392b;
+  --color-cream:        #faf8f4;
+  --color-cream-dark:   #f0ece4;
+  --color-cream-border: #e8e2d8;
 
-  /* Background */
-  --background: #fafaf8;
-  --foreground: #1c1b18;
+  --color-white:        #ffffff;
+  --color-gray-400:     #9e9e9e;
+  --color-gray-600:     #5a5a5a;
+
+  --background:         #faf8f4;
+  --foreground:         #0f0f0f;
 }
 
 body {
