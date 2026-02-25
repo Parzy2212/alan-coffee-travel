@@ -1,65 +1,80 @@
-import Image from "next/image";
-
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen" style={{backgroundColor: 'var(--background)'}}>
+
+      {/* NAVBAR */}
+      <nav style={{backgroundColor: 'var(--color-neutral-0)', borderBottom: '1px solid var(--color-neutral-200)'}}>
+        <div style={{maxWidth: '1280px', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+          <span style={{fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '20px', color: 'var(--color-accent-500)'}}>
+            Alan Coffee Travel
+          </span>
+          <div style={{display: 'flex', gap: '32px'}}>
+            <a href="#" style={{color: 'var(--color-neutral-700)', fontSize: '14px', textDecoration: 'none'}}>Destinations</a>
+            <a href="#" style={{color: 'var(--color-neutral-700)', fontSize: '14px', textDecoration: 'none'}}>Guides</a>
+            <a href="#" style={{color: 'var(--color-neutral-700)', fontSize: '14px', textDecoration: 'none'}}>Rentals</a>
+            <a href="#" style={{color: 'var(--color-neutral-700)', fontSize: '14px', textDecoration: 'none'}}>Auction</a>
+          </div>
+          <button style={{backgroundColor: 'var(--color-accent-500)', color: 'white', padding: '10px 20px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '14px', cursor: 'pointer'}}>
+            Explore Now
+          </button>
+        </div>
+      </nav>
+
+      {/* HERO */}
+      <section style={{background: 'linear-gradient(135deg, #1a381f 0%, #3d7a47 50%, #8c7f6e 100%)', padding: '120px 24px', textAlign: 'center'}}>
+        <div style={{maxWidth: '800px', margin: '0 auto'}}>
+          <span style={{backgroundColor: 'rgba(255,255,255,0.15)', color: 'white', padding: '6px 16px', borderRadius: '999px', fontSize: '13px', fontWeight: 500}}>
+            🌿 Discover Authentic Laos
+          </span>
+          <h1 style={{fontFamily: 'var(--font-heading)', fontSize: '56px', fontWeight: 700, color: 'white', marginTop: '24px', lineHeight: 1.2}}>
+            Travel Deeper.<br />Live Authentically.
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p style={{color: 'rgba(255,255,255,0.8)', fontSize: '18px', marginTop: '16px', lineHeight: 1.6}}>
+            Connect with local guides, explore hidden destinations, and experience Laos the way it was meant to be discovered.
           </p>
+          <div style={{display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '36px'}}>
+            <button style={{backgroundColor: 'white', color: 'var(--color-accent-600)', padding: '14px 32px', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '16px', cursor: 'pointer'}}>
+              Explore Now
+            </button>
+            <button style={{backgroundColor: 'transparent', color: 'white', padding: '14px 32px', borderRadius: '8px', border: '2px solid rgba(255,255,255,0.5)', fontWeight: 600, fontSize: '16px', cursor: 'pointer'}}>
+              Meet Our Guides
+            </button>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      {/* DESTINATIONS */}
+      <section style={{padding: '80px 24px', maxWidth: '1280px', margin: '0 auto'}}>
+        <h2 style={{fontFamily: 'var(--font-heading)', fontSize: '32px', fontWeight: 700, color: 'var(--color-neutral-900)', marginBottom: '8px'}}>
+          Popular Destinations
+        </h2>
+        <p style={{color: 'var(--color-neutral-500)', marginBottom: '40px'}}>Explore the most beloved places in Laos</p>
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px'}}>
+          {[
+            {name: 'Luang Prabang', desc: 'Ancient temples and golden sunsets', color: '#2f6238'},
+            {name: 'Vang Vieng', desc: 'Karst mountains and turquoise rivers', color: '#3d7a47'},
+            {name: 'Vientiane', desc: 'Charming capital with French heritage', color: '#8c7f6e'},
+          ].map((d) => (
+            <div key={d.name} style={{borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(28,27,24,0.08)', cursor: 'pointer'}}>
+              <div style={{height: '200px', backgroundColor: d.color, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <span style={{fontSize: '48px'}}>🏔️</span>
+              </div>
+              <div style={{padding: '20px', backgroundColor: 'white'}}>
+                <h3 style={{fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '18px', color: 'var(--color-neutral-900)'}}>{d.name}</h3>
+                <p style={{color: 'var(--color-neutral-500)', fontSize: '14px', marginTop: '4px'}}>{d.desc}</p>
+                <span style={{color: 'var(--color-accent-500)', fontSize: '14px', fontWeight: 600, marginTop: '12px', display: 'block'}}>Explore →</span>
+              </div>
+            </div>
+          ))}
         </div>
-      </main>
-    </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer style={{backgroundColor: 'var(--color-neutral-900)', color: 'var(--color-neutral-300)', padding: '40px 24px', textAlign: 'center'}}>
+        <p style={{fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '18px', color: 'white', marginBottom: '8px'}}>Alan Coffee Travel</p>
+        <p style={{fontSize: '14px'}}>© 2025 Alan Coffee Travel Platform. All rights reserved.</p>
+      </footer>
+
+    </main>
   );
 }
