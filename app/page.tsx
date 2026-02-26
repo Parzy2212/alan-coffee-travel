@@ -13,15 +13,14 @@ export default async function Home() {
       {/* NAVBAR */}
       <nav style={{backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50}}>
         <div style={{maxWidth: '1280px', margin: '0 auto', padding: '0 32px', height: '68px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-            <span style={{fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)', letterSpacing: '-0.5px'}}>
-              ALAN
-            </span>
-            <span style={{width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)'}}></span>
-            <span style={{fontFamily: 'var(--font-heading)', fontWeight: 400, fontSize: '14px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase'}}>
-              Coffee Travel
-            </span>
-          </div>
+          <div style={{display: 'flex', alignItems: 'center'}}>
+{/* eslint-disable-next-line @next/next/no-img-element */}
+<img 
+  src="/logo-light.webp" 
+  alt="Alan Coffee Travel" 
+  style={{height: '48px', width: 'auto'}}
+/>
+</div>
           <div style={{display: 'flex', gap: '36px'}}>
             {['Destinations', 'Guides', 'Rentals', 'Auction'].map(item => (
               <a key={item} href="#" style={{color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', letterSpacing: '0.5px', fontWeight: 500}}>
