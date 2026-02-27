@@ -9,25 +9,22 @@ export default async function Home() {
 
   return (
     <main style={{backgroundColor: 'var(--background)', minHeight: '100vh'}}>
-
-      {/* NAVBAR */}
       <nav style={{backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50}}>
         <div style={{maxWidth: '1280px', margin: '0 auto', padding: '0 32px', height: '68px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
           <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-            <span style={{fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)', letterSpacing: '-0.5px'}}>ALAN</span>
+            <span style={{fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)'}}>ALAN</span>
             <span style={{width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)'}}></span>
             <span style={{fontFamily: 'var(--font-heading)', fontWeight: 400, fontSize: '13px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase' as const}}>Coffee Travel</span>
           </div>
           <div style={{display: 'flex', gap: '36px'}}>
             {['Destinations', 'Guides', 'Rentals', 'Auction'].map(item => (
-              <a key={item} href="#" style={{color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', letterSpacing: '0.5px', fontWeight: 500}}>{item}</a>
+              <a key={item} href="#" style={{color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', fontWeight: 500}}>{item}</a>
             ))}
           </div>
           <button style={{backgroundColor: 'var(--color-black)', color: 'var(--color-gold)', padding: '10px 24px', borderRadius: '4px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' as const}}>Explore</button>
         </div>
       </nav>
 
-      {/* HERO */}
       <section style={{backgroundColor: 'var(--color-black)', padding: '140px 32px', position: 'relative', overflow: 'hidden'}}>
         <div style={{position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundImage: 'radial-gradient(ellipse at 70% 50%, rgba(201,168,76,0.08) 0%, transparent 60%)'}}></div>
         <div style={{maxWidth: '900px', margin: '0 auto', position: 'relative'}}>
@@ -42,14 +39,13 @@ export default async function Home() {
           <p style={{color: 'rgba(255,255,255,0.55)', fontSize: '18px', lineHeight: 1.7, maxWidth: '560px', marginBottom: '48px'}}>
             Like a perfectly brewed cup — we curate only the most authentic local experiences in Laos.
           </p>
-          <div style={{display: 'flex', gap: '16px', alignItems: 'center'}}>
+          <div style={{display: 'flex', gap: '16px'}}>
             <button style={{backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '16px 36px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '14px', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' as const}}>Explore Now</button>
             <button style={{backgroundColor: 'transparent', color: 'var(--color-white)', padding: '16px 36px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 500, fontSize: '14px', cursor: 'pointer'}}>Meet Our Guides →</button>
           </div>
         </div>
       </section>
 
-      {/* DESTINATIONS */}
       <section style={{padding: '100px 32px', maxWidth: '1280px', margin: '0 auto'}}>
         <div style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '56px'}}>
           <div>
@@ -63,8 +59,8 @@ export default async function Home() {
         </div>
         <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px'}}>
           {destinations?.map((d) => (
-            <div key={d.id} style={{backgroundColor: 'var(--color-white)', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--color-cream-border)', cursor: 'pointer'}}>
-              <div style={{height: '220px', backgroundColor: 'var(--color-black-soft)', display: 'flex', alignItems: 'flex-end', padding: '20px', position: 'relative'}}>
+            <a key={d.id} href={`/destinations/${d.slug}`} style={{backgroundColor: 'var(--color-white)', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--color-cream-border)', cursor: 'pointer', textDecoration: 'none', display: 'block'}}>
+              <div style={{height: '220px', backgroundColor: 'var(--color-black-soft)', display: 'flex', alignItems: 'flex-end', padding: '20px'}}>
                 <div>
                   <p style={{color: 'rgba(255,255,255,0.5)', fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '4px'}}>{d.region}</p>
                   <h3 style={{fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '22px', color: 'var(--color-white)'}}>{d.title_en}</h3>
@@ -72,16 +68,13 @@ export default async function Home() {
               </div>
               <div style={{padding: '20px 24px'}}>
                 <p style={{color: 'var(--color-gray-600)', fontSize: '14px', lineHeight: 1.6}}>{d.excerpt_en}</p>
-                <div style={{display: 'flex', alignItems: 'center', gap: '6px', marginTop: '16px'}}>
-                  <span style={{color: 'var(--color-gold)', fontSize: '13px', fontWeight: 600}}>Discover →</span>
-                </div>
+                <span style={{color: 'var(--color-gold)', fontSize: '13px', fontWeight: 600, marginTop: '16px', display: 'block'}}>Discover →</span>
               </div>
-            </div>
+            </a>
           ))}
         </div>
       </section>
 
-      {/* WHY ALAN */}
       <section style={{backgroundColor: 'var(--color-black)', padding: '100px 32px'}}>
         <div style={{maxWidth: '1280px', margin: '0 auto', textAlign: 'center' as const}}>
           <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px'}}>
@@ -107,7 +100,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* FOOTER */}
       <footer style={{backgroundColor: 'var(--color-black-soft)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '48px 32px'}}>
         <div style={{maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
           <div>
@@ -125,7 +117,6 @@ export default async function Home() {
           </div>
         </div>
       </footer>
-
     </main>
   )
 }
