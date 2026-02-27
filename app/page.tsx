@@ -13,27 +13,17 @@ export default async function Home() {
       {/* NAVBAR */}
       <nav style={{backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50}}>
         <div style={{maxWidth: '1280px', margin: '0 auto', padding: '0 32px', height: '68px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <div style={{display: 'flex', alignItems: 'center'}}>
-<div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-  <span style={{fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)', letterSpacing: '-0.5px'}}>
-    ALAN
-  </span>
-  <span style={{width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)'}}></span>
-  <span style={{fontFamily: 'var(--font-heading)', fontWeight: 400, fontSize: '13px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase'}}>
-    Coffee Travel
-  </span>
-</div>
-</div>
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <span style={{fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)', letterSpacing: '-0.5px'}}>ALAN</span>
+            <span style={{width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)'}}></span>
+            <span style={{fontFamily: 'var(--font-heading)', fontWeight: 400, fontSize: '13px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase' as const}}>Coffee Travel</span>
+          </div>
           <div style={{display: 'flex', gap: '36px'}}>
             {['Destinations', 'Guides', 'Rentals', 'Auction'].map(item => (
-              <a key={item} href="#" style={{color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', letterSpacing: '0.5px', fontWeight: 500}}>
-                {item}
-              </a>
+              <a key={item} href="#" style={{color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', letterSpacing: '0.5px', fontWeight: 500}}>{item}</a>
             ))}
           </div>
-          <button style={{backgroundColor: 'var(--color-black)', color: 'var(--color-gold)', padding: '10px 24px', borderRadius: '4px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase'}}>
-            Explore
-          </button>
+          <button style={{backgroundColor: 'var(--color-black)', color: 'var(--color-gold)', padding: '10px 24px', borderRadius: '4px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' as const}}>Explore</button>
         </div>
       </nav>
 
@@ -43,9 +33,7 @@ export default async function Home() {
         <div style={{maxWidth: '900px', margin: '0 auto', position: 'relative'}}>
           <div style={{display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px'}}>
             <div style={{height: '1px', width: '40px', backgroundColor: 'var(--color-gold)'}}></div>
-            <span style={{color: 'var(--color-gold)', fontSize: '12px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase'}}>
-              Curated Travel Experience
-            </span>
+            <span style={{color: 'var(--color-gold)', fontSize: '12px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const}}>Curated Travel Experience</span>
           </div>
           <h1 style={{fontFamily: 'var(--font-heading)', fontSize: '64px', fontWeight: 800, color: 'var(--color-white)', lineHeight: 1.1, letterSpacing: '-2px', marginBottom: '24px'}}>
             Travel Deeper.<br />
@@ -55,12 +43,8 @@ export default async function Home() {
             Like a perfectly brewed cup — we curate only the most authentic local experiences in Laos.
           </p>
           <div style={{display: 'flex', gap: '16px', alignItems: 'center'}}>
-            <button style={{backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '16px 36px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '14px', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase'}}>
-              Explore Now
-            </button>
-            <button style={{backgroundColor: 'transparent', color: 'var(--color-white)', padding: '16px 36px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 500, fontSize: '14px', cursor: 'pointer'}}>
-              Meet Our Guides →
-            </button>
+            <button style={{backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '16px 36px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '14px', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' as const}}>Explore Now</button>
+            <button style={{backgroundColor: 'transparent', color: 'var(--color-white)', padding: '16px 36px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 500, fontSize: '14px', cursor: 'pointer'}}>Meet Our Guides →</button>
           </div>
         </div>
       </section>
@@ -71,40 +55,25 @@ export default async function Home() {
           <div>
             <div style={{display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px'}}>
               <div style={{height: '1px', width: '32px', backgroundColor: 'var(--color-gold)'}}></div>
-              <span style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase'}}>
-                Destinations
-              </span>
+              <span style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const}}>Destinations</span>
             </div>
-            <h2 style={{fontFamily: 'var(--font-heading)', fontSize: '36px', fontWeight: 800, color: 'var(--color-black)', letterSpacing: '-1px'}}>
-              Curated Places
-            </h2>
+            <h2 style={{fontFamily: 'var(--font-heading)', fontSize: '36px', fontWeight: 800, color: 'var(--color-black)', letterSpacing: '-1px'}}>Curated Places</h2>
           </div>
-          <a href="#" style={{color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', borderBottom: '1px solid var(--color-cream-border)', paddingBottom: '2px'}}>
-            View all →
-          </a>
+          <a href="#" style={{color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', borderBottom: '1px solid var(--color-cream-border)', paddingBottom: '2px'}}>View all →</a>
         </div>
-
         <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px'}}>
           {destinations?.map((d) => (
-            <div key={d.id} style={{backgroundColor: 'var(--color-white)', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--color-cream-border)', cursor: 'pointer', transition: 'transform 0.2s'}}>
+            <div key={d.id} style={{backgroundColor: 'var(--color-white)', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--color-cream-border)', cursor: 'pointer'}}>
               <div style={{height: '220px', backgroundColor: 'var(--color-black-soft)', display: 'flex', alignItems: 'flex-end', padding: '20px', position: 'relative'}}>
-                <div style={{position: 'absolute', top: '16px', right: '16px'}}>
-                  {d.is_premium && (
-                    <span style={{backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '4px 10px', borderRadius: '2px', fontSize: '10px', fontWeight: 700, letterSpacing: '1px'}}>
-                      FEATURED
-                    </span>
-                  )}
-                </div>
                 <div>
-                  <p style={{color: 'rgba(255,255,255,0.5)', fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px'}}>{d.region}</p>
+                  <p style={{color: 'rgba(255,255,255,0.5)', fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '4px'}}>{d.region}</p>
                   <h3 style={{fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '22px', color: 'var(--color-white)'}}>{d.title_en}</h3>
                 </div>
               </div>
               <div style={{padding: '20px 24px'}}>
                 <p style={{color: 'var(--color-gray-600)', fontSize: '14px', lineHeight: 1.6}}>{d.excerpt_en}</p>
                 <div style={{display: 'flex', alignItems: 'center', gap: '6px', marginTop: '16px'}}>
-                  <span style={{color: 'var(--color-gold)', fontSize: '13px', fontWeight: 600}}>Discover</span>
-                  <span style={{color: 'var(--color-gold)'}}>→</span>
+                  <span style={{color: 'var(--color-gold)', fontSize: '13px', fontWeight: 600}}>Discover →</span>
                 </div>
               </div>
             </div>
@@ -114,15 +83,13 @@ export default async function Home() {
 
       {/* WHY ALAN */}
       <section style={{backgroundColor: 'var(--color-black)', padding: '100px 32px'}}>
-        <div style={{maxWidth: '1280px', margin: '0 auto', textAlign: 'center'}}>
+        <div style={{maxWidth: '1280px', margin: '0 auto', textAlign: 'center' as const}}>
           <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px'}}>
             <div style={{height: '1px', width: '32px', backgroundColor: 'var(--color-gold)'}}></div>
-            <span style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase'}}>Why Alan</span>
+            <span style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const}}>Why Alan</span>
             <div style={{height: '1px', width: '32px', backgroundColor: 'var(--color-gold)'}}></div>
           </div>
-          <h2 style={{fontFamily: 'var(--font-heading)', fontSize: '36px', fontWeight: 800, color: 'var(--color-white)', marginBottom: '64px', letterSpacing: '-1px'}}>
-            Travel Like a Local
-          </h2>
+          <h2 style={{fontFamily: 'var(--font-heading)', fontSize: '36px', fontWeight: 800, color: 'var(--color-white)', marginBottom: '64px', letterSpacing: '-1px'}}>Travel Like a Local</h2>
           <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '32px'}}>
             {[
               {icon: '☕', title: 'Curated', desc: 'Every experience is hand-picked like our coffee beans'},
@@ -147,7 +114,7 @@ export default async function Home() {
             <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px'}}>
               <span style={{fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '18px', color: 'var(--color-white)'}}>ALAN</span>
               <span style={{width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)'}}></span>
-              <span style={{color: 'var(--color-gray-400)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase'}}>Coffee Travel</span>
+              <span style={{color: 'var(--color-gray-400)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const}}>Coffee Travel</span>
             </div>
             <p style={{color: 'rgba(255,255,255,0.3)', fontSize: '12px'}}>© 2025 Alan Coffee Travel Platform</p>
           </div>
