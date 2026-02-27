@@ -1,6 +1,27 @@
 import { supabase } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params
+  const { data } = await supabase
+    .from('destinations')
+    .select('title_en, excerpt_en, region')
+    .eq('slug', slug)
+    .single()
+
+  if (!data) return { title: 'Destination' }
+
+  return {
+    title: data.title_en,
+    description: data.excerpt_en || `Discover ${data.title_en} — ${data.region}, Laos. A curated travel experience by Alan Coffee & Travel.`,
+    openGraph: {
+      title: `${data.title_en} — Alan Coffee & Travel`,
+      description: data.excerpt_en || `Discover ${data.title_en} in ${data.region}, Laos.`,
+      url: `https://alan-coffee-travel.vercel.app/destinations/${slug}`,
+    },
+  }
+}
 export default async function DestinationPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
 

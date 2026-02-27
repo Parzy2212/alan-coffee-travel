@@ -1,3 +1,14 @@
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'About',
+  description: 'Alan Coffee & Travel was born in Attapeu — the only café in the province built for international travelers. A calm space for coffee, reflection, and cultural discovery.',
+  openGraph: {
+    title: 'About Alan Coffee & Travel',
+    description: 'A calm meeting place for travelers in Attapeu, Laos. Built from quiet resilience. Shaped by stillness.',
+    url: 'https://alan-coffee-travel.vercel.app/about',
+  },
+}
 export default function AboutPage() {
   return (
     <main style={{minHeight: '100vh', backgroundColor: 'var(--background)'}}>

@@ -1,5 +1,15 @@
 import { supabase } from '@/lib/supabase'
+import type { Metadata } from 'next'
 
+export const metadata: Metadata = {
+  title: 'Alan Coffee & Travel — Attapeu, Laos',
+  description: 'Discover Laos through the lens of a traveler\'s café. Alan Coffee & Travel in Attapeu curates authentic local experiences, destinations, and travel guidance.',
+  openGraph: {
+    title: 'Alan Coffee & Travel — Attapeu, Laos',
+    description: 'Discover Laos through the lens of a traveler\'s café. Authentic experiences, curated destinations.',
+    url: 'https://alan-coffee-travel.vercel.app',
+  },
+}
 export default async function Home() {
   const { data: destinations } = await supabase
     .from('destinations')

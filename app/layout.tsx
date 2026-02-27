@@ -1,34 +1,61 @@
-import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Inter } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next'
+import { Plus_Jakarta_Sans, Inter } from 'next/font/google'
+import './globals.css'
 
-const jakarta = Plus_Jakarta_Sans({
-  variable: "--font-heading",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-heading',
+  display: 'swap',
+})
 
 const inter = Inter({
-  variable: "--font-body",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
+  subsets: ['latin'],
+  variable: '--font-body',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: "Alan Coffee Travel Platform",
-  description: "A café-inspired travel ecosystem connecting travelers with authentic local experiences.",
-};
+  metadataBase: new URL('https://alan-coffee-travel.vercel.app'),
+  title: {
+    default: 'Alan Coffee & Travel — Attapeu, Laos',
+    template: '%s | Alan Coffee & Travel',
+  },
+  description: 'A calm meeting place for travelers in Attapeu, Laos. Coffee, cultural discovery, and travel guidance — in one space.',
+  keywords: ['Attapeu café', 'coffee in Attapeu', 'Laos coffee', 'travel café Laos', 'café for travelers', 'Attapeu Laos', 'Alan Coffee'],
+  authors: [{ name: 'Alan Coffee & Travel' }],
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: 'https://alan-coffee-travel.vercel.app',
+    siteName: 'Alan Coffee & Travel',
+    title: 'Alan Coffee & Travel — Attapeu, Laos',
+    description: 'A calm meeting place for travelers in Attapeu, Laos. Coffee, cultural discovery, and travel guidance — in one space.',
+    images: [
+      {
+        url: '/logo-dark.webp',
+        width: 1200,
+        height: 630,
+        alt: 'Alan Coffee & Travel — Attapeu, Laos',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Alan Coffee & Travel — Attapeu, Laos',
+    description: 'A calm meeting place for travelers in Attapeu, Laos.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+}
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${jakarta.variable} ${inter.variable} antialiased`}>
+      <body className={`${plusJakarta.variable} ${inter.variable}`}>
         {children}
       </body>
     </html>
-  );
+  )
 }
