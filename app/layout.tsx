@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans, Inter } from 'next/font/google'
 import './globals.css'
+import Navbar from '@/components/Navbar'
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -30,14 +31,6 @@ export const metadata: Metadata = {
     siteName: 'Alan Coffee & Travel',
     title: 'Alan Coffee & Travel — Attapeu, Laos',
     description: 'A calm meeting place for travelers in Attapeu, Laos. Coffee, cultural discovery, and travel guidance — in one space.',
-    images: [
-      {
-        url: '/logo-dark.webp',
-        width: 1200,
-        height: 630,
-        alt: 'Alan Coffee & Travel — Attapeu, Laos',
-      },
-    ],
   },
   twitter: {
     card: 'summary_large_image',
@@ -54,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${plusJakarta.variable} ${inter.variable}`}>
+        <Navbar />
         {children}
       </body>
     </html>
