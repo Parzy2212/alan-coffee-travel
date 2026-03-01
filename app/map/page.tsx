@@ -309,13 +309,14 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
               onSelectDistrict({ name: displayName, slug })
               map.fitBounds(layer.getBounds().pad(0.3))
 
-              // Load & show pins
-              const { createClient } = await import('@supabase/supabase-js')
-              const client = createClient(
-                process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-              )
-              const { data } = await client.from('destinations').select('*').eq('district', slug).eq('status', 'active')
+              // Load & show pins using the shared supabase client
+              const { data, error } = await supabase
+                .from('destinations')
+                .select('*')
+                .eq('district', slug)
+                .eq('status', 'active')
+
+              console.log('[map] district click slug:', slug, '| data:', data, '| error:', error)
 
               if ((window as any)._markers) {
                 ;(window as any)._markers.forEach((m: any) => map.removeLayer(m))
