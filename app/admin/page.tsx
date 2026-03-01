@@ -271,11 +271,21 @@ const emptyForm = {
   rating_traveler_value: null as number | null,
 }
 
+// Reverse-lookup province from a district slug
+function findProvinceForDistrict(districtSlug: string): string {
+  for (const [province, districts] of Object.entries(PROVINCE_DISTRICTS)) {
+    if (districts.some(d => d.slug === districtSlug)) return province
+  }
+  return ''
+}
+
 export default function AdminPage() {
   const [destinations, setDestinations] = useState<any[]>([])
   const [form, setForm] = useState({ ...emptyForm })
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -292,6 +302,44 @@ export default function AdminPage() {
     setDestinations(data || [])
   }
 
+  function startEdit(d: any) {
+    const province = PROVINCES.includes(d.region) ? d.region : findProvinceForDistrict(d.district || '')
+    setEditingId(d.id)
+    setExistingImageUrls(d.image_urls || [])
+    setImageFiles([])
+    setImagePreviews([])
+    setMsg('')
+    setForm({
+      title_en: d.title_en || '',
+      slug: d.slug || '',
+      excerpt_en: d.excerpt_en || '',
+      province,
+      district: d.district || '',
+      region: d.region || '',
+      location_lat: d.location_lat?.toString() || '',
+      location_lng: d.location_lng?.toString() || '',
+      transport_price: d.transport_price || '',
+      has_guide: d.has_guide || false,
+      status: d.status || 'active',
+      assessment_status: d.assessment_status || 'not_assessed',
+      rating_experience: d.rating_experience ?? null,
+      rating_accessibility: d.rating_accessibility ?? null,
+      rating_authenticity: d.rating_authenticity ?? null,
+      rating_tranquility: d.rating_tranquility ?? null,
+      rating_traveler_value: d.rating_traveler_value ?? null,
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setExistingImageUrls([])
+    setForm({ ...emptyForm })
+    setImageFiles([])
+    setImagePreviews([])
+    setMsg('')
+  }
+
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
     setImageFiles(files)
@@ -299,29 +347,21 @@ export default function AdminPage() {
     setImagePreviews(files.map(f => URL.createObjectURL(f)))
   }
 
-  async function handleAdd() {
-    if (!form.title_en || !form.slug) return setMsg('❌ Title and slug are required')
-    setUploading(true)
-    setMsg('')
-
-    // Upload images to Supabase Storage
-    const image_urls: string[] = []
-    for (const file of imageFiles) {
+  async function uploadImages(files: File[]): Promise<string[] | null> {
+    const urls: string[] = []
+    for (const file of files) {
       const path = `${form.slug}/${Date.now()}-${file.name}`
-      const { error: uploadError } = await supabase.storage
-        .from('destination-images')
-        .upload(path, file, { upsert: true })
-      if (uploadError) {
-        setMsg('❌ Image upload failed: ' + uploadError.message)
-        setUploading(false)
-        return
-      }
+      const { error } = await supabase.storage.from('destination-images').upload(path, file, { upsert: true })
+      if (error) { setMsg('❌ Image upload failed: ' + error.message); return null }
       const { data: urlData } = supabase.storage.from('destination-images').getPublicUrl(path)
-      image_urls.push(urlData.publicUrl)
+      urls.push(urlData.publicUrl)
     }
+    return urls
+  }
 
+  function buildPayload(image_urls: string[]) {
     const assessed = form.assessment_status === 'assessed'
-    const { error } = await supabase.from('destinations').insert([{
+    return {
       title_en: form.title_en,
       slug: form.slug,
       excerpt_en: form.excerpt_en,
@@ -338,9 +378,19 @@ export default function AdminPage() {
       rating_authenticity:   assessed ? form.rating_authenticity   : null,
       rating_tranquility:    assessed ? form.rating_tranquility    : null,
       rating_traveler_value: assessed ? form.rating_traveler_value : null,
-      image_urls: image_urls.length > 0 ? image_urls : [],
-    }])
+      image_urls,
+    }
+  }
 
+  async function handleAdd() {
+    if (!form.title_en || !form.slug) return setMsg('❌ Title and slug are required')
+    setUploading(true)
+    setMsg('')
+
+    const newUrls = await uploadImages(imageFiles)
+    if (newUrls === null) { setUploading(false); return }
+
+    const { error } = await supabase.from('destinations').insert([buildPayload(newUrls)])
     setUploading(false)
     if (error) return setMsg('❌ ' + error.message)
 
@@ -348,6 +398,27 @@ export default function AdminPage() {
     setForm({ ...emptyForm })
     setImageFiles([])
     setImagePreviews([])
+    fetchAll()
+  }
+
+  async function handleSave() {
+    if (!form.title_en || !form.slug) return setMsg('❌ Title and slug are required')
+    setUploading(true)
+    setMsg('')
+
+    const newUrls = await uploadImages(imageFiles)
+    if (newUrls === null) { setUploading(false); return }
+
+    const { error } = await supabase
+      .from('destinations')
+      .update(buildPayload([...existingImageUrls, ...newUrls]))
+      .eq('id', editingId)
+
+    setUploading(false)
+    if (error) return setMsg('❌ ' + error.message)
+
+    setMsg('✅ Saved successfully!')
+    cancelEdit()
     fetchAll()
   }
 
@@ -383,7 +454,16 @@ export default function AdminPage() {
 
         {/* ADD FORM */}
         <div style={{ backgroundColor: '#111', borderRadius: '12px', padding: '32px', marginBottom: '40px', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <h2 style={{ color: '#c9a84c', fontSize: '16px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '28px' }}>Add Destination</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px' }}>
+            <h2 style={{ color: '#c9a84c', fontSize: '16px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', margin: 0 }}>
+              {editingId ? 'Edit Destination' : 'Add Destination'}
+            </h2>
+            {editingId && (
+              <button onClick={cancelEdit} style={{ backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '6px 16px', cursor: 'pointer', fontSize: '13px' }}>
+                Cancel Edit
+              </button>
+            )}
+          </div>
 
           {/* Title + Slug */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -442,16 +522,38 @@ export default function AdminPage() {
           {/* Images */}
           <div style={{ marginBottom: '16px' }}>
             <label style={labelStyle}>Photos</label>
+
+            {/* Existing images (edit mode) */}
+            {existingImageUrls.length > 0 && (
+              <div style={{ marginBottom: '10px' }}>
+                <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '11px', marginBottom: '8px' }}>Saved photos — click × to remove</p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const }}>
+                  {existingImageUrls.map((url, i) => (
+                    <div key={i} style={{ position: 'relative' as const }}>
+                      <img src={url} alt="" style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)' }} />
+                      <button
+                        type="button"
+                        onClick={() => setExistingImageUrls(prev => prev.filter((_, idx) => idx !== i))}
+                        style={{ position: 'absolute' as const, top: '-7px', right: '-7px', background: '#c0392b', color: 'white', border: 'none', borderRadius: '999px', width: '20px', height: '20px', cursor: 'pointer', fontSize: '13px', lineHeight: '20px', textAlign: 'center' as const, padding: 0 }}>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* New image picker */}
             <input type="file" multiple accept="image/*" onChange={handleImageChange} style={{ display: 'none' }} id="image-upload" />
             <label htmlFor="image-upload" style={{ display: 'block', backgroundColor: 'rgba(255,255,255,0.03)', border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '8px', padding: '20px', textAlign: 'center', cursor: 'pointer' }}>
               <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '13px', margin: 0 }}>
-                {imageFiles.length === 0 ? '📷 Click to select photos' : `${imageFiles.length} photo${imageFiles.length > 1 ? 's' : ''} selected`}
+                {imageFiles.length === 0 ? '📷 Click to add more photos' : `${imageFiles.length} new photo${imageFiles.length > 1 ? 's' : ''} selected`}
               </p>
             </label>
             {imagePreviews.length > 0 && (
               <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' as const }}>
                 {imagePreviews.map((src, i) => (
-                  <img key={i} src={src} alt="" style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                  <img key={i} src={src} alt="" style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(201,168,76,0.3)' }} />
                 ))}
               </div>
             )}
@@ -524,9 +626,16 @@ export default function AdminPage() {
 
           {msg && <p style={{ color: msg.startsWith('✅') ? '#4caf50' : '#e74c3c', fontSize: '13px', marginBottom: '16px' }}>{msg}</p>}
 
-          <button onClick={handleAdd} disabled={uploading} style={{ backgroundColor: uploading ? 'rgba(201,168,76,0.4)' : '#c9a84c', color: '#0a0a0a', padding: '12px 32px', borderRadius: '6px', border: 'none', fontWeight: 800, fontSize: '14px', cursor: uploading ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' as const }}>
-            {uploading ? 'Uploading...' : 'Add Destination'}
-          </button>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <button onClick={editingId ? handleSave : handleAdd} disabled={uploading} style={{ backgroundColor: uploading ? 'rgba(201,168,76,0.4)' : '#c9a84c', color: '#0a0a0a', padding: '12px 32px', borderRadius: '6px', border: 'none', fontWeight: 800, fontSize: '14px', cursor: uploading ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' as const }}>
+              {uploading ? 'Saving...' : editingId ? 'Save Changes' : 'Add Destination'}
+            </button>
+            {editingId && (
+              <button onClick={cancelEdit} style={{ backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '12px 24px', cursor: 'pointer', fontSize: '14px' }}>
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
 
         {/* DESTINATION LIST */}
@@ -554,6 +663,7 @@ export default function AdminPage() {
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                   <a href={`/destinations/${d.slug}`} target="_blank" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', padding: '8px 16px', borderRadius: '6px', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>View</a>
+                  <button onClick={() => startEdit(d)} style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: '#c9a84c', padding: '8px 16px', borderRadius: '6px', border: '1px solid rgba(201,168,76,0.2)', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>Edit</button>
                   {deleteId === d.id ? (
                     <>
                       <button onClick={() => handleDelete(d.id)} style={{ backgroundColor: '#c0392b', color: 'white', padding: '8px 16px', borderRadius: '6px', border: 'none', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>Confirm</button>
