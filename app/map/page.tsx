@@ -316,7 +316,6 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
                 .eq('district', slug)
                 .eq('status', 'active')
 
-              console.log('[map] district click slug:', slug, '| data:', data, '| error:', error)
 
               if ((window as any)._markers) {
                 ;(window as any)._markers.forEach((m: any) => map.removeLayer(m))
