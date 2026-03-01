@@ -1,12 +1,16 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { matchesSearch } from '@/lib/search'
 
 type Destination = {
   id: string
   slug: string
   title_en: string
+  title_lo: string | null
   excerpt_en: string | null
+  excerpt_lo: string | null
+  description_en: string | null
   region: string | null
   district: string | null
   image_urls: string[] | null
@@ -58,7 +62,7 @@ export default function DestinationsPage() {
 
   const filtered = useMemo(() => {
     return destinations.filter(d => {
-      if (search && !d.title_en.toLowerCase().includes(search.toLowerCase())) return false
+      if (search && !matchesSearch(d, search)) return false
       if (province !== 'all' && d.region !== province) return false
       if (assessment === 'assessed' && d.assessment_status !== 'assessed') return false
       if (assessment === 'not_assessed' && d.assessment_status === 'assessed') return false
