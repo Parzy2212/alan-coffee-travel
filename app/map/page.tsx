@@ -14,11 +14,13 @@ type Destination = {
   district: string
 }
 
-type ViewLevel = 'laos' | 'attapeu' | 'district'
+type ViewLevel = 'laos' | 'province' | 'district'
 
 export default function MapPage() {
   const [level, setLevel] = useState<ViewLevel>('laos')
-  const [selectedDistrict, setSelectedDistrict] = useState<any | null>(null)
+  const [selectedProvince, setSelectedProvince] = useState<{ name: string } | null>(null)
+  const [selectedDistrict, setSelectedDistrict] = useState<{ name: string; slug: string } | null>(null)
+  const [provinceDistricts, setProvinceDistricts] = useState<{ name: string; slug: string }[]>([])
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -33,69 +35,85 @@ export default function MapPage() {
     setLoading(false)
   }
 
+  function clearMapMarkers(map: any) {
+    if ((window as any)._markers) {
+      ;(window as any)._markers.forEach((m: any) => map?.removeLayer(m))
+      ;(window as any)._markers = []
+    }
+  }
+
+  function goToLaos() {
+    const map = (window as any)._map
+    setLevel('laos')
+    setSelectedProvince(null)
+    setSelectedDistrict(null)
+    setProvinceDistricts([])
+    setDestinations([])
+    clearMapMarkers(map)
+    if ((window as any)._labelMarkers) {
+      ;(window as any)._labelMarkers.forEach((m: any) => map?.removeLayer(m))
+      ;(window as any)._labelMarkers = []
+    }
+    const fn = (window as any)._loadProvinces
+    if (fn) fn()
+    else window.location.reload()
+  }
+
   function handleBack() {
+    const map = (window as any)._map
     if (level === 'district') {
-      setLevel('attapeu')
+      setLevel('province')
       setSelectedDistrict(null)
       setDestinations([])
-      const map = (window as any)._map
-      if (map) map.setView([14.75, 107.05], 9)
-      if ((window as any)._markers) {
-        (window as any)._markers.forEach((m: any) => map.removeLayer(m))
-        ;(window as any)._markers = []
+      clearMapMarkers(map)
+      if (map && (window as any)._currentLayer) {
+        map.fitBounds((window as any)._currentLayer.getBounds().pad(0.15))
       }
-    } else if (level === 'attapeu') {
-      setLevel('laos')
-      const map = (window as any)._map
-      if (map) map.setView([18.0, 103.0], 6)
-      if ((window as any)._currentLayer) {
-        map.removeLayer((window as any)._currentLayer)
-        ;(window as any)._currentLayer = null
-      }
-      ;(window as any)._mapReady = false
-      ;(window as any)._mapReady = true
-      window.location.reload()
+    } else if (level === 'province') {
+      goToLaos()
     }
   }
 
   return (
-    <main style={{minHeight: '100vh', backgroundColor: '#0a0a0a'}}>
+    <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
 
       {/* HEADER */}
-      <section style={{backgroundColor: 'var(--color-black)', padding: '40px 32px 28px', borderBottom: '1px solid rgba(255,255,255,0.06)'}}>
-        <div style={{maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+      <section style={{ backgroundColor: 'var(--color-black)', padding: '40px 32px 28px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px'}}>
-              <div style={{height: '1px', width: '32px', backgroundColor: 'var(--color-gold)'}}></div>
-              <span style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const}}>
-                {level === 'laos' ? 'Laos — 18 Provinces' : level === 'attapeu' ? 'Attapeu Province — 5 Districts' : `${selectedDistrict?.name} District`}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+              <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
+              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>
+                {level === 'laos' ? 'Laos — 18 Provinces' : level === 'province' ? `${selectedProvince?.name} Province` : `${selectedDistrict?.name} District`}
               </span>
             </div>
-            <h1 style={{fontFamily: 'var(--font-heading)', fontSize: '32px', fontWeight: 800, color: 'white', letterSpacing: '-1px'}}>
-              {level === 'laos' ? 'Explore Laos.' : level === 'attapeu' ? 'Select a District.' : 'Destinations.'}
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '32px', fontWeight: 800, color: 'white', letterSpacing: '-1px' }}>
+              {level === 'laos' ? 'Explore Laos.' : level === 'province' ? 'Select a District.' : 'Destinations.'}
             </h1>
           </div>
 
-          <div style={{display: 'flex', alignItems: 'center', gap: '16px'}}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             {/* Breadcrumb */}
-            <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span
-                onClick={() => { if (level !== 'laos') { handleBack(); if (level === 'district') handleBack() } }}
-                style={{color: level === 'laos' ? 'var(--color-gold)' : 'rgba(255,255,255,0.4)', fontSize: '12px', cursor: level !== 'laos' ? 'pointer' : 'default'}}
+                onClick={() => { if (level !== 'laos') goToLaos() }}
+                style={{ color: level === 'laos' ? 'var(--color-gold)' : 'rgba(255,255,255,0.4)', fontSize: '12px', cursor: level !== 'laos' ? 'pointer' : 'default' }}
               >Laos</span>
               {level !== 'laos' && <>
-                <span style={{color: 'rgba(255,255,255,0.2)'}}>›</span>
-                <span style={{color: level === 'attapeu' ? 'var(--color-gold)' : 'rgba(255,255,255,0.4)', fontSize: '12px', cursor: level === 'district' ? 'pointer' : 'default'}}
-                  onClick={() => { if (level === 'district') handleBack() }}>Attapeu</span>
+                <span style={{ color: 'rgba(255,255,255,0.2)' }}>›</span>
+                <span
+                  style={{ color: level === 'province' ? 'var(--color-gold)' : 'rgba(255,255,255,0.4)', fontSize: '12px', cursor: level === 'district' ? 'pointer' : 'default' }}
+                  onClick={() => { if (level === 'district') handleBack() }}
+                >{selectedProvince?.name}</span>
               </>}
               {level === 'district' && <>
-                <span style={{color: 'rgba(255,255,255,0.2)'}}>›</span>
-                <span style={{color: 'var(--color-gold)', fontSize: '12px'}}>{selectedDistrict?.name}</span>
+                <span style={{ color: 'rgba(255,255,255,0.2)' }}>›</span>
+                <span style={{ color: 'var(--color-gold)', fontSize: '12px' }}>{selectedDistrict?.name}</span>
               </>}
             </div>
 
             {level !== 'laos' && (
-              <button onClick={handleBack} style={{backgroundColor: 'rgba(255,255,255,0.06)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 18px', cursor: 'pointer', fontSize: '13px', fontWeight: 600}}>
+              <button onClick={handleBack} style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 18px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
                 ← Back
               </button>
             )}
@@ -104,57 +122,60 @@ export default function MapPage() {
       </section>
 
       {/* MAP + SIDEBAR */}
-      <section style={{display: 'grid', gridTemplateColumns: '1fr 360px', height: 'calc(100vh - 148px)'}}>
+      <section style={{ display: 'grid', gridTemplateColumns: '1fr 360px', height: 'calc(100vh - 148px)' }}>
 
         {/* MAP */}
-        <div style={{position: 'relative' as const, overflow: 'hidden'}}>
+        <div style={{ position: 'relative' as const, overflow: 'hidden' }}>
           <InteractiveMap
-            onSelectProvince={() => setLevel('attapeu')}
+            onSelectProvince={(province) => {
+              setSelectedProvince(province)
+              setLevel('province')
+            }}
             onSelectDistrict={(district) => {
               setSelectedDistrict(district)
               setLevel('district')
               loadDestinations(district.slug)
             }}
+            onDistrictsLoaded={(districts) => setProvinceDistricts(districts)}
           />
         </div>
 
         {/* SIDEBAR */}
-        <div style={{backgroundColor: '#111', borderLeft: '1px solid rgba(255,255,255,0.06)', overflowY: 'auto' as const, padding: '28px'}}>
+        <div style={{ backgroundColor: '#111', borderLeft: '1px solid rgba(255,255,255,0.06)', overflowY: 'auto' as const, padding: '28px' }}>
 
           {level === 'laos' && (
             <div>
-              <p style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '20px'}}>How to Navigate</p>
+              <p style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>How to Navigate</p>
               {[
                 { step: '1', text: 'Hover any province to highlight it' },
-                { step: '2', text: 'Click Attapeu to explore districts' },
+                { step: '2', text: 'Click any province to explore its districts' },
                 { step: '3', text: 'Click a district to see destinations & map pins' },
               ].map(item => (
-                <div key={item.step} style={{display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px'}}>
-                  <span style={{backgroundColor: 'var(--color-gold)', color: '#0a0a0a', borderRadius: '999px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800, flexShrink: 0}}>{item.step}</span>
-                  <p style={{color: 'rgba(255,255,255,0.45)', fontSize: '14px', lineHeight: 1.6, marginTop: '2px'}}>{item.text}</p>
+                <div key={item.step} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
+                  <span style={{ backgroundColor: 'var(--color-gold)', color: '#0a0a0a', borderRadius: '999px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800, flexShrink: 0 }}>{item.step}</span>
+                  <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '14px', lineHeight: 1.6, marginTop: '2px' }}>{item.text}</p>
                 </div>
               ))}
-              <div style={{marginTop: '28px', backgroundColor: 'rgba(201,168,76,0.08)', borderRadius: '8px', padding: '16px', border: '1px solid rgba(201,168,76,0.2)'}}>
-                <p style={{color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, marginBottom: '6px'}}>★ Starting Point</p>
-                <p style={{color: 'rgba(255,255,255,0.5)', fontSize: '13px', lineHeight: 1.6}}>Alan Coffee & Travel is based in Attapeu — Southern Laos. Click it to begin.</p>
+              <div style={{ marginTop: '28px', backgroundColor: 'rgba(201,168,76,0.08)', borderRadius: '8px', padding: '16px', border: '1px solid rgba(201,168,76,0.2)' }}>
+                <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>★ Starting Point</p>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', lineHeight: 1.6 }}>Alan Coffee & Travel is based in Attapeu — Southern Laos. Click it to begin.</p>
               </div>
             </div>
           )}
 
-          {level === 'attapeu' && (
+          {level === 'province' && (
             <div>
-              <p style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '14px'}}>5 Districts</p>
-              <p style={{color: 'rgba(255,255,255,0.35)', fontSize: '13px', lineHeight: 1.7, marginBottom: '20px'}}>Click a district on the map to see destinations and navigation pins.</p>
-              {['Samakhi Xai', 'Xayxetha', 'Sanxay', 'Phouvong', 'Sanamxay'].map(name => (
-                <div key={name}
+              <p style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '6px' }}>{selectedProvince?.name}</p>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px' }}>{provinceDistricts.length} Districts — click one to explore</p>
+              {provinceDistricts.map(d => (
+                <div key={d.slug}
                   onClick={() => {
-                    const slug = name.toLowerCase().replace(/\s+/g, '-')
-                    setSelectedDistrict({ name, slug })
+                    setSelectedDistrict(d)
                     setLevel('district')
-                    loadDestinations(slug)
+                    loadDestinations(d.slug)
                   }}
-                  style={{backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '14px 16px', marginBottom: '8px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer'}}>
-                  <p style={{color: 'white', fontSize: '14px', fontWeight: 600}}>{name}</p>
+                  style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '14px 16px', marginBottom: '8px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}>
+                  <p style={{ color: 'white', fontSize: '14px', fontWeight: 600 }}>{d.name}</p>
                 </div>
               ))}
             </div>
@@ -162,28 +183,28 @@ export default function MapPage() {
 
           {level === 'district' && (
             <div>
-              <p style={{color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '6px'}}>{selectedDistrict?.name}</p>
-              <p style={{color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px'}}>Click a pin on the map to view details</p>
+              <p style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '6px' }}>{selectedDistrict?.name}</p>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px' }}>Click a pin on the map to view details</p>
 
               {loading ? (
-                <p style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>Loading...</p>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>Loading...</p>
               ) : destinations.length === 0 ? (
-                <div style={{backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '24px', textAlign: 'center' as const, border: '1px solid rgba(255,255,255,0.06)'}}>
-                  <p style={{color: 'rgba(255,255,255,0.25)', fontSize: '13px', lineHeight: 1.7}}>No destinations yet.<br />Add via Admin Panel.</p>
-                  <a href="/admin" style={{display: 'inline-block', marginTop: '12px', color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600}}>Go to Admin →</a>
+                <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '24px', textAlign: 'center' as const, border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '13px', lineHeight: 1.7 }}>No destinations yet.<br />Add via Admin Panel.</p>
+                  <a href="/admin" style={{ display: 'inline-block', marginTop: '12px', color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>Go to Admin →</a>
                 </div>
               ) : (
-                <div style={{display: 'flex', flexDirection: 'column' as const, gap: '10px'}}>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '10px' }}>
                   {destinations.map(dest => (
-                    <div key={dest.id} style={{backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '14px 16px', border: '1px solid rgba(255,255,255,0.06)'}}>
-                      <p style={{color: 'white', fontWeight: 700, fontSize: '14px', marginBottom: '4px'}}>{dest.title_en}</p>
-                      <p style={{color: 'rgba(255,255,255,0.4)', fontSize: '12px', lineHeight: 1.5, marginBottom: '10px'}}>{dest.excerpt_en}</p>
-                      {dest.transport_price && <p style={{color: 'var(--color-gold)', fontSize: '12px', marginBottom: '6px', fontWeight: 600}}>🚗 {dest.transport_price}</p>}
-                      {dest.has_guide && <p style={{color: '#4caf50', fontSize: '12px', marginBottom: '10px'}}>✓ Guide Available</p>}
-                      <div style={{display: 'flex', gap: '8px', marginTop: '8px'}}>
-                        <a href={`/destinations/${dest.slug}`} style={{flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', color: 'white', padding: '8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, textDecoration: 'none', textAlign: 'center' as const}}>Details</a>
+                    <div key={dest.id} style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '14px 16px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <p style={{ color: 'white', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>{dest.title_en}</p>
+                      <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', lineHeight: 1.5, marginBottom: '10px' }}>{dest.excerpt_en}</p>
+                      {dest.transport_price && <p style={{ color: 'var(--color-gold)', fontSize: '12px', marginBottom: '6px', fontWeight: 600 }}>🚗 {dest.transport_price}</p>}
+                      {dest.has_guide && <p style={{ color: '#4caf50', fontSize: '12px', marginBottom: '10px' }}>✓ Guide Available</p>}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <a href={`/destinations/${dest.slug}`} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', color: 'white', padding: '8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, textDecoration: 'none', textAlign: 'center' as const }}>Details</a>
                         {dest.location_lat && dest.location_lng && (
-                          <a href={`https://www.google.com/maps?q=${dest.location_lat},${dest.location_lng}`} target="_blank" style={{flex: 1, backgroundColor: 'var(--color-gold)', color: '#0a0a0a', padding: '8px', borderRadius: '4px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', textAlign: 'center' as const}}>
+                          <a href={`https://www.google.com/maps?q=${dest.location_lat},${dest.location_lng}`} target="_blank" style={{ flex: 1, backgroundColor: 'var(--color-gold)', color: '#0a0a0a', padding: '8px', borderRadius: '4px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', textAlign: 'center' as const }}>
                             Google Maps 🗺️
                           </a>
                         )}
@@ -200,9 +221,10 @@ export default function MapPage() {
   )
 }
 
-function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
-  onSelectProvince: () => void
-  onSelectDistrict: (d: { name: string, slug: string }) => void
+function InteractiveMap({ onSelectProvince, onSelectDistrict, onDistrictsLoaded }: {
+  onSelectProvince: (p: { name: string }) => void
+  onSelectDistrict: (d: { name: string; slug: string }) => void
+  onDistrictsLoaded: (districts: { name: string; slug: string }[]) => void
 }) {
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -227,47 +249,53 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
         attribution: '© CARTO'
       }).addTo(map)
 
-      // Mapping from GeoJSON adm2_name → { DB slug, display name }
+      // Attapeu-specific corrections for backward compat with existing DB slugs
       const DISTRICT_MAP: Record<string, { slug: string; displayName: string }> = {
         'Samakkhixay': { slug: 'samakhi-xai', displayName: 'Samakhi Xai' },
         'Sanamxay':    { slug: 'sanamxay',    displayName: 'Sanamxay' },
         'Sanxay':      { slug: 'sanxay',      displayName: 'Sanxay' },
         'Phouvong':    { slug: 'phouvong',    displayName: 'Phouvong' },
-        'Xaysetha':    { slug: 'xayxetha',   displayName: 'Xayxetha' },
+        'Xaysetha':    { slug: 'xayxetha',    displayName: 'Xayxetha' },
       }
 
       const res = await fetch('/lao_admin1.geojson')
       const admin1 = await res.json()
 
+      let admin2Cache: any = null
       let currentLayer: any = null
 
+      function clearLabelMarkers() {
+        if ((window as any)._labelMarkers) {
+          ;(window as any)._labelMarkers.forEach((m: any) => map.removeLayer(m))
+          ;(window as any)._labelMarkers = []
+        }
+      }
+
       function loadProvinces() {
+        clearLabelMarkers()
         if (currentLayer) map.removeLayer(currentLayer)
 
         currentLayer = L.geoJSON(admin1, {
-          style: (feature: any) => {
-            const isAttapeu = feature.properties.adm1_name?.toLowerCase().includes('attap')
-            return {
-              color: isAttapeu ? '#c9a84c' : 'rgba(255,255,255,0.25)',
-              weight: isAttapeu ? 2 : 1,
-              fillColor: isAttapeu ? '#c9a84c' : '#ffffff',
-              fillOpacity: isAttapeu ? 0.12 : 0.03,
-            }
-          },
+          style: () => ({
+            color: '#c9a84c',
+            weight: 1.5,
+            fillColor: '#c9a84c',
+            fillOpacity: 0.06,
+          }),
           onEachFeature: (feature: any, layer: any) => {
             const name = feature.properties.adm1_name || ''
-            const isAttapeu = name.toLowerCase().includes('attap')
 
             layer.on('mouseover', () => {
-              layer.setStyle({ fillOpacity: isAttapeu ? 0.4 : 0.12, weight: 2, color: isAttapeu ? '#c9a84c' : 'rgba(255,255,255,0.5)' })
-              layer.bindTooltip(`<div style="background:#1a1a1a;color:${isAttapeu ? '#c9a84c' : 'white'};border:1px solid rgba(255,255,255,0.1);padding:6px 12px;border-radius:4px;font-size:12px;font-weight:600">${name}</div>`, { sticky: true, className: 'leaflet-tooltip-custom' }).openTooltip()
+              layer.setStyle({ fillOpacity: 0.35, weight: 2.5 })
+              layer.bindTooltip(
+                `<div style="background:#1a1a1a;color:#c9a84c;border:1px solid rgba(201,168,76,0.3);padding:6px 12px;border-radius:4px;font-size:12px;font-weight:600">${name}</div>`,
+                { sticky: true, className: 'leaflet-tooltip-custom' }
+              ).openTooltip()
             })
             layer.on('mouseout', () => { currentLayer.resetStyle(layer) })
             layer.on('click', () => {
-              if (isAttapeu) {
-                onSelectProvince()
-                loadAttapeu()
-              }
+              onSelectProvince({ name })
+              loadProvinceDistricts(name)
             })
           }
         }).addTo(map)
@@ -276,18 +304,27 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
         ;(window as any)._currentLayer = currentLayer
       }
 
-      async function loadAttapeu() {
-        const res2 = await fetch('/lao_admin2.geojson')
-        const admin2 = await res2.json()
+      // Expose for back navigation from React
+      ;(window as any)._loadProvinces = loadProvinces
 
-        const attapeuFeatures = admin2.features.filter((f: any) =>
-          f.properties.adm1_name?.toLowerCase().includes('attap')
+      async function loadProvinceDistricts(provinceName: string) {
+        if (!admin2Cache) {
+          const res2 = await fetch('/lao_admin2.geojson')
+          admin2Cache = await res2.json()
+        }
+
+        const features = admin2Cache.features.filter((f: any) =>
+          f.properties.adm1_name?.toLowerCase() === provinceName.toLowerCase()
         )
-        const attapeuGeo = { type: 'FeatureCollection', features: attapeuFeatures }
+        const geo = { type: 'FeatureCollection', features }
 
+        clearLabelMarkers()
         if (currentLayer) map.removeLayer(currentLayer)
+        ;(window as any)._labelMarkers = []
 
-        currentLayer = L.geoJSON(attapeuGeo, {
+        const districtList: { name: string; slug: string }[] = []
+
+        currentLayer = L.geoJSON(geo, {
           style: () => ({
             color: '#c9a84c',
             weight: 2,
@@ -297,25 +334,28 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
           onEachFeature: (feature: any, layer: any) => {
             const geoName = feature.properties.adm2_name || ''
             const mapped = DISTRICT_MAP[geoName]
-            const slug = mapped?.slug || geoName.toLowerCase().replace(/\s+/g, '-')
+            const slug = mapped?.slug || geoName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
             const displayName = mapped?.displayName || geoName
+
+            districtList.push({ name: displayName, slug })
 
             layer.on('mouseover', () => {
               layer.setStyle({ fillOpacity: 0.4, weight: 3 })
-              layer.bindTooltip(`<div style="background:#1a1a1a;color:#c9a84c;border:1px solid rgba(201,168,76,0.3);padding:6px 12px;border-radius:4px;font-size:12px;font-weight:700">${displayName}</div>`, { sticky: true }).openTooltip()
+              layer.bindTooltip(
+                `<div style="background:#1a1a1a;color:#c9a84c;border:1px solid rgba(201,168,76,0.3);padding:6px 12px;border-radius:4px;font-size:12px;font-weight:700">${displayName}</div>`,
+                { sticky: true }
+              ).openTooltip()
             })
             layer.on('mouseout', () => { layer.setStyle({ fillOpacity: 0.12, weight: 2 }) })
             layer.on('click', async () => {
               onSelectDistrict({ name: displayName, slug })
               map.fitBounds(layer.getBounds().pad(0.3))
 
-              // Load & show pins using the shared supabase client
-              const { data, error } = await supabase
+              const { data } = await supabase
                 .from('destinations')
                 .select('*')
                 .eq('district', slug)
                 .eq('status', 'active')
-
 
               if ((window as any)._markers) {
                 ;(window as any)._markers.forEach((m: any) => map.removeLayer(m))
@@ -359,12 +399,15 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
               html: `<div style="color:white;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,0.9);pointer-events:none">${displayName}</div>`,
               iconAnchor: [40, 8]
             })
-            L.marker(center, { icon, interactive: false }).addTo(map)
+            const labelMarker = L.marker(center, { icon, interactive: false }).addTo(map)
+            ;(window as any)._labelMarkers.push(labelMarker)
           }
         }).addTo(map)
 
         map.fitBounds(currentLayer.getBounds().pad(0.15))
         ;(window as any)._currentLayer = currentLayer
+
+        onDistrictsLoaded(districtList)
       }
 
       loadProvinces()
@@ -381,7 +424,7 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict }: {
         .leaflet-popup-close-button { color:rgba(255,255,255,0.5) !important; top:8px !important; right:8px !important; }
         .leaflet-tooltip-custom { background:transparent; border:none; box-shadow:none; }
       `}</style>
-      <div id="main-map" style={{height: '100%', width: '100%', minHeight: '600px'}}></div>
+      <div id="main-map" style={{ height: '100%', width: '100%', minHeight: '600px' }}></div>
     </>
   )
 }
