@@ -78,8 +78,8 @@ export default function MapPage() {
     <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
 
       {/* HEADER */}
-      <section style={{ backgroundColor: 'var(--color-black)', padding: '40px 32px 28px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <section style={{ backgroundColor: 'var(--color-black)', padding: '28px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="map-header-inner">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
@@ -87,7 +87,7 @@ export default function MapPage() {
                 {level === 'laos' ? 'Laos — 18 Provinces' : level === 'province' ? `${selectedProvince?.name} Province` : `${selectedDistrict?.name} District`}
               </span>
             </div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '32px', fontWeight: 800, color: 'white', letterSpacing: '-1px' }}>
+            <h1 className="hero-h1-md" style={{ fontFamily: 'var(--font-heading)', color: 'white' }}>
               {level === 'laos' ? 'Explore Laos.' : level === 'province' ? 'Select a District.' : 'Destinations.'}
             </h1>
           </div>
@@ -122,10 +122,10 @@ export default function MapPage() {
       </section>
 
       {/* MAP + SIDEBAR */}
-      <section style={{ display: 'grid', gridTemplateColumns: '1fr 360px', height: 'calc(100vh - 148px)' }}>
+      <section className="map-layout">
 
         {/* MAP */}
-        <div style={{ position: 'relative' as const, overflow: 'hidden' }}>
+        <div className="map-container">
           <InteractiveMap
             onSelectProvince={(province) => {
               setSelectedProvince(province)
@@ -141,7 +141,7 @@ export default function MapPage() {
         </div>
 
         {/* SIDEBAR */}
-        <div style={{ backgroundColor: '#111', borderLeft: '1px solid rgba(255,255,255,0.06)', overflowY: 'auto' as const, padding: '28px' }}>
+        <div className="map-sidebar">
 
           {level === 'laos' && (
             <div>

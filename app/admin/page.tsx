@@ -580,7 +580,7 @@ export default function AdminPage() {
   const guideDistrictOptions = guideForm.province ? (PROVINCE_DISTRICTS[guideForm.province] || []) : []
 
   return (
-    <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', padding: '48px 32px' }}>
+    <main className="admin-page-pad" style={{ minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
       <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
 
         {/* Header */}
@@ -624,7 +624,7 @@ export default function AdminPage() {
                 )}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="admin-grid-2">
                 <div>
                   <label style={labelStyle}>Title (EN) *</label>
                   <input value={form.title_en} onChange={e => setForm({ ...form, title_en: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') })} placeholder="e.g. Katamtoy Waterfall" style={inputStyle} />
@@ -640,7 +640,7 @@ export default function AdminPage() {
                 <textarea value={form.excerpt_en} onChange={e => setForm({ ...form, excerpt_en: e.target.value })} placeholder="Brief description..." rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="admin-grid-2">
                 <div>
                   <label style={labelStyle}>Province</label>
                   <select value={form.province} onChange={e => setForm({ ...form, province: e.target.value, district: '', region: e.target.value })} style={inputStyle}>
@@ -659,7 +659,7 @@ export default function AdminPage() {
 
               <div style={{ backgroundColor: 'rgba(201,168,76,0.06)', borderRadius: '8px', padding: '20px', marginBottom: '16px', border: '1px solid rgba(201,168,76,0.15)' }}>
                 <p style={{ color: '#c9a84c', fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '14px' }}>📍 Location Coordinates</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '10px' }}>
+                <div className="admin-grid-2" style={{ marginBottom: '10px' }}>
                   <div>
                     <label style={labelStyle}>Latitude</label>
                     <input value={form.location_lat} onChange={e => setForm({ ...form, location_lat: e.target.value })} placeholder="e.g. 14.8167" style={inputStyle} />
@@ -707,7 +707,7 @@ export default function AdminPage() {
                 )}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="admin-grid-3">
                 <div>
                   <label style={labelStyle}>Transport Price</label>
                   <input value={form.transport_price} onChange={e => setForm({ ...form, transport_price: e.target.value })} placeholder="e.g. 50,000 LAK" style={inputStyle} />
@@ -843,7 +843,7 @@ export default function AdminPage() {
               </div>
 
               {/* Photo + Name row */}
-              <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '24px', marginBottom: '20px', alignItems: 'start' }}>
+              <div className="admin-grid-photo">
                 <div>
                   <label style={labelStyle}>Photo</label>
                   <input type="file" accept="image/*" id="guide-photo-upload" style={{ display: 'none' }}
@@ -870,7 +870,7 @@ export default function AdminPage() {
                     <label style={labelStyle}>Full Name *</label>
                     <input value={guideForm.name} onChange={e => setGuideForm({ ...guideForm, name: e.target.value })} placeholder="Guide's full name" style={inputStyle} />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                  <div className="admin-grid-3" style={{ gap: '12px' }}>
                     <div>
                       <label style={labelStyle}>Experience (yrs)</label>
                       <input type="number" min="0" max="50" value={guideForm.experience_years} onChange={e => setGuideForm({ ...guideForm, experience_years: e.target.value })} placeholder="e.g. 5" style={inputStyle} />

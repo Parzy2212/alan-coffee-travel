@@ -112,27 +112,27 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
 
       {/* NAV */}
       <nav style={{ backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 32px', height: '68px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 20px', height: '68px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)' }}>ALAN</span>
-            <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
+            <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)', flexShrink: 0 }}></span>
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 400, fontSize: '13px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee Travel</span>
           </a>
-          <a href="/" style={{ color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none' }}>← Back</a>
+          <a href="/" style={{ color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', minHeight: '44px', display: 'flex', alignItems: 'center' }}>← Back</a>
         </div>
       </nav>
 
       {/* HERO TEXT */}
-      <section style={{ backgroundColor: 'var(--color-black)', padding: '100px 32px 80px' }}>
+      <section className="hero-section-sm" style={{ backgroundColor: 'var(--color-black)' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+            <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)', flexShrink: 0 }}></div>
             <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{destination.region}</span>
           </div>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '56px', fontWeight: 800, color: 'var(--color-white)', letterSpacing: '-2px', marginBottom: '16px' }}>
+          <h1 className="hero-h1-lg" style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-white)', marginBottom: '16px' }}>
             {destination.title_en}
           </h1>
-          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '20px', lineHeight: 1.6, maxWidth: '640px' }}>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '18px', lineHeight: 1.6, maxWidth: '640px' }}>
             {destination.excerpt_en}
           </p>
         </div>
@@ -173,8 +173,8 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
       )}
 
       {/* CONTENT */}
-      <section style={{ padding: '80px 32px', maxWidth: '900px', margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '64px' }}>
+      <section style={{ padding: '48px 20px', maxWidth: '900px', margin: '0 auto' }}>
+        <div className="grid-detail">
 
           {/* LEFT: description */}
           <div>
@@ -273,7 +273,7 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
             <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '32px', fontWeight: 800, color: 'var(--color-white)', letterSpacing: '-1px', marginBottom: '28px' }}>
               Available Guides
             </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: linkedGuides.length === 1 ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))', gap: '20px' }}>
+            <div className="grid-3" style={{ gap: '16px' }}>
               {linkedGuides.map(g => (
                 <div key={g.id} style={{ backgroundColor: '#111', borderRadius: '12px', padding: '20px', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                   {g.photo_url ? (

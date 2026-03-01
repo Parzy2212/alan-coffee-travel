@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import Navbar from '@/components/Navbar'
 
 type Guide = {
   id: string
@@ -69,34 +70,16 @@ export default function GuidesPage() {
   return (
     <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-black)' }}>
 
-      {/* NAV */}
-      <nav style={{ backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 32px', height: '68px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)' }}>ALAN</span>
-            <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 400, fontSize: '13px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase' }}>Coffee Travel</span>
-          </a>
-          <div style={{ display: 'flex', gap: '36px', alignItems: 'center' }}>
-            <a href="/" style={{ color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', fontWeight: 500 }}>Home</a>
-            <a href="/destinations" style={{ color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', fontWeight: 500 }}>Destinations</a>
-            <a href="/guides" style={{ color: 'var(--color-black)', fontSize: '13px', textDecoration: 'none', fontWeight: 700, borderBottom: '2px solid var(--color-gold)', paddingBottom: '2px' }}>Guides</a>
-            <a href="/about" style={{ color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', fontWeight: 500 }}>About</a>
-          </div>
-          <a href="/contact" style={{ backgroundColor: 'var(--color-black)', color: 'var(--color-gold)', padding: '10px 24px', borderRadius: '4px', textDecoration: 'none', fontWeight: 600, fontSize: '13px', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            Contact
-          </a>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* HERO */}
-      <section style={{ backgroundColor: 'var(--color-black)', padding: '100px 32px 80px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <section className="hero-section-sm" style={{ backgroundColor: 'var(--color-black)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
             <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
             <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' }}>Local Expertise</span>
           </div>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '56px', fontWeight: 800, color: 'var(--color-white)', letterSpacing: '-2px', marginBottom: '16px' }}>
+          <h1 className="hero-h1-lg" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, color: 'var(--color-white)', marginBottom: '16px' }}>
             Find Your Guide
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '18px', lineHeight: 1.6, maxWidth: '560px' }}>
@@ -106,13 +89,14 @@ export default function GuidesPage() {
       </section>
 
       {/* FILTERS */}
-      <section style={{ backgroundColor: '#0d0d0d', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '24px 32px' }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <select value={province} onChange={e => setProvince(e.target.value)} style={selectStyle}>
+      <section style={{ backgroundColor: '#0d0d0d', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '16px 20px' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+        <div className="filter-row">
+          <select value={province} onChange={e => setProvince(e.target.value)} className="filter-select" style={selectStyle}>
             <option value="all">All Provinces</option>
             {provinces.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
-          <select value={language} onChange={e => setLanguage(e.target.value)} style={selectStyle}>
+          <select value={language} onChange={e => setLanguage(e.target.value)} className="filter-select" style={selectStyle}>
             <option value="all">All Languages</option>
             {languages.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
@@ -120,10 +104,11 @@ export default function GuidesPage() {
             {loading ? '…' : `${filtered.length} guide${filtered.length !== 1 ? 's' : ''}`}
           </span>
         </div>
+        </div>
       </section>
 
       {/* GRID */}
-      <section style={{ padding: '64px 32px', maxWidth: '1280px', margin: '0 auto' }}>
+      <section style={{ padding: '48px 20px', maxWidth: '1280px', margin: '0 auto' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '120px 0' }}>
             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px', letterSpacing: '2px', textTransform: 'uppercase' }}>Loading…</p>
@@ -135,7 +120,7 @@ export default function GuidesPage() {
             <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>Try adjusting your filters.</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '28px' }}>
+          <div className="grid-3">
             {filtered.map(g => (
               <div key={g.id} style={{ backgroundColor: '#111', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column' }}>
 
@@ -260,20 +245,22 @@ export default function GuidesPage() {
       </section>
 
       {/* FOOTER */}
-      <footer style={{ backgroundColor: 'var(--color-black-soft)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '48px 32px' }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '18px', color: 'white' }}>ALAN</span>
-              <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
-              <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>Coffee & Travel</span>
+      <footer style={{ backgroundColor: 'var(--color-black-soft)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '40px 20px' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+          <div className="footer-layout">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '18px', color: 'white' }}>ALAN</span>
+                <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
+                <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>Coffee & Travel</span>
+              </div>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>© 2025 Alan Coffee & Travel — Attapeu, Laos</p>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>© 2025 Alan Coffee & Travel — Attapeu, Laos</p>
-          </div>
-          <div style={{ display: 'flex', gap: '32px' }}>
-            {[{ label: 'Destinations', href: '/destinations' }, { label: 'Guides', href: '/guides' }, { label: 'About', href: '/about' }, { label: 'Contact', href: '/contact' }].map(item => (
-              <a key={item.label} href={item.href} style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
-            ))}
+            <div className="footer-links">
+              {[{ label: 'Destinations', href: '/destinations' }, { label: 'Guides', href: '/guides' }, { label: 'About', href: '/about' }, { label: 'Contact', href: '/contact' }].map(item => (
+                <a key={item.label} href={item.href} style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
+              ))}
+            </div>
           </div>
         </div>
       </footer>
