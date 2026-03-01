@@ -101,6 +101,12 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
   const isAssessed = destination.assessment_status === 'assessed'
   const ratedDims = RATINGS.filter(d => destination[d.key] != null && destination[d.key] > 0)
 
+  const { data: guideRows } = await supabase
+    .from('guide_destinations')
+    .select('guides(*)')
+    .eq('destination_id', destination.id)
+  const linkedGuides: any[] = (guideRows ?? []).map((r: any) => r.guides).filter(Boolean)
+
   return (
     <main style={{ minHeight: '100vh', backgroundColor: 'var(--background)' }}>
 
@@ -255,6 +261,60 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
           </div>
         </div>
       </section>
+
+      {/* AVAILABLE GUIDES */}
+      {linkedGuides.length > 0 && (
+        <section style={{ backgroundColor: '#0d0d0d', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '64px 32px' }}>
+          <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
+              <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
+              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>Local Expertise</span>
+            </div>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '32px', fontWeight: 800, color: 'var(--color-white)', letterSpacing: '-1px', marginBottom: '28px' }}>
+              Available Guides
+            </h2>
+            <div style={{ display: 'grid', gridTemplateColumns: linkedGuides.length === 1 ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))', gap: '20px' }}>
+              {linkedGuides.map(g => (
+                <div key={g.id} style={{ backgroundColor: '#111', borderRadius: '12px', padding: '20px', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                  {g.photo_url ? (
+                    <img src={g.photo_url} alt={g.name} style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(201,168,76,0.35)', flexShrink: 0 }} />
+                  ) : (
+                    <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 }}>👤</div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' as const }}>
+                      <p style={{ color: 'var(--color-white)', fontWeight: 700, fontSize: '15px', margin: 0 }}>{g.name}</p>
+                      {g.is_verified && <span style={{ backgroundColor: 'rgba(201,168,76,0.12)', color: '#c9a84c', padding: '2px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700 }}>✓ Verified</span>}
+                    </div>
+                    {(g.languages ?? []).length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '4px', marginBottom: '10px' }}>
+                        {(g.languages ?? []).map((l: string) => (
+                          <span key={l} style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: '#c9a84c', padding: '2px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 600 }}>{l}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const }}>
+                      {g.phone && (
+                        <a href={`tel:${g.phone}`} style={{ backgroundColor: '#c9a84c', color: '#000', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                          📞 Call
+                        </a>
+                      )}
+                      {g.facebook && (
+                        <a href={g.facebook} target="_blank" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
+                          Facebook
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '12px', marginTop: '20px' }}>
+              More guides available at <a href="/guides" style={{ color: '#c9a84c' }}>Alan Café · Attapeu</a>
+            </p>
+          </div>
+        </section>
+      )}
 
       <footer style={{ backgroundColor: 'var(--color-black)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '40px 32px', textAlign: 'center' as const }}>
         <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>© 2025 Alan Coffee Travel Platform</p>

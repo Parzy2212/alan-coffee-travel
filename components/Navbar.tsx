@@ -6,6 +6,9 @@ export default function Navbar() {
 
   const links = [
     { href: '/', label: 'Home' },
+    { href: '/destinations', label: 'Destinations' },
+    { href: '/guides', label: 'Guides' },
+    { href: '/map', label: 'Map' },
     { href: '/about', label: 'About' },
     { href: '/contact', label: 'Contact' },
   ]
