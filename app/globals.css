@@ -441,6 +441,52 @@ button, a {
   min-width: 48px;
 }
 
+/* ─── Homepage animations ─────────────────────────────────── */
+
+@keyframes scrollBounce {
+  0%, 100% { opacity: 0.4; transform: translateX(-50%) translateY(0); }
+  50%       { opacity: 0.8; transform: translateX(-50%) translateY(7px); }
+}
+
+@keyframes heroPulse {
+  0%, 100% { opacity: 0.08; }
+  50%       { opacity: 0.14; }
+}
+
+/* Scroll-triggered fade-up */
+.fade-up {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity  0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    transform 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.fade-up.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Stats bar — 2 cols mobile → 4 cols desktop */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 32px 16px;
+}
+@media (min-width: 640px) {
+  .stat-grid { grid-template-columns: repeat(4, 1fr); gap: 0; }
+}
+
+/* Homepage footer grid — stacked → 2 col */
+.footer-full {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+  margin-bottom: 40px;
+}
+@media (min-width: 768px) {
+  .footer-full { grid-template-columns: 1.4fr 1fr; gap: 80px; }
+}
+
 /* ─── Skeleton loading ─────────────────────────────────────── */
 
 @keyframes skeleton-shimmer {
