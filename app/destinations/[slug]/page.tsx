@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import Navbar from '@/components/Navbar'
 
 const RATINGS = [
   {
@@ -110,17 +111,7 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
   return (
     <main style={{ minHeight: '100vh', backgroundColor: 'var(--background)' }}>
 
-      {/* NAV */}
-      <nav style={{ backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 20px', height: '68px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)' }}>ALAN</span>
-            <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)', flexShrink: 0 }}></span>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 400, fontSize: '13px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee Travel</span>
-          </a>
-          <a href="/" style={{ color: 'var(--color-gray-600)', fontSize: '13px', textDecoration: 'none', minHeight: '44px', display: 'flex', alignItems: 'center' }}>← Back</a>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* HERO TEXT */}
       <section className="hero-section-sm" style={{ backgroundColor: 'var(--color-black)' }}>

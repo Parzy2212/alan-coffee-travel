@@ -1,10 +1,11 @@
 @import "tailwindcss";
 
+/* ─── Design tokens ───────────────────────────────────────── */
+
 :root {
   --font-heading: 'Plus Jakarta Sans', sans-serif;
   --font-body: 'Inter', sans-serif;
 
-  /* Alan Coffee — Warm White + Wood + Black + Gold */
   --color-black:        #0f0f0f;
   --color-black-soft:   #1a1a1a;
   --color-black-muted:  #2d2d2d;
@@ -47,37 +48,41 @@ h1, h2, h3, h4, h5, h6 {
 .nav-inner {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 24px;
   height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+@media (min-width: 1024px) {
+  .nav-inner { padding: 0 48px; }
+}
 
+/* Desktop links — hidden below 1024px so tablets get hamburger */
 .nav-links-desktop {
   display: none;
-  gap: 28px;
   align-items: center;
 }
-@media (min-width: 768px) {
-  .nav-links-desktop { display: flex; gap: 32px; }
+@media (min-width: 1024px) {
+  .nav-links-desktop { display: flex; gap: 36px; }
 }
 
+/* Hamburger — hidden at 1024px+ */
 .nav-hamburger {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 48px;
+  min-height: 48px;
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .nav-hamburger { display: none; }
 }
 
 .nav-contact-btn {
   display: none;
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .nav-contact-btn { display: inline-block; }
 }
 
@@ -89,126 +94,170 @@ h1, h2, h3, h4, h5, h6 {
   right: 0;
   background-color: var(--color-white);
   border-bottom: 1px solid var(--color-cream-border);
-  padding: 8px 20px 24px;
+  padding: 16px 24px 32px;
   flex-direction: column;
   z-index: 49;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.1);
 }
 .nav-mobile-menu.open {
   display: flex;
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .nav-mobile-menu { display: none !important; }
 }
 
 /* ─── Hero sections ───────────────────────────────────────── */
 
+/* Full hero — homepage */
 .hero-section {
-  padding: 72px 20px 56px;
+  padding: 88px 24px 72px;
   position: relative;
   overflow: hidden;
 }
-@media (min-width: 640px) {
-  .hero-section { padding: 100px 32px 80px; }
+@media (min-width: 768px) {
+  .hero-section { padding: 120px 40px 100px; }
 }
 @media (min-width: 1024px) {
-  .hero-section { padding: 140px 32px; }
+  .hero-section { padding: 160px 56px 140px; }
 }
 
+/* Smaller hero — inner pages */
 .hero-section-sm {
-  padding: 64px 20px 48px;
+  padding: 72px 24px 56px;
 }
-@media (min-width: 640px) {
-  .hero-section-sm { padding: 80px 32px 64px; }
+@media (min-width: 768px) {
+  .hero-section-sm { padding: 96px 40px 80px; }
 }
 @media (min-width: 1024px) {
-  .hero-section-sm { padding: 100px 32px 80px; }
+  .hero-section-sm { padding: 120px 56px 96px; }
 }
 
-/* Responsive hero font sizes via clamp */
+/* ─── Fluid typography ────────────────────────────────────── */
+
+/* Homepage hero h1 */
 .hero-h1 {
-  font-size: clamp(32px, 7vw, 64px);
+  font-size: clamp(42px, 5.5vw, 80px);
   font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -1.5px;
-}
-@media (min-width: 1024px) {
-  .hero-h1 { letter-spacing: -2px; }
+  line-height: 1.05;
+  letter-spacing: -0.035em;
 }
 
+/* Inner page hero h1 (destinations, guides) */
 .hero-h1-lg {
-  font-size: clamp(28px, 6vw, 56px);
+  font-size: clamp(38px, 5vw, 72px);
   font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -1px;
-}
-@media (min-width: 1024px) {
-  .hero-h1-lg { letter-spacing: -2px; }
+  line-height: 1.07;
+  letter-spacing: -0.03em;
 }
 
+/* Map / smaller hero */
 .hero-h1-md {
-  font-size: clamp(24px, 5vw, 40px);
+  font-size: clamp(28px, 4vw, 48px);
   font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -0.5px;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+
+/* About/contact page h1 */
+.page-h1 {
+  font-size: clamp(38px, 5vw, 68px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  margin-bottom: 28px;
+}
+
+/* Section h2 on dark/light editorial pages */
+.page-h2 {
+  font-size: clamp(26px, 3.5vw, 44px);
+  font-weight: 800;
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+  margin-bottom: 24px;
 }
 
 /* ─── Section padding ─────────────────────────────────────── */
 
 .section-pad {
-  padding: 56px 20px;
+  padding: 64px 24px;
 }
-@media (min-width: 640px) {
-  .section-pad { padding: 80px 32px; }
+@media (min-width: 768px) {
+  .section-pad { padding: 88px 40px; }
 }
 @media (min-width: 1024px) {
-  .section-pad { padding: 100px 32px; }
+  .section-pad { padding: 112px 56px; }
+}
+
+/* Editorial text sections (about page body) */
+.prose-section {
+  padding: 72px 24px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+@media (min-width: 768px) {
+  .prose-section { padding: 96px 40px; }
+}
+@media (min-width: 1024px) {
+  .prose-section { padding: 120px 56px; }
 }
 
 .px-page {
-  padding-left: 20px;
-  padding-right: 20px;
+  padding-left: 24px;
+  padding-right: 24px;
 }
-@media (min-width: 640px) {
-  .px-page { padding-left: 32px; padding-right: 32px; }
+@media (min-width: 768px) {
+  .px-page { padding-left: 40px; padding-right: 40px; }
+}
+@media (min-width: 1024px) {
+  .px-page { padding-left: 56px; padding-right: 56px; }
 }
 
 /* ─── Responsive grids ────────────────────────────────────── */
 
-/* 3-column card grids (destinations, guides) */
+/* 3-col card grids */
 .grid-3 {
   display: grid;
   grid-template-columns: 1fr;
   gap: 20px;
 }
-@media (min-width: 580px) {
-  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 640px) {
+  .grid-3 { grid-template-columns: repeat(2, 1fr); gap: 24px; }
 }
 @media (min-width: 1024px) {
-  .grid-3 { grid-template-columns: repeat(3, 1fr); gap: 28px; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); gap: 32px; }
 }
 
-/* 4-column feature grids */
+/* 4-col feature grids — 2 cols on mobile already */
 .grid-4 {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
 }
-@media (min-width: 580px) {
-  .grid-4 { grid-template-columns: repeat(2, 1fr); gap: 20px; }
-}
 @media (min-width: 1024px) {
-  .grid-4 { grid-template-columns: repeat(4, 1fr); gap: 32px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); gap: 28px; }
 }
 
-/* Destination detail: description (2fr) + sidebar (1fr) */
+/* Destination detail: wide content + narrow sidebar */
 .grid-detail {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 40px;
+  gap: 48px;
 }
-@media (min-width: 860px) {
-  .grid-detail { grid-template-columns: 2fr 1fr; gap: 64px; }
+@media (min-width: 900px) {
+  .grid-detail { grid-template-columns: 1.8fr 1fr; gap: 72px; }
+}
+
+/* 2-col content grid (contact page) */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+}
+@media (min-width: 768px) {
+  .grid-2 { grid-template-columns: 1fr 1fr; gap: 64px; }
+}
+@media (min-width: 1024px) {
+  .grid-2 { grid-template-columns: 1fr 1fr; gap: 88px; }
 }
 
 /* ─── Flexible rows ───────────────────────────────────────── */
@@ -225,11 +274,19 @@ h1, h2, h3, h4, h5, h6 {
 .section-header {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   margin-bottom: 40px;
 }
-@media (min-width: 640px) {
-  .section-header { flex-direction: row; align-items: flex-end; justify-content: space-between; margin-bottom: 56px; }
+@media (min-width: 768px) {
+  .section-header {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 52px;
+  }
+}
+@media (min-width: 1024px) {
+  .section-header { margin-bottom: 60px; }
 }
 
 .filter-row {
@@ -237,16 +294,17 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   gap: 12px;
 }
-@media (min-width: 640px) {
-  .filter-row { flex-direction: row; flex-wrap: wrap; align-items: center; }
+@media (min-width: 768px) {
+  .filter-row { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px; }
 }
 
 .filter-select {
   width: 100%;
-  min-height: 44px;
+  min-height: 48px;
+  box-sizing: border-box;
 }
-@media (min-width: 640px) {
-  .filter-select { width: auto; min-width: 160px; }
+@media (min-width: 768px) {
+  .filter-select { width: auto; min-width: 160px; min-height: 44px; }
 }
 
 /* ─── Footer ──────────────────────────────────────────────── */
@@ -254,10 +312,14 @@ h1, h2, h3, h4, h5, h6 {
 .footer-layout {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
 }
-@media (min-width: 640px) {
-  .footer-layout { flex-direction: row; justify-content: space-between; align-items: center; }
+@media (min-width: 768px) {
+  .footer-layout {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
 }
 
 .footer-links {
@@ -265,31 +327,32 @@ h1, h2, h3, h4, h5, h6 {
   flex-wrap: wrap;
   gap: 20px;
 }
-@media (min-width: 640px) {
-  .footer-links { gap: 32px; }
+@media (min-width: 768px) {
+  .footer-links { gap: 36px; }
 }
 
 /* ─── Map page ────────────────────────────────────────────── */
 
+/* Stack on mobile/tablet, side-by-side on desktop */
 .map-layout {
   display: flex;
   flex-direction: column;
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .map-layout {
     display: grid;
-    grid-template-columns: 1fr 360px;
+    grid-template-columns: 1fr 380px;
     height: calc(100vh - 148px);
   }
 }
 
 .map-container {
-  height: 50vh;
-  min-height: 280px;
+  height: 55vh;
+  min-height: 320px;
   position: relative;
   overflow: hidden;
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .map-container { height: 100%; min-height: 0; }
 }
 
@@ -297,14 +360,14 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #111;
   border-top: 1px solid rgba(255,255,255,0.06);
   overflow-y: auto;
-  padding: 20px;
-  max-height: 45vh;
+  padding: 24px;
+  max-height: 44vh;
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .map-sidebar {
     border-left: 1px solid rgba(255,255,255,0.06);
     border-top: none;
-    padding: 28px;
+    padding: 32px;
     max-height: none;
   }
 }
@@ -316,16 +379,20 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   gap: 12px;
 }
-@media (min-width: 640px) {
-  .map-header-inner { flex-direction: row; align-items: center; justify-content: space-between; }
+@media (min-width: 768px) {
+  .map-header-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
 }
 
-/* ─── Admin form ──────────────────────────────────────────── */
+/* ─── Admin panel ─────────────────────────────────────────── */
 
 .admin-page-pad {
-  padding: 28px 16px;
+  padding: 32px 20px;
 }
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .admin-page-pad { padding: 48px 32px; }
 }
 
@@ -335,7 +402,7 @@ h1, h2, h3, h4, h5, h6 {
   gap: 16px;
   margin-bottom: 16px;
 }
-@media (min-width: 540px) {
+@media (min-width: 560px) {
   .admin-grid-2 { grid-template-columns: 1fr 1fr; }
 }
 
@@ -345,13 +412,16 @@ h1, h2, h3, h4, h5, h6 {
   gap: 16px;
   margin-bottom: 16px;
 }
-@media (min-width: 540px) {
+@media (min-width: 560px) {
+  .admin-grid-3 { grid-template-columns: 1fr 1fr; }
+}
+@media (min-width: 960px) {
   .admin-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
 }
 
 .admin-grid-photo {
   display: grid;
-  grid-template-columns: 80px 1fr;
+  grid-template-columns: 72px 1fr;
   gap: 16px;
   margin-bottom: 20px;
   align-items: start;
@@ -367,6 +437,6 @@ button, a {
 }
 
 .touch-btn {
-  min-height: 44px;
-  min-width: 44px;
+  min-height: 48px;
+  min-width: 48px;
 }
