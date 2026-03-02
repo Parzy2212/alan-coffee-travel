@@ -22,6 +22,7 @@ type Guide = {
 export default function GuidesPage() {
   const [guides, setGuides] = useState<Guide[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [province, setProvince] = useState('all')
   const [language, setLanguage] = useState('all')
 
@@ -31,7 +32,8 @@ export default function GuidesPage() {
       .select('*')
       .eq('status', 'active')
       .order('is_verified', { ascending: false })
-      .then(({ data }) => {
+      .then(({ data, error: err }) => {
+        if (err) { setError('Unable to load guides. Please try again.'); setLoading(false); return }
         setGuides((data as Guide[]) ?? [])
         setLoading(false)
       })
@@ -110,8 +112,32 @@ export default function GuidesPage() {
       {/* GRID */}
       <section style={{ padding: '48px 20px', maxWidth: '1280px', margin: '0 auto' }}>
         {loading ? (
+          <div className="grid-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ backgroundColor: '#111', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.07)', padding: '28px 24px' }}>
+                <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
+                  <div className="skeleton" style={{ width: '72px', height: '72px', borderRadius: '50%', flexShrink: 0 }} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '8px' }}>
+                    <div className="skeleton" style={{ height: '18px', width: '55%' }} />
+                    <div className="skeleton" style={{ height: '14px', width: '40%' }} />
+                  </div>
+                </div>
+                <div className="skeleton" style={{ height: '1px', marginBottom: '16px' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '8px' }}>
+                  <div className="skeleton" style={{ height: '14px', width: '100%' }} />
+                  <div className="skeleton" style={{ height: '14px', width: '80%' }} />
+                  <div className="skeleton" style={{ height: '14px', width: '60%' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : error ? (
           <div style={{ textAlign: 'center', padding: '120px 0' }}>
-            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px', letterSpacing: '2px', textTransform: 'uppercase' }}>Loading…</p>
+            <div style={{ fontSize: '40px', marginBottom: '16px' }}>⚠️</div>
+            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '16px', marginBottom: '20px' }}>{error}</p>
+            <button onClick={() => window.location.reload()} style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}>
+              Try Again
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '120px 0' }}>

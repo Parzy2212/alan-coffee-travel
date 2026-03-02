@@ -39,6 +39,7 @@ function avgRating(d: Destination): number | null {
 export default function DestinationsPage() {
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [province, setProvince] = useState('all')
   const [assessment, setAssessment] = useState('all')
@@ -49,7 +50,8 @@ export default function DestinationsPage() {
       .select('*')
       .eq('status', 'active')
       .order('featured', { ascending: false })
-      .then(({ data }) => {
+      .then(({ data, error: err }) => {
+        if (err) { setError('Unable to load destinations. Please try again.'); setLoading(false); return }
         setDestinations((data as Destination[]) ?? [])
         setLoading(false)
       })
@@ -137,8 +139,29 @@ export default function DestinationsPage() {
       <section style={{ padding: '48px 20px', maxWidth: '1280px', margin: '0 auto' }}>
 
         {loading ? (
+          <div className="grid-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ borderRadius: '8px', overflow: 'hidden', backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div className="skeleton" style={{ height: '220px' }} />
+                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div className="skeleton" style={{ height: '22px', width: '80px', borderRadius: '999px' }} />
+                    <div className="skeleton" style={{ height: '22px', width: '60px', borderRadius: '999px' }} />
+                  </div>
+                  <div className="skeleton" style={{ height: '24px', width: '75%' }} />
+                  <div className="skeleton" style={{ height: '14px', width: '100%' }} />
+                  <div className="skeleton" style={{ height: '14px', width: '65%' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : error ? (
           <div style={{ textAlign: 'center', padding: '120px 0' }}>
-            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px', letterSpacing: '2px', textTransform: 'uppercase' }}>Loading…</p>
+            <div style={{ fontSize: '40px', marginBottom: '16px' }}>⚠️</div>
+            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '16px', marginBottom: '20px' }}>{error}</p>
+            <button onClick={() => window.location.reload()} style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}>
+              Try Again
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '120px 0' }}>

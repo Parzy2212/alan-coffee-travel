@@ -113,6 +113,15 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
 
       <Navbar />
 
+      {/* BREADCRUMB */}
+      <div style={{ backgroundColor: 'var(--color-black)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '12px 24px' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <a href="/destinations" style={{ color: 'rgba(255,255,255,0.35)', fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px', transition: 'color 0.15s' }}>
+            ← All Destinations
+          </a>
+        </div>
+      </div>
+
       {/* HERO TEXT */}
       <section className="hero-section-sm" style={{ backgroundColor: 'var(--color-black)' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
@@ -246,9 +255,9 @@ export default async function DestinationPage({ params }: { params: Promise<{ sl
             )}
 
             {/* Book button */}
-            <button style={{ width: '100%', backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '16px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '14px', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' as const }}>
+            <a href="/contact" style={{ display: 'block', width: '100%', backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none', textAlign: 'center' as const, boxSizing: 'border-box' as const }}>
               Book Experience
-            </button>
+            </a>
           </div>
         </div>
       </section>

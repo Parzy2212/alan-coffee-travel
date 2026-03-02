@@ -77,8 +77,20 @@ export default function MapPage() {
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
 
+      {/* TOP NAV BAR */}
+      <div style={{ backgroundColor: 'var(--color-black)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '0 20px', height: '52px', display: 'flex', alignItems: 'center' }}>
+        <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
+          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '16px', color: 'var(--color-white)' }}>ALAN</span>
+          <span style={{ width: '3px', height: '3px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
+          <span style={{ color: 'var(--color-gray-400)', fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
+        </a>
+        <a href="/destinations" style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          All Destinations →
+        </a>
+      </div>
+
       {/* HEADER */}
-      <section style={{ backgroundColor: 'var(--color-black)', padding: '28px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <section style={{ backgroundColor: 'var(--color-black)', padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="map-header-inner">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
@@ -187,7 +199,11 @@ export default function MapPage() {
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px' }}>Click a pin on the map to view details</p>
 
               {loading ? (
-                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>Loading...</p>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '10px' }}>
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="skeleton" style={{ height: '90px', borderRadius: '8px' }} />
+                  ))}
+                </div>
               ) : destinations.length === 0 ? (
                 <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '24px', textAlign: 'center' as const, border: '1px solid rgba(255,255,255,0.06)' }}>
                   <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '13px', lineHeight: 1.7 }}>No destinations yet.<br />Add via Admin Panel.</p>
