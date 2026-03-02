@@ -301,7 +301,7 @@ function toggleArr<T>(arr: T[], item: T): T[] {
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'destinations' | 'guides'>('destinations')
+  const [tab, setTab] = useState<'destinations' | 'guides' | 'settings'>('destinations')
 
   // ── Destination state ──────────────────────────────────────
   const [destinations, setDestinations] = useState<any[]>([])
@@ -325,11 +325,69 @@ export default function AdminPage() {
   const [deleteGuideId, setDeleteGuideId] = useState<string | null>(null)
   const [guideUploading, setGuideUploading] = useState(false)
 
-  useEffect(() => { fetchAll(); fetchGuides() }, [])
+  // ── Site Settings state ────────────────────────────────────
+  const [heroImageUrl, setHeroImageUrl] = useState('')
+  const [heroImageFile, setHeroImageFile] = useState<File | null>(null)
+  const [heroImagePreview, setHeroImagePreview] = useState('')
+  const [settingsMsg, setSettingsMsg] = useState('')
+  const [settingsUploading, setSettingsUploading] = useState(false)
+
+  useEffect(() => { fetchAll(); fetchGuides(); fetchSiteSettings() }, [])
 
   useEffect(() => {
     return () => { imagePreviews.forEach(url => URL.revokeObjectURL(url)) }
   }, [imagePreviews])
+
+  // ── Site Settings functions ────────────────────────────────
+  async function fetchSiteSettings() {
+    const { data } = await supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'hero_image_url')
+      .maybeSingle()
+    if (data?.value) setHeroImageUrl(data.value)
+  }
+
+  async function uploadHeroImage() {
+    if (!heroImageFile) return
+    setSettingsUploading(true)
+    setSettingsMsg('')
+    try {
+      const ext = heroImageFile.name.split('.').pop() ?? 'jpg'
+      const path = `hero.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('site-assets')
+        .upload(path, heroImageFile, { upsert: true })
+      if (uploadError) throw uploadError
+      const { data: { publicUrl } } = supabase.storage.from('site-assets').getPublicUrl(path)
+      const { error: dbError } = await supabase
+        .from('site_settings')
+        .upsert({ key: 'hero_image_url', value: publicUrl })
+      if (dbError) throw dbError
+      setHeroImageUrl(publicUrl)
+      setHeroImageFile(null)
+      setHeroImagePreview('')
+      setSettingsMsg('Hero image updated successfully!')
+    } catch (err: any) {
+      setSettingsMsg('Error: ' + err.message)
+    } finally {
+      setSettingsUploading(false)
+    }
+  }
+
+  async function removeHeroImage() {
+    setSettingsUploading(true)
+    setSettingsMsg('')
+    try {
+      await supabase.from('site_settings').upsert({ key: 'hero_image_url', value: '' })
+      setHeroImageUrl('')
+      setSettingsMsg('Hero image removed. Homepage will use gradient background.')
+    } catch (err: any) {
+      setSettingsMsg('Error: ' + err.message)
+    } finally {
+      setSettingsUploading(false)
+    }
+  }
 
   // ── Destination functions ──────────────────────────────────
   async function fetchAll() {
@@ -605,7 +663,7 @@ export default function AdminPage() {
 
         {/* Tab switcher */}
         <div style={{ display: 'flex', marginBottom: '36px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          {(['destinations', 'guides'] as const).map(t => (
+          {(['destinations', 'guides', 'settings'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
               padding: '12px 28px', background: 'none', border: 'none', cursor: 'pointer',
               borderBottom: tab === t ? '2px solid #c9a84c' : '2px solid transparent',
@@ -613,7 +671,7 @@ export default function AdminPage() {
               fontWeight: tab === t ? 700 : 500, fontSize: '14px',
               letterSpacing: '0.5px', marginBottom: '-1px',
             }}>
-              {t === 'destinations' ? `Destinations (${destinations.length})` : `Guides (${guides.length})`}
+              {t === 'destinations' ? `Destinations (${destinations.length})` : t === 'guides' ? `Guides (${guides.length})` : 'Site Settings'}
             </button>
           ))}
         </div>
@@ -1051,6 +1109,126 @@ export default function AdminPage() {
               </div>
             </div>
           </>
+        )}
+
+        {/* ═══════════════════════════════════════════════════
+            SITE SETTINGS TAB
+        ═══════════════════════════════════════════════════ */}
+        {tab === 'settings' && (
+          <div style={{ backgroundColor: '#111', borderRadius: '12px', padding: '32px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <h2 style={{ color: '#c9a84c', fontSize: '16px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>
+              Site Settings
+            </h2>
+            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px', marginBottom: '32px' }}>
+              Manage site-wide assets and configuration.
+            </p>
+
+            {/* ── Hero Image ─────────────────────────────── */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '28px' }}>
+              <h3 style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>
+                Homepage Hero Image
+              </h3>
+              <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: '12px', lineHeight: 1.65, marginBottom: '24px', maxWidth: '540px' }}>
+                This image fills the full-screen hero section on the homepage. A dark overlay is applied automatically so text stays readable.
+                Recommended: 1920×1080px or wider, landscape orientation, JPG or WebP.
+              </p>
+
+              {/* Current image preview */}
+              {heroImageUrl ? (
+                <div style={{ marginBottom: '28px' }}>
+                  <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>
+                    Current Hero Image
+                  </p>
+                  <div style={{ position: 'relative', maxWidth: '600px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <img src={heroImageUrl} alt="Current hero" style={{ width: '100%', maxHeight: '300px', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.65) 100%)', display: 'flex', alignItems: 'flex-end', padding: '14px 16px' }}>
+                      <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: '11px', fontWeight: 500, letterSpacing: '0.5px' }}>
+                        ✓ Live on homepage
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginBottom: '28px', padding: '28px 20px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
+                  <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: '13px', margin: 0 }}>
+                    No hero image set — homepage displays gradient background
+                  </p>
+                </div>
+              )}
+
+              {/* Upload new */}
+              <div style={{ marginBottom: '24px' }}>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>
+                  {heroImageUrl ? 'Replace Image' : 'Upload Image'}
+                </p>
+                <input
+                  type="file" accept="image/*" id="hero-image-upload"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0] ?? null
+                    setHeroImageFile(file)
+                    setHeroImagePreview(file ? URL.createObjectURL(file) : '')
+                  }}
+                />
+                <label htmlFor="hero-image-upload" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '8px',
+                  cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.06)',
+                  color: 'rgba(255,255,255,0.6)', padding: '10px 20px',
+                  borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)',
+                  fontSize: '13px', fontWeight: 500,
+                }}>
+                  Choose File
+                </label>
+                {heroImageFile && (
+                  <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginLeft: '12px' }}>
+                    {heroImageFile.name}
+                  </span>
+                )}
+
+                {/* New image preview */}
+                {heroImagePreview && (
+                  <div style={{ marginTop: '16px', maxWidth: '600px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(201,168,76,0.25)' }}>
+                    <img src={heroImagePreview} alt="Preview" style={{ width: '100%', maxHeight: '280px', objectFit: 'cover', display: 'block' }} />
+                    <p style={{ backgroundColor: 'rgba(201,168,76,0.06)', color: 'rgba(255,255,255,0.35)', fontSize: '11px', padding: '8px 14px', margin: 0, letterSpacing: '0.5px' }}>
+                      Preview — not yet saved
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  disabled={!heroImageFile || settingsUploading}
+                  onClick={uploadHeroImage}
+                  style={{
+                    backgroundColor: heroImageFile && !settingsUploading ? '#c9a84c' : 'rgba(201,168,76,0.15)',
+                    color: heroImageFile && !settingsUploading ? '#0a0a0a' : 'rgba(201,168,76,0.35)',
+                    padding: '11px 32px', borderRadius: '6px', border: 'none',
+                    fontSize: '13px', fontWeight: 700, letterSpacing: '0.5px',
+                    cursor: heroImageFile && !settingsUploading ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  {settingsUploading ? 'Uploading…' : 'Save Hero Image'}
+                </button>
+                {heroImageUrl && (
+                  <button
+                    disabled={settingsUploading}
+                    onClick={removeHeroImage}
+                    style={{ backgroundColor: 'rgba(192,57,43,0.1)', color: '#e74c3c', padding: '11px 20px', borderRadius: '6px', border: '1px solid rgba(192,57,43,0.25)', fontSize: '13px', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Remove Image
+                  </button>
+                )}
+              </div>
+
+              {settingsMsg && (
+                <p style={{ marginTop: '16px', color: settingsMsg.startsWith('Error') ? '#e74c3c' : '#4caf50', fontSize: '13px', fontWeight: 600 }}>
+                  {settingsMsg}
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
       </div>

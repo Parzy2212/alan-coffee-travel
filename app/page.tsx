@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 }
 
 export default async function Home() {
-  const [{ data: destinations }, { data: guides }] = await Promise.all([
+  const [{ data: destinations }, { data: guides }, { data: heroSetting }] = await Promise.all([
     supabase
       .from('destinations')
       .select('id,slug,title_en,excerpt_en,region,image_urls,assessment_status,rating_experience,rating_accessibility,rating_authenticity,rating_tranquility,rating_traveler_value,featured')
@@ -37,7 +37,14 @@ export default async function Home() {
       .eq('status', 'active')
       .eq('is_verified', true)
       .limit(3),
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'hero_image_url')
+      .maybeSingle(),
   ])
 
-  return <HomeClient destinations={destinations ?? []} guides={guides ?? []} />
+  const heroImageUrl = heroSetting?.value || null
+
+  return <HomeClient destinations={destinations ?? []} guides={guides ?? []} heroImageUrl={heroImageUrl} />
 }

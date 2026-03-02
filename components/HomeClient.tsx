@@ -67,9 +67,11 @@ const FOOTER_LINKS = [
 export default function HomeClient({
   destinations,
   guides,
+  heroImageUrl,
 }: {
   destinations: Destination[]
   guides: Guide[]
+  heroImageUrl: string | null
 }) {
   // Scroll-triggered fade-up animation
   useEffect(() => {
@@ -106,6 +108,10 @@ export default function HomeClient({
       <section style={{
         minHeight: '100vh',
         backgroundColor: '#0a0a0a',
+        backgroundImage: heroImageUrl ? `url(${heroImageUrl})` : 'none',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
@@ -113,7 +119,15 @@ export default function HomeClient({
         overflow: 'hidden',
         padding: 'clamp(100px, 14vw, 160px) clamp(24px, 4vw, 56px) 80px',
       }}>
-        {/* Gold radial glow — top right */}
+        {/* Dark overlay — always shown over image, lighter otherwise */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: heroImageUrl
+            ? 'linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.42) 50%, rgba(0,0,0,0.72) 100%)'
+            : 'none',
+          pointerEvents: 'none',
+        }} />
+        {/* Gold radial glow — top right (visible with or without image) */}
         <div style={{
           position: 'absolute', top: '-10%', right: '-8%',
           width: '65%', height: '80%',
