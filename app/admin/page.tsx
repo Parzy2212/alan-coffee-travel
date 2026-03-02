@@ -589,7 +589,18 @@ export default function AdminPage() {
             <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '32px', fontWeight: 800, color: 'white', letterSpacing: '-1px' }}>Admin Panel</h1>
             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px', marginTop: '4px' }}>Alan Coffee & Travel</p>
           </div>
-          <a href="/" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', textDecoration: 'none' }}>← Back to Site</a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <a href="/" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', textDecoration: 'none' }}>← Back to Site</a>
+            <button
+              onClick={async () => {
+                await fetch('/api/admin/logout', { method: 'POST' })
+                window.location.href = '/admin/login'
+              }}
+              style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', padding: '7px 16px', fontSize: '12px', cursor: 'pointer', fontWeight: 600, letterSpacing: '0.5px' }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Tab switcher */}
