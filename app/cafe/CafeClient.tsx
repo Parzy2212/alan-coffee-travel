@@ -1,0 +1,2395 @@
+'use client'
+
+import { useEffect, useState, useCallback } from 'react'
+import {
+  BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts'
+import { supabase } from '@/lib/supabase'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const GOLD    = '#c9a84c'
+const GOLD_DIM = '#c9a84c88'
+const BLACK   = '#0a0a0a'
+const DARK    = '#111'
+const CARD    = '#161616'
+const CARD2   = '#1a1a1a'
+const BORDER  = 'rgba(201,168,76,0.15)'
+const RED     = '#ff4d4d'
+const GREEN   = '#4cba7f'
+const ORANGE  = '#ff9933'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings'
+
+type ExtDashStats = {
+  today_sales:     number
+  today_orders:    number
+  today_items:     number
+  today_profit:    number
+  yesterday_sales: number
+}
+
+type HourlySale = { hour: number; sales: number; order_count: number }
+
+type MenuPerf = {
+  recipe_id:    string
+  product_name: string
+  total_qty:    number
+  total_sales:  number
+  total_cost:   number
+  gross_profit: number
+  margin_pct:   number
+}
+
+type CustomStat = { category: string; label: string; cnt: number }
+
+type QueuePerf = { peak_hour: number; orders_per_hour: number; today_orders: number }
+
+type StockVal = {
+  total_value: number
+  low_count:   number
+  top_used:    { name: string; used_qty: number; unit: string }[]
+}
+
+type Category = {
+  id: string; name: string; name_th: string | null; name_lo: string | null; parent_id: string | null
+}
+
+type CategoryJoin = { id: string; name: string; name_th: string | null } | null
+
+type Recipe = {
+  id: string; product_name: string; product_name_th: string | null; product_name_lo: string | null
+  price_lak: number; is_active: boolean; category: string | null; category_id: string | null
+  categories: CategoryJoin | CategoryJoin[]
+}
+
+type InventoryItem = {
+  id: string; name: string; name_th: string | null; name_lo: string | null
+  current_qty: number; unit: string; reorder_point: number | null
+  supplier: string | null; supplier_phone: string | null
+}
+
+type PurchaseLog = {
+  id: string; qty_purchased: number; unit_price_lak: number; total_lak: number
+  supplier: string | null; created_at: string
+}
+
+type SiteSettings = {
+  shop_name: string; shop_name_th: string; shop_name_lo: string; ticker_text: string
+}
+
+type FullSettings = {
+  shop_name: string; shop_name_th: string; shop_name_lo: string
+  shop_address: string; shop_phone: string; shop_email: string
+  shop_facebook: string; shop_instagram: string; shop_line: string
+  open_time: string; close_time: string; open_days: string
+  currency_primary: string; currency_secondary: string
+  vat_percent: string; service_charge_percent: string; receipt_auto_print: string
+  ticker_text: string; queue_ticker_text: string; queue_display_mode: string
+  low_stock_alert_line_token: string; daily_report_line_token: string
+  low_stock_alert_enabled: string; daily_report_enabled: string
+  ai_analyst_enabled: string
+}
+
+const DEFAULT_SETTINGS: FullSettings = {
+  shop_name: '', shop_name_th: '', shop_name_lo: '',
+  shop_address: '', shop_phone: '', shop_email: '',
+  shop_facebook: '', shop_instagram: '', shop_line: '',
+  open_time: '07:00', close_time: '22:00', open_days: '["mon","tue","wed","thu","fri","sat","sun"]',
+  currency_primary: 'LAK', currency_secondary: 'THB',
+  vat_percent: '0', service_charge_percent: '0', receipt_auto_print: 'false',
+  ticker_text: '', queue_ticker_text: '', queue_display_mode: 'standard',
+  low_stock_alert_line_token: '', daily_report_line_token: '',
+  low_stock_alert_enabled: 'false', daily_report_enabled: 'false',
+  ai_analyst_enabled: 'false',
+}
+
+const DAYS_OF_WEEK = [
+  { key: 'mon', label: 'จ' }, { key: 'tue', label: 'อ' }, { key: 'wed', label: 'พ' },
+  { key: 'thu', label: 'พฤ' }, { key: 'fri', label: 'ศ' }, { key: 'sat', label: 'ส' },
+  { key: 'sun', label: 'อา' },
+]
+
+type RecipeEdit = {
+  product_name: string; product_name_th: string; product_name_lo: string
+  price_str: string; category_id: string
+}
+
+type AddStockForm = { qty: string; cost: string; supplier: string; date: string }
+
+type StockDetail = {
+  id: string; name: string; name_th: string | null; name_lo: string | null; unit: string
+  current_qty: number; reorder_point: number | null; max_quantity: number | null
+  cost_per_unit: number | null; stock_value: number
+  storage_location: string | null; expiry_days: number | null; expiry_days_remaining: number | null
+  supplier: string | null; supplier_phone: string | null
+  secondary_supplier: string | null; secondary_supplier_phone: string | null
+  notes: string | null; is_active: boolean
+  daily_usage: number; days_until_empty: number | null
+  last_price: number | null; last_purchased_at: string | null
+}
+
+type InventoryForm = {
+  name: string; name_th: string; name_lo: string; unit: string
+  current_qty: string; reorder_point: string; max_quantity: string
+  cost_per_unit: string; storage_location: string; expiry_days: string
+  supplier: string; supplier_phone: string
+  secondary_supplier: string; secondary_supplier_phone: string
+  notes: string
+}
+
+type UsageStat = { day: string; used_qty: number; sales_lak: number }
+
+const STORAGE_OPTIONS = [
+  { value: 'fridge',  label: '🧊 ตู้เย็น' },
+  { value: 'freezer', label: '❄️ Freezer' },
+  { value: 'shelf',   label: '📦 ชั้นวาง' },
+  { value: 'counter', label: '🍳 Counter' },
+]
+
+function storageIcon(loc: string | null): string {
+  if (loc === 'fridge')  return '🧊'
+  if (loc === 'freezer') return '❄️'
+  if (loc === 'counter') return '🍳'
+  return '📦'
+}
+
+function emptyInventoryForm(): InventoryForm {
+  return {
+    name: '', name_th: '', name_lo: '', unit: 'g',
+    current_qty: '0', reorder_point: '', max_quantity: '',
+    cost_per_unit: '', storage_location: 'shelf', expiry_days: '',
+    supplier: '', supplier_phone: '',
+    secondary_supplier: '', secondary_supplier_phone: '',
+    notes: '',
+  }
+}
+
+type RecipeIngredient = {
+  id: string; inventory_id: string; name: string; name_th: string | null
+  qty_required: number; unit: string
+}
+
+type RecipeFull = {
+  id: string; product_name: string; product_name_th: string | null; product_name_lo: string | null
+  price_lak: number; is_active: boolean; is_seasonal: boolean; seasonal_note: string | null
+  category: string | null; category_id: string | null
+  description_en: string | null; description_th: string | null; description_lo: string | null
+  preparation_time: number | null; calories: number | null
+  allergens: string[]; cost_per_cup_lak: number | null; image_url: string | null
+  total_qty_30d: number; total_sales_30d: number; calc_cost: number; margin_pct: number
+  ingredients: RecipeIngredient[]
+}
+
+type RecipeFullEdit = {
+  product_name: string; product_name_th: string; product_name_lo: string
+  description_en: string; description_th: string; description_lo: string
+  price_str: string; cost_str: string; prep_str: string; cal_str: string
+  allergens: string[]; category_id: string
+  is_seasonal: boolean; seasonal_note: string; image_url: string
+}
+
+type DaySale = { day: string; qty: number; sales: number }
+
+type CatNode = {
+  id: string; name: string; name_th: string | null; name_lo: string | null
+  description_en: string | null; description_th: string | null; description_lo: string | null
+  icon: string | null; color: string | null
+  parent_id: string | null; sort_order: number; is_active: boolean; menu_count: number
+  children?: CatNode[]
+}
+
+type CatEdit = {
+  name: string; name_th: string; name_lo: string
+  icon: string; color: string; parent_id: string; sort_order: string
+}
+
+const ICON_OPTIONS = [
+  '☕','🍵','🧋','🥤','🍹','🍰','🧁','🍫','🥐','🥪',
+  '🌿','🍋','🍓','🫐','🍊','🌸','⭐','🔥','✨','❄️',
+  '🎯','💫','🌙','🌺','🍃','🧃','🫖','🥛','🍮','🎂',
+]
+
+function emptyEditCat(): CatEdit {
+  return { name: '', name_th: '', name_lo: '', icon: '', color: '#c9a84c', parent_id: '', sort_order: '0' }
+}
+
+const ALLERGENS = ['นม', 'กลูเตน', 'ถั่ว', 'ไข่', 'ซีฟู้ด']
+
+function toEdit(r: RecipeFull): RecipeFullEdit {
+  return {
+    product_name: r.product_name, product_name_th: r.product_name_th ?? '',
+    product_name_lo: r.product_name_lo ?? '',
+    description_en: r.description_en ?? '', description_th: r.description_th ?? '',
+    description_lo: r.description_lo ?? '',
+    price_str: String(r.price_lak), cost_str: String(r.cost_per_cup_lak ?? ''),
+    prep_str: String(r.preparation_time ?? ''), cal_str: String(r.calories ?? ''),
+    allergens: r.allergens ?? [], category_id: r.category_id ?? '',
+    is_seasonal: r.is_seasonal, seasonal_note: r.seasonal_note ?? '', image_url: r.image_url ?? '',
+  }
+}
+
+function emptyEdit(): RecipeFullEdit {
+  return {
+    product_name: '', product_name_th: '', product_name_lo: '',
+    description_en: '', description_th: '', description_lo: '',
+    price_str: '', cost_str: '', prep_str: '', cal_str: '',
+    allergens: [], category_id: '', is_seasonal: false, seasonal_note: '', image_url: '',
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtLAK(n: number): string {
+  return new Intl.NumberFormat('lo-LA').format(Math.round(n)) + ' ₭'
+}
+
+function fmtK(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+  if (n >= 1000)    return (n / 1000).toFixed(0) + 'k'
+  return String(Math.round(n))
+}
+
+function fmtHour(h: number): string {
+  return String(h).padStart(2, '0') + 'h'
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('th-TH', {
+    day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Vientiane',
+  })
+}
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function todayVientiane(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
+}
+
+function getCategoryData(c: CategoryJoin | CategoryJoin[]): CategoryJoin {
+  if (Array.isArray(c)) return c[0] ?? null
+  return c
+}
+
+function currentHourVientiane(): number {
+  return parseInt(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Vientiane' }), 10)
+}
+
+// ─── Shared Styles ────────────────────────────────────────────────────────────
+
+const inputStyle: React.CSSProperties = {
+  backgroundColor: '#1a1a1a',
+  border: '1px solid rgba(255,255,255,0.12)',
+  borderRadius: 7, color: '#fff', fontSize: 14,
+  padding: '8px 12px', outline: 'none', boxSizing: 'border-box', width: '100%',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 11, color: 'rgba(255,255,255,0.38)',
+  letterSpacing: '1px', marginBottom: 5, textTransform: 'uppercase',
+}
+
+function btnStyle(bg: string): React.CSSProperties {
+  return {
+    backgroundColor: bg, border: 'none', borderRadius: 8,
+    color: bg === GOLD ? BLACK : '#fff',
+    cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: '8px 16px', flexShrink: 0,
+  }
+}
+function btnStyleSm(bg: string, color?: string): React.CSSProperties {
+  return { ...btnStyle(bg), padding: '4px 10px', fontSize: 12, color: color ?? (bg === GOLD ? BLACK : '#fff') }
+}
+
+// ─── Small Components ─────────────────────────────────────────────────────────
+
+function Badge({ label, bg, color }: { label: string; bg: string; color: string }) {
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600, lineHeight: 1,
+      padding: '3px 9px', borderRadius: 20,
+      backgroundColor: bg, color, whiteSpace: 'nowrap', flexShrink: 0,
+    }}>{label}</span>
+  )
+}
+
+function Toast({ msg }: { msg: string | null }) {
+  if (!msg) return null
+  const isErr = msg.startsWith('เกิดข้อผิดพลาด')
+  return (
+    <div style={{
+      marginBottom: 16, padding: '10px 16px', borderRadius: 8, fontSize: 13,
+      backgroundColor: isErr ? '#2a0a0a' : '#0d1f17',
+      border: `1px solid ${isErr ? RED + '44' : GREEN + '44'}`,
+      color: isErr ? RED : GREEN,
+    }}>{msg}</div>
+  )
+}
+
+function LoadingSpinner() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>
+      กำลังโหลด...
+    </div>
+  )
+}
+
+function SectionCard({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div style={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '16px 22px', borderBottom: `1px solid ${BORDER}`,
+      }}>
+        <span style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', fontWeight: 600 }}>{title}</span>
+        {action}
+      </div>
+      <div style={{ padding: '20px 22px' }}>{children}</div>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label style={labelStyle}>{label}</label>{children}</div>
+}
+
+// ─── KPI Card ─────────────────────────────────────────────────────────────────
+
+function KPICard({
+  label, value, change, sub, accent, warn,
+}: {
+  label: string; value: string; change?: number; sub?: string; accent?: boolean; warn?: boolean
+}) {
+  const hasPct    = change !== undefined
+  const pctColor  = hasPct ? (change >= 0 ? GREEN : RED) : undefined
+  const pctLabel  = hasPct
+    ? `${change >= 0 ? '▲' : '▼'} ${Math.abs(change).toFixed(1)}% จากเมื่อวาน`
+    : undefined
+
+  return (
+    <div style={{
+      backgroundColor: accent ? `${GOLD}0e` : CARD,
+      border: `1px solid ${warn ? RED + '55' : accent ? GOLD + '44' : BORDER}`,
+      borderRadius: 12, padding: '18px 20px',
+      display: 'flex', flexDirection: 'column', gap: 5,
+    }}>
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', letterSpacing: '2px', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: accent ? GOLD : warn ? RED : '#fff', lineHeight: 1.1, letterSpacing: '-0.5px' }}>{value}</div>
+      {pctLabel && <div style={{ fontSize: 12, fontWeight: 600, color: pctColor }}>{pctLabel}</div>}
+      {sub && !pctLabel && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.28)' }}>{sub}</div>}
+    </div>
+  )
+}
+
+// ─── Donut Chart ──────────────────────────────────────────────────────────────
+
+type DonutEntry = { name: string; value: number }
+
+function DonutChart({ title, data, colors }: { title: string; data: DonutEntry[]; colors: string[] }) {
+  const total = data.reduce((s, d) => s + d.value, 0)
+  if (total === 0) {
+    return (
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>{title}</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', padding: '32px 0' }}>ยังไม่มีข้อมูล</div>
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <div style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>{title}</div>
+      <div style={{ position: 'relative' }}>
+        <PieChart width={160} height={160}>
+          <Pie data={data} cx={80} cy={80} innerRadius={48} outerRadius={72}
+            paddingAngle={3} startAngle={90} endAngle={450} dataKey="value">
+            {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+          </Pie>
+        </PieChart>
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          textAlign: 'center', pointerEvents: 'none',
+        }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{total}</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1px' }}>รายการ</div>
+        </div>
+      </div>
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {data.map((d, i) => (
+          <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: colors[i % colors.length], flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{d.name}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{d.value}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', minWidth: 34, textAlign: 'right' }}>
+                {Math.round(d.value / total * 100)}%
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Dashboard Tab ────────────────────────────────────────────────────────────
+
+function DashboardTab() {
+  const [stats,   setStats]   = useState<ExtDashStats | null>(null)
+  const [hourly,  setHourly]  = useState<HourlySale[]>([])
+  const [menu,    setMenu]    = useState<MenuPerf[]>([])
+  const [custom,  setCustom]  = useState<CustomStat[]>([])
+  const [qperf,   setQperf]   = useState<QueuePerf | null>(null)
+  const [sval,    setSval]    = useState<StockVal | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [rpcErr,  setRpcErr]  = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const today = todayVientiane()
+
+      const [sRes, hRes, mRes, cRes, qRes, svRes] = await Promise.all([
+        supabase.rpc('get_dashboard_stats'),
+        supabase.rpc('get_hourly_sales', { p_date: today }),
+        supabase.rpc('get_menu_performance', { p_days: 30 }),
+        supabase.rpc('get_customization_stats', { p_days: 7 }),
+        supabase.rpc('get_queue_performance', { p_days: 7 }),
+        supabase.rpc('get_stock_value'),
+      ])
+
+      const anyError = [sRes, hRes, mRes, cRes, qRes, svRes].some(r => r.error)
+      setRpcErr(anyError)
+
+      if (!anyError) {
+        setStats(sRes.data as ExtDashStats)
+        setHourly((hRes.data as HourlySale[]) ?? [])
+        setMenu((mRes.data as MenuPerf[]) ?? [])
+        setCustom((cRes.data as CustomStat[]) ?? [])
+        setQperf(qRes.data as QueuePerf)
+        setSval(svRes.data as StockVal)
+      } else {
+        // Minimal fallback: direct orders query for today stats
+        const { data: rows } = await supabase
+          .from('orders').select('total_lak').eq('status', 'paid')
+          .gte('created_at', today + 'T00:00:00+07:00')
+          .lt('created_at',  today + 'T23:59:59+07:00')
+        const todaySales = (rows ?? []).reduce((a, o) => a + Number(o.total_lak ?? 0), 0)
+        setStats({ today_sales: todaySales, today_orders: (rows ?? []).length, today_items: 0, today_profit: 0, yesterday_sales: 0 })
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  if (loading) return <LoadingSpinner />
+
+  // ── Derived ──────────────────────────────────────────────────────────────────
+  const pctChange = stats && stats.yesterday_sales > 0
+    ? ((stats.today_sales - stats.yesterday_sales) / stats.yesterday_sales) * 100
+    : undefined
+
+  const curHour = currentHourVientiane()
+  const chartData = hourly
+    .filter(h => h.hour >= 6 && h.hour <= 22)
+    .map(h => ({ ...h, label: fmtHour(h.hour), isCurrent: h.hour === curHour }))
+
+  const sweetData: DonutEntry[] = ['หวานปกติ', 'หวานน้อย', 'ไม่หวาน', 'ไม่ระบุ']
+    .map(l => ({ name: l, value: Number(custom.find(c => c.category === 'sweetness' && c.label === l)?.cnt ?? 0) }))
+    .filter(d => d.value > 0)
+
+  const tempData: DonutEntry[] = ['ร้อน', 'เย็น', 'อุ่น', 'ไม่ระบุ']
+    .map(l => ({ name: l, value: Number(custom.find(c => c.category === 'temperature' && c.label === l)?.cnt ?? 0) }))
+    .filter(d => d.value > 0)
+
+  const peakHourData = hourly.length > 0
+    ? hourly.reduce((max, h) => h.order_count > max.order_count ? h : max, hourly[0])
+    : null
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Migration warning */}
+      {rpcErr && (
+        <div style={{ padding: '12px 16px', backgroundColor: '#2a1a0a', border: `1px solid ${GOLD}44`, borderRadius: 8, fontSize: 13, color: GOLD }}>
+          RPCs ยังไม่ถูกสร้าง — กรุณา run <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>012_cafe_admin.sql</code>, <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>013_cafe_detail.sql</code> และ <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>014_dashboard_stats.sql</code>
+        </div>
+      )}
+
+      {/* ── Section 1: KPI Cards ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+        <KPICard
+          label="ยอดขายวันนี้"
+          value={fmtLAK(stats?.today_sales ?? 0)}
+          change={pctChange}
+          accent
+        />
+        <KPICard
+          label="กำไรขั้นต้น"
+          value={fmtLAK(stats?.today_profit ?? 0)}
+          sub={stats && stats.today_sales > 0
+            ? `${Math.round((stats.today_profit / stats.today_sales) * 100)}% margin`
+            : '—'}
+        />
+        <KPICard
+          label="Orders วันนี้"
+          value={String(stats?.today_orders ?? 0)}
+          sub={`เฉลี่ย ${fmtLAK(stats && stats.today_orders > 0 ? (stats.today_sales / stats.today_orders) : 0)} / order`}
+        />
+        <KPICard
+          label="เฉลี่ยต่อออเดอร์"
+          value={`${stats?.today_items ?? 0} รายการ`}
+          sub="avg items per order"
+        />
+        <KPICard
+          label="วัตถุดิบใกล้หมด"
+          value={`${sval?.low_count ?? '—'} รายการ`}
+          warn={(sval?.low_count ?? 0) > 0}
+          sub={sval?.low_count === 0 ? 'สต็อกปกติ' : 'ต้องเติม'}
+        />
+      </div>
+
+      {/* ── Section 2: Hourly Sales Chart ── */}
+      <SectionCard title={`ยอดขายรายชั่วโมง — วันนี้`}>
+        {chartData.length === 0 || chartData.every(d => d.sales === 0) ? (
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.18)', padding: '40px 0', fontSize: 14 }}>ยังไม่มียอดวันนี้</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barSize={22}>
+              <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: 'rgba(255,255,255,0.32)', fontSize: 11 }}
+                axisLine={false} tickLine={false}
+                interval={1}
+              />
+              <YAxis
+                tick={{ fill: 'rgba(255,255,255,0.28)', fontSize: 10 }}
+                axisLine={false} tickLine={false}
+                tickFormatter={fmtK}
+                width={42}
+              />
+              <Tooltip
+                cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                contentStyle={{ backgroundColor: '#1e1e1e', border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: GOLD, fontWeight: 700 }}
+                formatter={(v, name) => name === 'sales'
+                  ? [fmtLAK(Number(v)), 'ยอดขาย']
+                  : [String(v), 'orders']}
+              />
+              <Bar dataKey="sales" radius={[4, 4, 0, 0]}>
+                {chartData.map((d, i) => (
+                  <Cell
+                    key={i}
+                    fill={d.isCurrent ? '#fff' : d.sales > 0 ? GOLD : GOLD_DIM}
+                    fillOpacity={d.isCurrent ? 0.9 : d.sales > 0 ? 0.85 : 0.2}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: GOLD, display: 'inline-block' }} />
+            ยอดขาย (LAK)
+          </span>
+          {peakHourData && peakHourData.order_count > 0 && (
+            <span>ชั่วโมงยอด: <strong style={{ color: GOLD }}>{fmtHour(peakHourData.hour)}</strong> ({peakHourData.order_count} orders)</span>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* ── Section 3: Menu Performance Table ── */}
+      <SectionCard title={`menu performance — 30 วัน (${menu.length} รายการ)`}>
+        {menu.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.18)', padding: '30px 0' }}>ยังไม่มีข้อมูล</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  {['#', 'เมนู', 'จำนวน', 'ยอดขาย', 'กำไรขั้นต้น', 'Margin'].map((h, i) => (
+                    <th key={h} style={{
+                      padding: '8px 12px', textAlign: i <= 1 ? 'left' : 'right',
+                      fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600,
+                      letterSpacing: '1px', textTransform: 'uppercase',
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {menu.map((row, i) => {
+                  const lowMargin = row.margin_pct < 30
+                  const midMargin = row.margin_pct >= 30 && row.margin_pct < 50
+                  const marginColor = row.margin_pct >= 50 ? GREEN : midMargin ? GOLD : ORANGE
+                  return (
+                    <tr key={row.recipe_id} style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)',
+                    }}>
+                      <td style={{ padding: '10px 12px', color: i < 3 ? GOLD : 'rgba(255,255,255,0.3)', fontWeight: i < 3 ? 800 : 400, width: 32 }}>{i + 1}</td>
+                      <td style={{ padding: '10px 12px', color: '#fff', fontWeight: 500 }}>{row.product_name}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums' }}>{row.total_qty}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{fmtLAK(row.total_sales)}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', color: GREEN, fontVariantNumeric: 'tabular-nums' }}>{fmtLAK(row.gross_profit)}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                          <span style={{ color: marginColor, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                            {row.margin_pct.toFixed(1)}%
+                          </span>
+                          {lowMargin && <Badge label="ต่ำ" bg={ORANGE + '22'} color={ORANGE} />}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
+      {/* ── Section 4: Customization Stats ── */}
+      <SectionCard title="customization stats — 7 วัน">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40 }}>
+          <DonutChart
+            title="ความหวาน"
+            data={sweetData}
+            colors={[GOLD, '#e8d5a0', 'rgba(201,168,76,0.3)', 'rgba(255,255,255,0.12)']}
+          />
+          <DonutChart
+            title="อุณหภูมิ"
+            data={tempData}
+            colors={['#ff7c45', '#5ba8ff', '#ffb347', 'rgba(255,255,255,0.12)']}
+          />
+        </div>
+      </SectionCard>
+
+      {/* ── Section 5: Stock & Queue ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+        {/* Stock card */}
+        <SectionCard title="สต็อก & วัตถุดิบ">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 4 }}>มูลค่าสต็อกรวม</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: GOLD }}>{fmtLAK(sval?.total_value ?? 0)}</div>
+              </div>
+              {(sval?.low_count ?? 0) > 0 && (
+                <Badge label={`${sval?.low_count} ใกล้หมด`} bg={RED + '22'} color={RED} />
+              )}
+            </div>
+
+            <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 14 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 10 }}>
+                วัตถุดิบที่ใช้มากสุดวันนี้
+              </div>
+              {!sval || sval.top_used.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีข้อมูล</div>
+              ) : (
+                sval.top_used.map((item, i) => (
+                  <div key={item.name} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '7px 0',
+                    borderBottom: i < sval.top_used.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 16, fontWeight: 900, color: i === 0 ? GOLD : 'rgba(255,255,255,0.25)', width: 20 }}>{i + 1}</span>
+                      <span style={{ fontSize: 13, color: '#fff' }}>{item.name}</span>
+                    </div>
+                    <span style={{ fontSize: 13, color: GOLD, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {item.used_qty} {item.unit}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Queue performance card */}
+        <SectionCard title="queue performance — 7 วัน">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* Peak hour highlight */}
+            <div style={{
+              backgroundColor: CARD2, borderRadius: 10, padding: '16px 20px',
+              border: `1px solid ${GOLD}22`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 4 }}>ชั่วโมงยอด (Peak Hour)</div>
+                <div style={{ fontSize: 36, fontWeight: 900, color: GOLD, letterSpacing: '-1px', lineHeight: 1 }}>
+                  {qperf ? fmtHour(qperf.peak_hour) : '—'}
+                </div>
+              </div>
+              <div style={{
+                width: 64, height: 64, borderRadius: '50%',
+                border: `3px solid ${GOLD}44`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 28,
+              }}>
+                ⏰
+              </div>
+            </div>
+
+            {/* Stats grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ backgroundColor: CARD2, borderRadius: 8, padding: '12px 14px' }}>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 4 }}>Orders วันนี้</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{qperf?.today_orders ?? '—'}</div>
+              </div>
+              <div style={{ backgroundColor: CARD2, borderRadius: 8, padding: '12px 14px' }}>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 4 }}>เฉลี่ย / ชั่วโมง</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{qperf?.orders_per_hour ?? '—'}</div>
+              </div>
+            </div>
+
+            {/* Mini hourly bar preview */}
+            {chartData.length > 0 && (
+              <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 14 }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 8, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                  กระจายตัวตามชั่วโมง
+                </div>
+                <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 40 }}>
+                  {chartData.map(d => {
+                    const maxCount = Math.max(...chartData.map(x => x.order_count), 1)
+                    const h = Math.round((Number(d.order_count) / maxCount) * 40)
+                    return (
+                      <div
+                        key={d.hour}
+                        title={`${d.label}: ${d.order_count} orders`}
+                        style={{
+                          flex: 1, height: Math.max(h, 3), borderRadius: '2px 2px 0 0',
+                          backgroundColor: d.isCurrent ? '#fff'
+                            : d.order_count > 0 ? GOLD
+                            : 'rgba(255,255,255,0.06)',
+                          opacity: d.hour === qperf?.peak_hour ? 1 : 0.65,
+                          transition: 'height .3s',
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>
+                  <span>06h</span><span>12h</span><span>18h</span><span>22h</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+      </div>
+    </div>
+  )
+}
+
+// ─── Menu Tab ─────────────────────────────────────────────────────────────────
+
+function AllergenToggle({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const toggle = (a: string) => onChange(selected.includes(a) ? selected.filter(x => x !== a) : [...selected, a])
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {ALLERGENS.map(a => {
+        const on = selected.includes(a)
+        return (
+          <button key={a} onClick={() => toggle(a)} type="button" style={{
+            padding: '3px 10px', borderRadius: 20, border: `1px solid ${on ? ORANGE : 'rgba(255,255,255,0.12)'}`,
+            backgroundColor: on ? ORANGE + '22' : 'transparent',
+            color: on ? ORANGE : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer',
+          }}>{a}</button>
+        )
+      })}
+    </div>
+  )
+}
+
+function RecipeFullForm({ data, onChange, categories, saving, onSave, onCancel, title }: {
+  data: RecipeFullEdit; onChange: (d: RecipeFullEdit) => void; categories: Category[]
+  saving: boolean; onSave: () => void; onCancel: () => void; title: string
+}) {
+  const set = (k: keyof RecipeFullEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    onChange({ ...data, [k]: e.target.value })
+  const taStyle: React.CSSProperties = { ...inputStyle, height: 60, resize: 'vertical' as const }
+  return (
+    <div style={{ padding: 20, backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderRadius: 12 }}>
+      <div style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 16 }}>{title}</div>
+
+      {/* Names */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <Field label="ชื่อ EN *"><input value={data.product_name} onChange={set('product_name')} style={inputStyle} placeholder="Espresso" /></Field>
+        <Field label="ชื่อ TH"><input value={data.product_name_th} onChange={set('product_name_th')} style={inputStyle} placeholder="เอสเพรสโซ่" /></Field>
+        <Field label="ชื่อ LO"><input value={data.product_name_lo} onChange={set('product_name_lo')} style={inputStyle} placeholder="ເອສເປຣັສໂຊ" /></Field>
+      </div>
+
+      {/* Descriptions */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <Field label="คำอธิบาย EN"><textarea value={data.description_en} onChange={set('description_en')} style={taStyle} placeholder="Rich espresso..." /></Field>
+        <Field label="คำอธิบาย TH"><textarea value={data.description_th} onChange={set('description_th')} style={taStyle} placeholder="กาแฟเข้มข้น..." /></Field>
+        <Field label="คำอธิบาย LO"><textarea value={data.description_lo} onChange={set('description_lo')} style={taStyle} placeholder="ກາເຟ..." /></Field>
+      </div>
+
+      {/* Price + Cost + Prep + Cal + Category */}
+      <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 100px 100px 1fr', gap: 10, marginBottom: 12 }}>
+        <Field label="ราคา ₭ *"><input value={data.price_str} onChange={set('price_str')} type="number" min="0" style={inputStyle} /></Field>
+        <Field label="ต้นทุน/แก้ว ₭"><input value={data.cost_str} onChange={set('cost_str')} type="number" min="0" style={inputStyle} /></Field>
+        <Field label="เวลา (นาที)"><input value={data.prep_str} onChange={set('prep_str')} type="number" min="0" style={inputStyle} /></Field>
+        <Field label="แคลอรี่"><input value={data.cal_str} onChange={set('cal_str')} type="number" min="0" style={inputStyle} /></Field>
+        <Field label="หมวดหมู่">
+          <select value={data.category_id} onChange={set('category_id')} style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="">— ไม่ระบุ —</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}{c.name_th ? ` (${c.name_th})` : ''}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {/* Allergens */}
+      <div style={{ marginBottom: 12 }}>
+        <Field label="Allergens">
+          <AllergenToggle selected={data.allergens} onChange={v => onChange({ ...data, allergens: v })} />
+        </Field>
+      </div>
+
+      {/* Image URL */}
+      <div style={{ marginBottom: 12 }}>
+        <Field label="URL รูปภาพ">
+          <input value={data.image_url} onChange={set('image_url')} style={inputStyle} placeholder="https://..." />
+        </Field>
+      </div>
+
+      {/* Seasonal toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <button type="button" onClick={() => onChange({ ...data, is_seasonal: !data.is_seasonal })} style={{
+          width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+          backgroundColor: data.is_seasonal ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s',
+        }} />
+        <span style={{ fontSize: 13, color: data.is_seasonal ? GOLD : 'rgba(255,255,255,0.4)' }}>Seasonal</span>
+        {data.is_seasonal && (
+          <input value={data.seasonal_note} onChange={set('seasonal_note')} style={{ ...inputStyle, flex: 1 }} placeholder="หมายเหตุ Seasonal..." />
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={onSave} disabled={saving} style={btnStyle(GOLD)}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+        <button onClick={onCancel} style={btnStyle('rgba(255,255,255,0.08)')}>ยกเลิก</button>
+      </div>
+    </div>
+  )
+}
+
+function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Category[]; onReload: () => void }) {
+  const [open,        setOpen]        = useState(false)
+  const [editing,     setEditing]     = useState(false)
+  const [editData,    setEditData]    = useState<RecipeFullEdit>(toEdit(r))
+  const [saving,      setSaving]      = useState(false)
+  const [history,     setHistory]     = useState<DaySale[] | null>(null)
+  const [histLoading, setHistLoading] = useState(false)
+  const [msg,         setMsg]         = useState<string | null>(null)
+
+  const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3000) }
+
+  async function loadHistory() {
+    if (history !== null) return
+    setHistLoading(true)
+    const { data } = await supabase.rpc('get_recipe_sales_history', { p_recipe_id: r.id, p_days: 7 })
+    setHistory((data as DaySale[]) ?? [])
+    setHistLoading(false)
+  }
+
+  function handleExpand() {
+    const next = !open
+    setOpen(next)
+    if (next) loadHistory()
+  }
+
+  async function toggleActive(e: React.MouseEvent) {
+    e.stopPropagation()
+    const { data } = await supabase.rpc('toggle_recipe_active', { p_recipe_id: r.id })
+    if (data) onReload()
+  }
+
+  async function saveEdit() {
+    const price = parseFloat(editData.price_str)
+    if (isNaN(price) || price < 0) { showMsg('ราคาไม่ถูกต้อง'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('update_recipe_full', {
+      p_recipe_id:      r.id,
+      p_product_name:   editData.product_name,
+      p_name_th:        editData.product_name_th,
+      p_name_lo:        editData.product_name_lo,
+      p_description_en: editData.description_en,
+      p_description_th: editData.description_th,
+      p_description_lo: editData.description_lo,
+      p_price:          price,
+      p_cost_per_cup:   parseFloat(editData.cost_str) || null,
+      p_prep_time:      parseInt(editData.prep_str) || null,
+      p_calories:       parseInt(editData.cal_str) || null,
+      p_allergens:      editData.allergens,
+      p_category_id:    editData.category_id || null,
+      p_is_seasonal:    editData.is_seasonal,
+      p_seasonal_note:  editData.seasonal_note,
+      p_image_url:      editData.image_url,
+    })
+    if (!error) { showMsg('บันทึกสำเร็จ'); setEditing(false); onReload() }
+    else showMsg('Error: ' + error.message)
+    setSaving(false)
+  }
+
+  const marginColor = r.margin_pct >= 60 ? GREEN : r.margin_pct >= 40 ? GOLD : RED
+  const histMax = history ? Math.max(...history.map(d => d.sales), 1) : 1
+
+  return (
+    <div style={{ backgroundColor: CARD, border: `1px solid ${open ? GOLD + '44' : BORDER}`, borderRadius: 12, overflow: 'hidden', opacity: r.is_active ? 1 : 0.5, transition: 'border-color .2s' }}>
+      {/* Card header — always visible, click to expand */}
+      <div onClick={handleExpand} style={{ padding: '16px 18px', cursor: 'pointer', userSelect: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          {/* Toggle switch */}
+          <button onClick={toggleActive} title={r.is_active ? 'ปิด' : 'เปิด'} style={{
+            width: 34, height: 19, borderRadius: 10, border: 'none', cursor: 'pointer', flexShrink: 0, marginTop: 2,
+            backgroundColor: r.is_active ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s',
+          }} />
+
+          {/* Names */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{r.product_name}</span>
+              {r.is_seasonal && <Badge label="Seasonal" bg={GOLD + '22'} color={GOLD} />}
+              {!r.is_active && <Badge label="ปิด" bg="rgba(255,255,255,0.06)" color="rgba(255,255,255,0.3)" />}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+              {r.product_name_th && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)' }}>{r.product_name_th}</span>}
+              {r.product_name_lo && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.28)' }}>{r.product_name_lo}</span>}
+            </div>
+          </div>
+
+          {/* Category */}
+          {r.category && <Badge label={r.category} bg={GOLD + '18'} color={GOLD} />}
+
+          {/* Price */}
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: GOLD }}>{fmtLAK(r.price_lak)}</div>
+            {r.cost_per_cup_lak && (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                ต้นทุน {fmtLAK(r.cost_per_cup_lak)}
+              </div>
+            )}
+          </div>
+
+          {/* Chevron */}
+          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 12, marginTop: 3, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+        </div>
+
+        {/* Second row: stats + meta */}
+        <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Margin */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px' }}>Margin</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: marginColor }}>{r.margin_pct}%</span>
+          </div>
+          {/* Prep time */}
+          {r.preparation_time && (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>⏱ {r.preparation_time} นาที</div>
+          )}
+          {/* Calories */}
+          {r.calories && (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{r.calories} kcal</div>
+          )}
+          {/* 30d stats */}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, flexShrink: 0 }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', letterSpacing: '1px' }}>30 วัน</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{r.total_qty_30d} แก้ว</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', letterSpacing: '1px' }}>ยอดรวม</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: GOLD }}>{fmtK(r.total_sales_30d)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Allergens row */}
+        {r.allergens && r.allergens.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+            {r.allergens.map(a => <Badge key={a} label={a} bg={ORANGE + '18'} color={ORANGE} />)}
+          </div>
+        )}
+      </div>
+
+      {/* Expanded detail */}
+      {open && !editing && (
+        <div style={{ borderTop: `1px solid ${BORDER}`, padding: '16px 18px', backgroundColor: '#0d0d0d' }}>
+          {/* Descriptions */}
+          {(r.description_en || r.description_th || r.description_lo) && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>คำอธิบาย</div>
+              {r.description_en && <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>{r.description_en}</div>}
+              {r.description_th && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 3 }}>{r.description_th}</div>}
+              {r.description_lo && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{r.description_lo}</div>}
+            </div>
+          )}
+
+          {/* Seasonal note */}
+          {r.seasonal_note && (
+            <div style={{ marginBottom: 14, padding: '8px 12px', backgroundColor: GOLD + '12', borderRadius: 6, border: `1px solid ${GOLD}22` }}>
+              <span style={{ fontSize: 11, color: GOLD }}>Seasonal: </span>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{r.seasonal_note}</span>
+            </div>
+          )}
+
+          {/* Ingredients */}
+          {r.ingredients && r.ingredients.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>ส่วนผสม</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {r.ingredients.map(ing => (
+                  <div key={ing.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', backgroundColor: CARD2, borderRadius: 6 }}>
+                    <div>
+                      <span style={{ fontSize: 13, color: '#fff' }}>{ing.name}</span>
+                      {ing.name_th && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginLeft: 6 }}>{ing.name_th}</span>}
+                    </div>
+                    <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>{ing.qty_required} {ing.unit}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 7-day sales chart */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>ยอดขาย 7 วัน</div>
+            {histLoading ? (
+              <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${GOLD}33`, borderTopColor: GOLD, animation: 'spin .7s linear infinite' }} />
+              </div>
+            ) : history && history.length > 0 ? (
+              <div style={{ height: 80 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={history} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="day" tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 9 }}
+                      tickFormatter={v => { const d = new Date(v + 'T00:00:00'); return (d.getMonth() + 1) + '/' + d.getDate() }} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}44`, borderRadius: 6, fontSize: 11 }}
+                      labelStyle={{ color: 'rgba(255,255,255,0.5)' }}
+                      formatter={(v) => [fmtLAK(Number(v ?? 0)), 'ยอดขาย']}
+                    />
+                    <Bar dataKey="sales" radius={[3, 3, 0, 0]}>
+                      {history.map((d, i) => (
+                        <Cell key={i} fill={d.sales > 0 ? GOLD : 'rgba(255,255,255,0.06)'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีข้อมูลการขาย</div>
+            )}
+          </div>
+
+          {/* Cost detail */}
+          <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
+            {r.calc_cost > 0 && (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+                ต้นทุนจากสูตร: <span style={{ color: 'rgba(255,255,255,0.55)' }}>{fmtLAK(r.calc_cost)}</span>
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+              Gross Margin: <span style={{ color: marginColor, fontWeight: 700 }}>{r.margin_pct}%</span>
+            </div>
+          </div>
+
+          {msg && <Toast msg={msg} />}
+
+          <button onClick={() => { setEditing(true); setEditData(toEdit(r)) }} style={btnStyleSm(GOLD + '22', GOLD)}>
+            แก้ไขข้อมูล
+          </button>
+        </div>
+      )}
+
+      {/* Edit form */}
+      {open && editing && (
+        <div style={{ borderTop: `1px solid ${BORDER}` }}>
+          {msg && <div style={{ padding: '8px 18px' }}><Toast msg={msg} /></div>}
+          <RecipeFullForm
+            title={`แก้ไข: ${r.product_name}`}
+            data={editData}
+            onChange={setEditData}
+            categories={categories}
+            saving={saving}
+            onSave={saveEdit}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MenuTab() {
+  const [recipes,    setRecipes]    = useState<RecipeFull[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [showForm,   setShowForm]   = useState(false)
+  const [newData,    setNewData]    = useState<RecipeFullEdit>(emptyEdit())
+  const [saving,     setSaving]     = useState(false)
+  const [msg,        setMsg]        = useState<string | null>(null)
+  const [search,     setSearch]     = useState('')
+
+  const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const [rRes, cRes] = await Promise.all([
+      supabase.rpc('get_menu_with_stats'),
+      supabase.from('categories').select('id, name, name_th, name_lo, parent_id').eq('is_active', true).order('sort_order'),
+    ])
+    setRecipes((rRes.data as RecipeFull[]) ?? [])
+    setCategories((cRes.data as Category[]) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function createRecipe() {
+    if (!newData.product_name.trim()) { showMsg('กรุณาระบุชื่อเมนู'); return }
+    const price = parseFloat(newData.price_str)
+    if (isNaN(price) || price < 0) { showMsg('ราคาไม่ถูกต้อง'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('create_recipe_full', {
+      p_product_name:   newData.product_name.trim(),
+      p_name_th:        newData.product_name_th,
+      p_name_lo:        newData.product_name_lo,
+      p_description_en: newData.description_en,
+      p_description_th: newData.description_th,
+      p_description_lo: newData.description_lo,
+      p_price:          price,
+      p_cost_per_cup:   parseFloat(newData.cost_str) || null,
+      p_prep_time:      parseInt(newData.prep_str) || null,
+      p_calories:       parseInt(newData.cal_str) || null,
+      p_allergens:      newData.allergens,
+      p_category_id:    newData.category_id || null,
+      p_is_seasonal:    newData.is_seasonal,
+      p_seasonal_note:  newData.seasonal_note,
+      p_image_url:      newData.image_url,
+    })
+    if (!error) {
+      showMsg('เพิ่มเมนูสำเร็จ')
+      setShowForm(false)
+      setNewData(emptyEdit())
+      await load()
+    } else {
+      showMsg('Error: ' + error.message)
+    }
+    setSaving(false)
+  }
+
+  const filtered = recipes.filter(r =>
+    !search || r.product_name.toLowerCase().includes(search.toLowerCase()) ||
+    (r.product_name_th ?? '').includes(search) || (r.category ?? '').toLowerCase().includes(search.toLowerCase())
+  )
+
+  if (loading) return <LoadingSpinner />
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>
+          เมนูทั้งหมด ({recipes.length})
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="ค้นหา..." style={{ ...inputStyle, width: 180, padding: '6px 12px' }}
+          />
+          <button onClick={() => { setShowForm(!showForm); setNewData(emptyEdit()) }} style={btnStyle(GOLD)}>
+            {showForm ? '✕ ปิด' : '+ เพิ่มเมนู'}
+          </button>
+        </div>
+      </div>
+
+      <Toast msg={msg} />
+
+      {/* Add form */}
+      {showForm && (
+        <div style={{ marginBottom: 20 }}>
+          <RecipeFullForm
+            title="เพิ่มเมนูใหม่"
+            data={newData}
+            onChange={setNewData}
+            categories={categories}
+            saving={saving}
+            onSave={createRecipe}
+            onCancel={() => setShowForm(false)}
+          />
+        </div>
+      )}
+
+      {/* Card grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+        {filtered.map(r => (
+          <RecipeCard key={r.id} r={r} categories={categories} onReload={load} />
+        ))}
+        {filtered.length === 0 && (
+          <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'rgba(255,255,255,0.2)', padding: 40, fontSize: 14 }}>
+            ไม่พบเมนู
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Categories Tab ───────────────────────────────────────────────────────────
+
+function CatForm({ data, onChange, allCats, onSave, onCancel, saving, title, excludeId }: {
+  data: CatEdit; onChange: (d: CatEdit) => void; allCats: CatNode[]
+  onSave: () => void; onCancel: () => void; saving: boolean; title: string; excludeId?: string
+}) {
+  const set = (k: keyof CatEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    onChange({ ...data, [k]: e.target.value })
+
+  const parentOptions = allCats.filter(c => c.id !== excludeId && !c.parent_id)
+
+  return (
+    <div style={{ padding: 18, backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderRadius: 10, marginTop: 8 }}>
+      <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 14 }}>{title}</div>
+
+      {/* Names */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <Field label="ชื่อ EN *"><input value={data.name} onChange={set('name')} style={inputStyle} placeholder="Coffee" /></Field>
+        <Field label="ชื่อ TH"><input value={data.name_th} onChange={set('name_th')} style={inputStyle} placeholder="กาแฟ" /></Field>
+        <Field label="ชื่อ LO"><input value={data.name_lo} onChange={set('name_lo')} style={inputStyle} placeholder="ກາເຟ" /></Field>
+      </div>
+
+      {/* Icon picker */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6, letterSpacing: '1px', textTransform: 'uppercase' }}>Icon</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {ICON_OPTIONS.map(ic => (
+            <button key={ic} type="button" onClick={() => onChange({ ...data, icon: ic })} style={{
+              width: 34, height: 34, borderRadius: 6, border: `1px solid ${data.icon === ic ? GOLD : 'rgba(255,255,255,0.1)'}`,
+              backgroundColor: data.icon === ic ? GOLD + '22' : 'transparent',
+              fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{ic}</button>
+          ))}
+          <button type="button" onClick={() => onChange({ ...data, icon: '' })} style={{
+            width: 34, height: 34, borderRadius: 6, border: `1px solid ${!data.icon ? GOLD : 'rgba(255,255,255,0.1)'}`,
+            backgroundColor: !data.icon ? GOLD + '22' : 'transparent',
+            fontSize: 11, color: 'rgba(255,255,255,0.3)', cursor: 'pointer',
+          }}>ไม่มี</button>
+        </div>
+        {data.icon && <span style={{ fontSize: 22 }}>{data.icon}</span>}
+      </div>
+
+      {/* Color + Sort + Parent */}
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 90px 1fr', gap: 10, marginBottom: 14 }}>
+        <Field label="สี Badge">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="color" value={data.color || '#c9a84c'} onChange={set('color')} style={{ width: 36, height: 32, padding: 2, border: `1px solid ${BORDER}`, borderRadius: 4, backgroundColor: '#1a1a1a', cursor: 'pointer' }} />
+            <input value={data.color} onChange={set('color')} style={{ ...inputStyle, flex: 1, fontFamily: 'monospace', fontSize: 11 }} placeholder="#c9a84c" />
+          </div>
+        </Field>
+        <Field label="ลำดับ (sort)">
+          <input value={data.sort_order} onChange={set('sort_order')} type="number" min="0" style={inputStyle} />
+        </Field>
+        <Field label="หมวดแม่ (Parent)">
+          <select value={data.parent_id} onChange={set('parent_id')} style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="">— ไม่มี (Root) —</option>
+            {parentOptions.map(c => <option key={c.id} value={c.id}>{c.icon ? c.icon + ' ' : ''}{c.name}{c.name_th ? ` (${c.name_th})` : ''}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={onSave} disabled={saving} style={btnStyle(GOLD)}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+        <button onClick={onCancel} style={btnStyle('rgba(255,255,255,0.08)')}>ยกเลิก</button>
+      </div>
+    </div>
+  )
+}
+
+function CatRow({ node, siblings, allFlat, depth, onReload, showMsg }: {
+  node: CatNode; siblings: CatNode[]; allFlat: CatNode[]
+  depth: number; onReload: () => void; showMsg: (m: string) => void
+}) {
+  const [editing,    setEditing]    = useState(false)
+  const [addingChild, setAddingChild] = useState(false)
+  const [editData,   setEditData]   = useState<CatEdit>({
+    name: node.name, name_th: node.name_th ?? '', name_lo: node.name_lo ?? '',
+    icon: node.icon ?? '', color: node.color ?? '#c9a84c',
+    parent_id: node.parent_id ?? '', sort_order: String(node.sort_order),
+  })
+  const [newChildData, setNewChildData] = useState<CatEdit>(emptyEditCat())
+  const [saving, setSaving] = useState(false)
+
+  const myIdx = siblings.findIndex(s => s.id === node.id)
+  const prevSibling = myIdx > 0 ? siblings[myIdx - 1] : null
+  const nextSibling = myIdx < siblings.length - 1 ? siblings[myIdx + 1] : null
+
+  const indent = depth * 24
+
+  async function toggleActive(e: React.MouseEvent) {
+    e.stopPropagation()
+    await supabase.rpc('update_category', { p_id: node.id, p_is_active: !node.is_active })
+    onReload()
+  }
+
+  async function saveEdit() {
+    if (!editData.name.trim()) { showMsg('กรุณาระบุชื่อหมวด'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('update_category', {
+      p_id:         node.id,
+      p_name:       editData.name,
+      p_name_th:    editData.name_th,
+      p_name_lo:    editData.name_lo,
+      p_icon:       editData.icon,
+      p_color:      editData.color,
+      p_sort_order: parseInt(editData.sort_order) || 0,
+      p_is_active:  node.is_active,
+    })
+    if (!error) { showMsg('บันทึกสำเร็จ'); setEditing(false); onReload() }
+    else showMsg('Error: ' + error.message)
+    setSaving(false)
+  }
+
+  async function addChild() {
+    if (!newChildData.name.trim()) { showMsg('กรุณาระบุชื่อหมวด'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('create_category', {
+      p_name:       newChildData.name,
+      p_name_th:    newChildData.name_th,
+      p_name_lo:    newChildData.name_lo,
+      p_icon:       newChildData.icon,
+      p_color:      newChildData.color,
+      p_parent_id:  node.id,
+      p_sort_order: parseInt(newChildData.sort_order) || 0,
+    })
+    if (!error) { showMsg('เพิ่มหมวดย่อยสำเร็จ'); setAddingChild(false); setNewChildData(emptyEditCat()); onReload() }
+    else showMsg('Error: ' + error.message)
+    setSaving(false)
+  }
+
+  async function deleteCat() {
+    if (!confirm(`ลบหมวด "${node.name}"?`)) return
+    const { data } = await supabase.rpc('delete_category', { p_id: node.id })
+    if (data?.ok) { showMsg('ลบสำเร็จ'); onReload() }
+    else showMsg(data?.reason ?? 'ลบไม่ได้')
+  }
+
+  async function swapSort(other: CatNode) {
+    await supabase.rpc('swap_category_sort', { p_id_a: node.id, p_id_b: other.id })
+    onReload()
+  }
+
+  const badgeColor = node.color ?? GOLD
+  const canDelete = node.menu_count === 0 && (!node.children || node.children.length === 0)
+
+  return (
+    <div>
+      {/* Row */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        paddingLeft: 12 + indent, paddingRight: 12, paddingTop: 10, paddingBottom: 10,
+        backgroundColor: editing ? '#131313' : depth === 0 ? CARD : CARD2,
+        border: `1px solid ${editing ? GOLD + '44' : BORDER}`,
+        borderRadius: 8, opacity: node.is_active ? 1 : 0.45,
+        marginBottom: 4,
+      }}>
+        {/* Active toggle */}
+        <button onClick={toggleActive} title={node.is_active ? 'ปิด' : 'เปิด'} style={{
+          width: 30, height: 17, borderRadius: 9, border: 'none', cursor: 'pointer', flexShrink: 0,
+          backgroundColor: node.is_active ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s',
+        }} />
+
+        {/* Icon */}
+        {node.icon && <span style={{ fontSize: 18, flexShrink: 0 }}>{node.icon}</span>}
+
+        {/* Names */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{node.name}</span>
+            <span style={{
+              fontSize: 11, padding: '1px 8px', borderRadius: 10,
+              backgroundColor: badgeColor + '22', color: badgeColor, border: `1px solid ${badgeColor}44`,
+            }}>
+              {node.menu_count} เมนู
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+            {node.name_th && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{node.name_th}</span>}
+            {node.name_lo && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{node.name_lo}</span>}
+          </div>
+        </div>
+
+        {/* Color swatch */}
+        {node.color && (
+          <div style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: node.color, flexShrink: 0 }} title={node.color} />
+        )}
+
+        {/* Sort buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+          <button onClick={() => prevSibling && swapSort(prevSibling)} disabled={!prevSibling} style={{ width: 22, height: 16, border: 'none', borderRadius: 3, backgroundColor: prevSibling ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)', cursor: prevSibling ? 'pointer' : 'default', color: prevSibling ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.1)', fontSize: 9, lineHeight: 1 }}>▲</button>
+          <button onClick={() => nextSibling && swapSort(nextSibling)} disabled={!nextSibling} style={{ width: 22, height: 16, border: 'none', borderRadius: 3, backgroundColor: nextSibling ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)', cursor: nextSibling ? 'pointer' : 'default', color: nextSibling ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.1)', fontSize: 9, lineHeight: 1 }}>▼</button>
+        </div>
+
+        {/* Action buttons */}
+        <button onClick={() => { setAddingChild(!addingChild); setEditing(false) }} style={btnStyleSm(GOLD + '18', GOLD)}>+ ย่อย</button>
+        <button onClick={() => { setEditing(!editing); setAddingChild(false) }} style={btnStyleSm('rgba(255,255,255,0.08)', 'rgba(255,255,255,0.55)')}>แก้ไข</button>
+        {canDelete && (
+          <button onClick={deleteCat} style={btnStyleSm(RED + '18', RED)}>ลบ</button>
+        )}
+      </div>
+
+      {/* Edit form */}
+      {editing && (
+        <div style={{ marginLeft: indent + 12, marginBottom: 8 }}>
+          <CatForm
+            title={`แก้ไข: ${node.name}`}
+            data={editData} onChange={setEditData}
+            allCats={allFlat} excludeId={node.id}
+            saving={saving} onSave={saveEdit} onCancel={() => setEditing(false)}
+          />
+        </div>
+      )}
+
+      {/* Add child form */}
+      {addingChild && (
+        <div style={{ marginLeft: indent + 12, marginBottom: 8 }}>
+          <CatForm
+            title={`+ เพิ่มหมวดย่อยใน: ${node.name}`}
+            data={{ ...newChildData, parent_id: node.id }}
+            onChange={d => setNewChildData({ ...d, parent_id: node.id })}
+            allCats={allFlat}
+            saving={saving} onSave={addChild} onCancel={() => setAddingChild(false)}
+          />
+        </div>
+      )}
+
+      {/* Children */}
+      {node.children && node.children.length > 0 && (
+        <div style={{ marginLeft: indent + 12 }}>
+          {node.children.map(child => (
+            <CatRow
+              key={child.id} node={child} siblings={node.children!}
+              allFlat={allFlat} depth={depth + 1} onReload={onReload} showMsg={showMsg}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CategoriesTab() {
+  const [cats,     setCats]     = useState<CatNode[]>([])
+  const [allFlat,  setAllFlat]  = useState<CatNode[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [newData,  setNewData]  = useState<CatEdit>(emptyEditCat())
+  const [saving,   setSaving]   = useState(false)
+  const [msg,      setMsg]      = useState<string | null>(null)
+
+  const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.rpc('get_categories_tree')
+    const flat = (data as CatNode[]) ?? []
+    setAllFlat(flat)
+
+    // Build tree
+    const map = new Map<string, CatNode>()
+    flat.forEach(c => map.set(c.id, { ...c, children: [] }))
+    const roots: CatNode[] = []
+    map.forEach(node => {
+      if (node.parent_id && map.has(node.parent_id)) {
+        map.get(node.parent_id)!.children!.push(node)
+      } else {
+        roots.push(node)
+      }
+    })
+    // Sort each level by sort_order
+    const sortNodes = (nodes: CatNode[]) => {
+      nodes.sort((a, b) => a.sort_order - b.sort_order)
+      nodes.forEach(n => n.children && sortNodes(n.children))
+    }
+    sortNodes(roots)
+    setCats(roots)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function createRoot() {
+    if (!newData.name.trim()) { showMsg('กรุณาระบุชื่อหมวด'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('create_category', {
+      p_name:       newData.name,
+      p_name_th:    newData.name_th,
+      p_name_lo:    newData.name_lo,
+      p_icon:       newData.icon,
+      p_color:      newData.color,
+      p_parent_id:  newData.parent_id || null,
+      p_sort_order: parseInt(newData.sort_order) || 0,
+    })
+    if (!error) { showMsg('เพิ่มหมวดสำเร็จ'); setShowForm(false); setNewData(emptyEditCat()); await load() }
+    else showMsg('Error: ' + error.message)
+    setSaving(false)
+  }
+
+  if (loading) return <LoadingSpinner />
+
+  const totalMenus = allFlat.reduce((s, c) => s + c.menu_count, 0)
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 13, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>
+            หมวดหมู่ทั้งหมด ({allFlat.length})
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 3 }}>
+            ครอบคลุม {totalMenus} เมนู
+          </div>
+        </div>
+        <button onClick={() => { setShowForm(!showForm); setNewData(emptyEditCat()) }} style={btnStyle(GOLD)}>
+          {showForm ? '✕ ปิด' : '+ เพิ่มหมวดหมู่'}
+        </button>
+      </div>
+
+      <Toast msg={msg} />
+
+      {/* Add root form */}
+      {showForm && (
+        <div style={{ marginBottom: 20 }}>
+          <CatForm
+            title="เพิ่มหมวดหมู่ใหม่"
+            data={newData} onChange={setNewData}
+            allCats={allFlat}
+            saving={saving} onSave={createRoot} onCancel={() => setShowForm(false)}
+          />
+        </div>
+      )}
+
+      {/* Tree */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {cats.map(root => (
+          <CatRow
+            key={root.id} node={root} siblings={cats}
+            allFlat={allFlat} depth={0} onReload={load} showMsg={showMsg}
+          />
+        ))}
+        {cats.length === 0 && (
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.2)', padding: 48, fontSize: 14 }}>
+            ยังไม่มีหมวดหมู่ — กด "+ เพิ่มหมวดหมู่" เพื่อเริ่ม
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Stock Tab ────────────────────────────────────────────────────────────────
+
+function InventoryFormFields({ data, onChange, showQty }: {
+  data: InventoryForm; onChange: (d: InventoryForm) => void; showQty?: boolean
+}) {
+  const set = (k: keyof InventoryForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    onChange({ ...data, [k]: e.target.value })
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <Field label="ชื่อ EN *"><input value={data.name} onChange={set('name')} style={inputStyle} placeholder="Fresh Milk" /></Field>
+        <Field label="ชื่อ TH"><input value={data.name_th} onChange={set('name_th')} style={inputStyle} placeholder="นมสด" /></Field>
+        <Field label="ชื่อ LO"><input value={data.name_lo} onChange={set('name_lo')} style={inputStyle} placeholder="ນົມສົດ" /></Field>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '80px 120px 120px 120px 1fr', gap: 10 }}>
+        <Field label="หน่วย"><input value={data.unit} onChange={set('unit')} style={inputStyle} placeholder="ml" /></Field>
+        {showQty && <Field label="ปริมาณเริ่มต้น"><input value={data.current_qty} onChange={set('current_qty')} type="number" min="0" style={inputStyle} /></Field>}
+        <Field label="Reorder Point"><input value={data.reorder_point} onChange={set('reorder_point')} type="number" min="0" style={inputStyle} placeholder="ขั้นต่ำ" /></Field>
+        <Field label="ความจุสูงสุด"><input value={data.max_quantity} onChange={set('max_quantity')} type="number" min="0" style={inputStyle} placeholder="Max" /></Field>
+        <Field label="ต้นทุน/หน่วย ₭"><input value={data.cost_per_unit} onChange={set('cost_per_unit')} type="number" min="0" style={inputStyle} /></Field>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '160px 100px', gap: 10 }}>
+        <Field label="ที่เก็บ">
+          <select value={data.storage_location} onChange={set('storage_location')} style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="">— ไม่ระบุ —</option>
+            {STORAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </Field>
+        <Field label="อายุหลังเปิด (วัน)"><input value={data.expiry_days} onChange={set('expiry_days')} type="number" min="0" style={inputStyle} placeholder="3" /></Field>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10 }}>
+        <Field label="ซัพพลายเออร์หลัก"><input value={data.supplier} onChange={set('supplier')} style={inputStyle} /></Field>
+        <Field label="เบอร์โทร"><input value={data.supplier_phone} onChange={set('supplier_phone')} style={inputStyle} placeholder="020-xxx-xxx" /></Field>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10 }}>
+        <Field label="ซัพพลายเออร์สำรอง"><input value={data.secondary_supplier} onChange={set('secondary_supplier')} style={inputStyle} /></Field>
+        <Field label="เบอร์โทรสำรอง"><input value={data.secondary_supplier_phone} onChange={set('secondary_supplier_phone')} style={inputStyle} placeholder="020-xxx-xxx" /></Field>
+      </div>
+      <Field label="หมายเหตุ">
+        <textarea value={data.notes} onChange={set('notes')} style={{ ...inputStyle, height: 52, resize: 'vertical' as const }} placeholder="รายละเอียดเพิ่มเติม..." />
+      </Field>
+    </div>
+  )
+}
+
+function StockItemRow({ item, onReload, showMsg }: {
+  item: StockDetail; onReload: () => void; showMsg: (m: string) => void
+}) {
+  const [panel,       setPanel]       = useState<'detail' | 'add' | 'edit' | null>(null)
+  const [addForm,     setAddForm]     = useState<AddStockForm>({ qty: '', cost: '', supplier: item.supplier ?? '', date: todayISO() })
+  const [editData,    setEditData]    = useState<InventoryForm>({
+    name: item.name, name_th: item.name_th ?? '', name_lo: item.name_lo ?? '', unit: item.unit,
+    current_qty: String(item.current_qty), reorder_point: String(item.reorder_point ?? ''),
+    max_quantity: String(item.max_quantity ?? ''), cost_per_unit: String(item.cost_per_unit ?? ''),
+    storage_location: item.storage_location ?? 'shelf', expiry_days: String(item.expiry_days ?? ''),
+    supplier: item.supplier ?? '', supplier_phone: item.supplier_phone ?? '',
+    secondary_supplier: item.secondary_supplier ?? '', secondary_supplier_phone: item.secondary_supplier_phone ?? '',
+    notes: item.notes ?? '',
+  })
+  const [history,     setHistory]     = useState<PurchaseLog[] | null>(null)
+  const [usage,       setUsage]       = useState<UsageStat[] | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [saving,      setSaving]      = useState(false)
+
+  const isEmpty  = item.current_qty === 0
+  const isLow    = !isEmpty && item.reorder_point != null && item.current_qty <= item.reorder_point
+  const isExpiring = item.expiry_days_remaining != null && item.expiry_days_remaining >= 0 && item.expiry_days_remaining <= 3
+  const pct      = item.max_quantity ? Math.min((item.current_qty / item.max_quantity) * 100, 100) : null
+  const barColor = pct == null ? GOLD : pct > 50 ? GREEN : pct > 25 ? ORANGE : RED
+  const daysColor = item.days_until_empty != null && item.days_until_empty < 3 ? RED
+    : item.days_until_empty != null && item.days_until_empty < 7 ? ORANGE : 'rgba(255,255,255,0.5)'
+
+  function openPanel(p: 'detail' | 'add' | 'edit') {
+    const next = panel === p ? null : p
+    setPanel(next)
+    if (next === 'detail' && history === null) {
+      setDetailLoading(true)
+      Promise.all([
+        supabase.rpc('get_purchase_history', { p_inventory_id: item.id, p_limit: 5 }),
+        supabase.rpc('get_stock_analytics',  { p_inventory_id: item.id, p_days: 14 }),
+      ]).then(([hRes, uRes]) => {
+        setHistory((hRes.data as PurchaseLog[]) ?? [])
+        setUsage((uRes.data as UsageStat[]) ?? [])
+        setDetailLoading(false)
+      })
+    }
+  }
+
+  async function submitAdd() {
+    const qty = parseFloat(addForm.qty)
+    if (isNaN(qty) || qty <= 0) { showMsg('กรุณาระบุจำนวน'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('add_stock', {
+      p_inventory_id: item.id, p_qty: qty, p_cost_lak: parseFloat(addForm.cost) || 0,
+      p_supplier: addForm.supplier || null,
+      p_purchased_at: addForm.date ? new Date(addForm.date + 'T12:00:00+07:00').toISOString() : new Date().toISOString(),
+    })
+    if (!error) { showMsg(`เติม ${item.name} +${qty} ${item.unit}`); setPanel(null); onReload() }
+    else showMsg('Error: ' + error.message)
+    setSaving(false)
+  }
+
+  async function saveEdit() {
+    if (!editData.name.trim()) { showMsg('กรุณาระบุชื่อ'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('update_inventory_item', {
+      p_id:                       item.id,
+      p_name:                     editData.name,
+      p_name_th:                  editData.name_th,
+      p_name_lo:                  editData.name_lo,
+      p_unit:                     editData.unit,
+      p_reorder_point:            parseFloat(editData.reorder_point)  || null,
+      p_max_quantity:             parseFloat(editData.max_quantity)   || null,
+      p_cost_per_unit:            parseFloat(editData.cost_per_unit)  || null,
+      p_storage_location:         editData.storage_location || null,
+      p_expiry_days:              parseInt(editData.expiry_days)      || null,
+      p_supplier:                 editData.supplier,
+      p_supplier_phone:           editData.supplier_phone,
+      p_secondary_supplier:       editData.secondary_supplier,
+      p_secondary_supplier_phone: editData.secondary_supplier_phone,
+      p_notes:                    editData.notes,
+    })
+    if (!error) { showMsg('บันทึกสำเร็จ'); setPanel(null); onReload() }
+    else showMsg('Error: ' + error.message)
+    setSaving(false)
+  }
+
+  const borderColor = isEmpty ? RED + '44' : isLow ? ORANGE + '33' : isExpiring ? ORANGE + '44' : BORDER
+  const usageMax = usage ? Math.max(...usage.map(u => u.used_qty), 0.001) : 0.001
+
+  return (
+    <div style={{ marginBottom: 6 }}>
+      {/* ── Main row ── */}
+      <div style={{
+        backgroundColor: CARD, border: `1px solid ${borderColor}`,
+        borderRadius: panel ? '10px 10px 0 0' : 10, padding: '14px 16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          {/* Storage icon + status dot */}
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 20 }}>{storageIcon(item.storage_location)}</span>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: isEmpty ? RED : isLow ? ORANGE : GREEN, boxShadow: `0 0 5px ${isEmpty ? RED : isLow ? ORANGE : GREEN}88` }} />
+          </div>
+
+          {/* Name + progress bar */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{item.name}</span>
+              {isEmpty    && <Badge label="หมดแล้ว"  bg={RED    + '18'} color={RED} />}
+              {isLow      && <Badge label="ใกล้หมด"  bg={ORANGE + '18'} color={ORANGE} />}
+              {isExpiring && <Badge label={`หมดอายุใน ${item.expiry_days_remaining} วัน`} bg={ORANGE + '18'} color={ORANGE} />}
+            </div>
+            {(item.name_th || item.name_lo) && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+                {item.name_th && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{item.name_th}</span>}
+                {item.name_lo && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{item.name_lo}</span>}
+              </div>
+            )}
+
+            {/* Progress bar */}
+            {pct !== null && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, height: 5, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, backgroundColor: barColor, borderRadius: 3, transition: 'width .4s' }} />
+                </div>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{Math.round(pct)}%</span>
+              </div>
+            )}
+          </div>
+
+          {/* Qty / max */}
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div>
+              <span style={{ fontSize: 20, fontWeight: 800, color: isEmpty ? RED : isLow ? ORANGE : '#fff' }}>{item.current_qty}</span>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginLeft: 3 }}>{item.unit}</span>
+            </div>
+            {item.max_quantity && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>max {item.max_quantity}</div>
+            )}
+            {item.reorder_point != null && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>min {item.reorder_point}</div>
+            )}
+          </div>
+
+          {/* Days / cost */}
+          <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 80 }}>
+            {item.days_until_empty != null && (
+              <div style={{ fontSize: 12, fontWeight: 700, color: daysColor }}>
+                {item.days_until_empty === 0 ? 'หมดแล้ว' : `หมดใน ${item.days_until_empty} วัน`}
+              </div>
+            )}
+            {item.cost_per_unit && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 3 }}>
+                ₭{item.cost_per_unit}/{item.unit}
+              </div>
+            )}
+            {item.stock_value > 0 && (
+              <div style={{ fontSize: 11, color: GOLD, marginTop: 2 }}>{fmtLAK(item.stock_value)}</div>
+            )}
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+            <button onClick={() => { openPanel('add'); setAddForm({ qty: '', cost: '', supplier: item.supplier ?? '', date: todayISO() }) }} style={btnStyleSm(panel === 'add' ? GOLD + '33' : GOLD + '22', GOLD)}>+ เติม</button>
+            <button onClick={() => openPanel('detail')} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.55)')}>ประวัติ</button>
+            <button onClick={() => openPanel('edit')} style={btnStyleSm('rgba(255,255,255,0.05)', 'rgba(255,255,255,0.4)')}>แก้ไข</button>
+          </div>
+        </div>
+
+        {/* Supplier row */}
+        {item.supplier && (
+          <div style={{ marginTop: 8, display: 'flex', gap: 16, paddingLeft: 36, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{item.supplier}</span>
+            {item.supplier_phone && (
+              <a href={`tel:${item.supplier_phone}`} style={{ fontSize: 11, color: GOLD, textDecoration: 'none' }}>
+                {item.supplier_phone}
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Add Stock panel ── */}
+      {panel === 'add' && (
+        <div style={{ backgroundColor: '#0f0f0f', border: `1px solid ${GOLD}33`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: 16 }}>
+          <div style={{ fontSize: 12, color: GOLD, marginBottom: 12, letterSpacing: '1px' }}>+ เติมสต็อก — {item.name}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <Field label={`จำนวน (${item.unit})`}><input autoFocus value={addForm.qty} onChange={e => setAddForm(f => ({ ...f, qty: e.target.value }))} type="number" min="0" style={inputStyle} /></Field>
+            <Field label="ราคาทุน ₭ (รวม)"><input value={addForm.cost} onChange={e => setAddForm(f => ({ ...f, cost: e.target.value }))} type="number" min="0" style={inputStyle} /></Field>
+            <Field label="ซัพพลายเออร์"><input value={addForm.supplier} onChange={e => setAddForm(f => ({ ...f, supplier: e.target.value }))} style={inputStyle} /></Field>
+            <Field label="วันที่ซื้อ"><input value={addForm.date} onChange={e => setAddForm(f => ({ ...f, date: e.target.value }))} type="date" style={inputStyle} /></Field>
+          </div>
+          {addForm.qty && addForm.cost && parseFloat(addForm.qty) > 0 && (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>
+              ราคา/หน่วย: ₭{(parseFloat(addForm.cost) / parseFloat(addForm.qty)).toFixed(0)} / {item.unit}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={submitAdd} disabled={saving} style={btnStyle(GOLD)}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            <button onClick={() => setPanel(null)} style={btnStyle('rgba(255,255,255,0.08)')}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Detail panel ── */}
+      {panel === 'detail' && (
+        <div style={{ backgroundColor: '#0d0d0d', border: `1px solid ${BORDER}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: 16 }}>
+          {detailLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${GOLD}33`, borderTopColor: GOLD, animation: 'spin .7s linear infinite' }} />
+            </div>
+          ) : (
+            <>
+              {/* Secondary supplier */}
+              {item.secondary_supplier && (
+                <div style={{ marginBottom: 14, padding: '10px 12px', backgroundColor: CARD2, borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 4 }}>ซัพพลายเออร์สำรอง</div>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: '#fff' }}>{item.secondary_supplier}</span>
+                    {item.secondary_supplier_phone && (
+                      <a href={`tel:${item.secondary_supplier_phone}`} style={{ fontSize: 12, color: GOLD, textDecoration: 'none' }}>{item.secondary_supplier_phone}</a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              {item.notes && (
+                <div style={{ marginBottom: 14, padding: '8px 12px', backgroundColor: CARD2, borderRadius: 6 }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>หมายเหตุ</div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{item.notes}</div>
+                </div>
+              )}
+
+              {/* Daily usage rate */}
+              {item.daily_usage > 0 && (
+                <div style={{ marginBottom: 14, display: 'flex', gap: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px' }}>ใช้เฉลี่ย/วัน</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 2 }}>{item.daily_usage.toFixed(2)} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{item.unit}</span></div>
+                  </div>
+                  {item.last_price && (
+                    <div>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px' }}>ราคาซื้อล่าสุด</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: GOLD, marginTop: 2 }}>{fmtLAK(item.last_price)}<span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>/{item.unit}</span></div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 14-day usage mini chart */}
+              {usage && usage.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>ใช้ 14 วัน ({item.unit})</div>
+                  <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 48 }}>
+                    {usage.map((u, i) => {
+                      const h = Math.round((u.used_qty / usageMax) * 48)
+                      const d = new Date(u.day + 'T00:00:00')
+                      return (
+                        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }} title={`${u.day}: ${u.used_qty.toFixed(2)} ${item.unit}`}>
+                          <div style={{ width: '100%', height: Math.max(h, 2), backgroundColor: u.used_qty > 0 ? GOLD : 'rgba(255,255,255,0.05)', borderRadius: '2px 2px 0 0' }} />
+                          {i % 3 === 0 && <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)' }}>{d.getDate()}</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Purchase history */}
+              <div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>ประวัติการซื้อ (5 ล่าสุด)</div>
+                {!history || history.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีประวัติ</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {history.map(log => (
+                      <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: CARD, borderRadius: 6 }}>
+                        <div>
+                          <span style={{ fontSize: 13, color: '#fff', fontWeight: 600 }}>+{log.qty_purchased} {item.unit}</span>
+                          {log.supplier && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginLeft: 10 }}>{log.supplier}</span>}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 12, color: GOLD }}>{fmtLAK(log.unit_price_lak)}/{item.unit}</div>
+                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)' }}>{fmtDate(log.created_at)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Edit panel ── */}
+      {panel === 'edit' && (
+        <div style={{ backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: 16 }}>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 14 }}>แก้ไข: {item.name}</div>
+          <InventoryFormFields data={editData} onChange={setEditData} showQty={false} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <button onClick={saveEdit} disabled={saving} style={btnStyle(GOLD)}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            <button onClick={() => setPanel(null)} style={btnStyle('rgba(255,255,255,0.08)')}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StockTab() {
+  const [items,    setItems]    = useState<StockDetail[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [newData,  setNewData]  = useState<InventoryForm>(emptyInventoryForm())
+  const [saving,   setSaving]   = useState(false)
+  const [msg,      setMsg]      = useState<string | null>(null)
+  const [search,   setSearch]   = useState('')
+
+  const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.rpc('get_stock_detail')
+    setItems((data as StockDetail[]) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function createItem() {
+    if (!newData.name.trim()) { showMsg('กรุณาระบุชื่อวัตถุดิบ'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('create_inventory_item', {
+      p_name:                     newData.name,
+      p_name_th:                  newData.name_th,
+      p_name_lo:                  newData.name_lo,
+      p_unit:                     newData.unit,
+      p_current_qty:              parseFloat(newData.current_qty)  || 0,
+      p_reorder_point:            parseFloat(newData.reorder_point) || null,
+      p_max_quantity:             parseFloat(newData.max_quantity)  || null,
+      p_cost_per_unit:            parseFloat(newData.cost_per_unit) || null,
+      p_storage_location:         newData.storage_location || null,
+      p_expiry_days:              parseInt(newData.expiry_days)     || null,
+      p_supplier:                 newData.supplier,
+      p_supplier_phone:           newData.supplier_phone,
+      p_secondary_supplier:       newData.secondary_supplier,
+      p_secondary_supplier_phone: newData.secondary_supplier_phone,
+      p_notes:                    newData.notes,
+    })
+    if (!error) { showMsg('เพิ่มวัตถุดิบสำเร็จ'); setShowForm(false); setNewData(emptyInventoryForm()); await load() }
+    else showMsg('Error: ' + error.message)
+    setSaving(false)
+  }
+
+  if (loading) return <LoadingSpinner />
+
+  const totalValue   = items.reduce((s, i) => s + i.stock_value, 0)
+  const lowCount     = items.filter(i => i.reorder_point != null && i.current_qty <= i.reorder_point).length
+  const expiryCount  = items.filter(i => i.expiry_days_remaining != null && i.expiry_days_remaining >= 0 && i.expiry_days_remaining <= 3).length
+
+  const filtered = items.filter(i =>
+    !search || i.name.toLowerCase().includes(search.toLowerCase()) ||
+    (i.name_th ?? '').includes(search) || (i.unit ?? '').includes(search)
+  )
+
+  return (
+    <div>
+      {/* Summary Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+        {[
+          { label: 'มูลค่าสต็อกรวม', value: fmtLAK(totalValue), color: GOLD },
+          { label: 'วัตถุดิบทั้งหมด', value: `${items.length} รายการ`, color: '#fff' },
+          { label: 'ใกล้หมด / หมด', value: String(lowCount), color: lowCount > 0 ? RED : GREEN },
+          { label: 'ใกล้หมดอายุ', value: String(expiryCount), color: expiryCount > 0 ? ORANGE : GREEN },
+        ].map(c => (
+          <div key={c.label} style={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 10, padding: '14px 18px' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>{c.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: c.color }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>
+          วัตถุดิบ ({filtered.length} รายการ)
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา..." style={{ ...inputStyle, width: 160, padding: '6px 12px' }} />
+          <button onClick={() => { setShowForm(!showForm); setNewData(emptyInventoryForm()) }} style={btnStyle(GOLD)}>
+            {showForm ? '✕ ปิด' : '+ เพิ่มวัตถุดิบ'}
+          </button>
+        </div>
+      </div>
+
+      <Toast msg={msg} />
+
+      {/* Add form */}
+      {showForm && (
+        <div style={{ marginBottom: 20, padding: 20, backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderRadius: 12 }}>
+          <div style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 16 }}>เพิ่มวัตถุดิบใหม่</div>
+          <InventoryFormFields data={newData} onChange={setNewData} showQty={true} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <button onClick={createItem} disabled={saving} style={btnStyle(GOLD)}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            <button onClick={() => setShowForm(false)} style={btnStyle('rgba(255,255,255,0.08)')}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
+
+      {/* Stock list */}
+      <div>
+        {filtered.map(item => (
+          <StockItemRow key={item.id} item={item} onReload={load} showMsg={showMsg} />
+        ))}
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.2)', padding: 48, fontSize: 14 }}>
+            ไม่พบวัตถุดิบ
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Settings Tab ─────────────────────────────────────────────────────────────
+
+function SettingSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid ${BORDER}` }}>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+        <div style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', fontWeight: 600 }}>{title}</div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function SettingsToggle({ value, onChange, label, sub }: { value: boolean; onChange: (v: boolean) => void; label: string; sub?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
+      <div>
+        <div style={{ fontSize: 13, color: '#fff' }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{sub}</div>}
+      </div>
+      <button onClick={() => onChange(!value)} style={{
+        width: 42, height: 23, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+        backgroundColor: value ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s', position: 'relative',
+      }}>
+        <div style={{
+          position: 'absolute', top: 3, left: value ? 22 : 3, width: 17, height: 17, borderRadius: '50%',
+          backgroundColor: '#fff', transition: 'left .2s',
+        }} />
+      </button>
+    </div>
+  )
+}
+
+function SettingsTab() {
+  const [settings, setSettings] = useState<FullSettings>({ ...DEFAULT_SETTINGS })
+  const [loading,  setLoading]  = useState(true)
+  const [saving,   setSaving]   = useState(false)
+  const [saved,    setSaved]    = useState(false)
+
+  useEffect(() => {
+    supabase.rpc('get_site_settings').then(({ data }) => {
+      if (data) setSettings(s => ({ ...s, ...data }))
+      setLoading(false)
+    })
+  }, [])
+
+  async function saveAll() {
+    setSaving(true); setSaved(false)
+    await Promise.all(
+      Object.entries(settings).map(([k, v]) =>
+        supabase.rpc('update_site_setting', { p_key: k, p_value: String(v ?? '') })
+      )
+    )
+    setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  const set = (k: keyof FullSettings) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setSettings(s => ({ ...s, [k]: e.target.value }))
+
+  const toggle = (k: keyof FullSettings) => (v: boolean) =>
+    setSettings(s => ({ ...s, [k]: v ? 'true' : 'false' }))
+
+  const isOn = (k: keyof FullSettings) => settings[k] === 'true'
+
+  // open_days as string[]
+  let openDays: string[] = []
+  try { openDays = JSON.parse(settings.open_days || '[]') } catch { openDays = [] }
+  const toggleDay = (d: string) => {
+    const next = openDays.includes(d) ? openDays.filter(x => x !== d) : [...openDays, d]
+    setSettings(s => ({ ...s, open_days: JSON.stringify(next) }))
+  }
+
+  if (loading) return <LoadingSpinner />
+
+  return (
+    <div style={{ maxWidth: 700 }}>
+
+      {/* ── 1. ข้อมูลร้าน ── */}
+      <SettingSection icon="🏪" title="ข้อมูลร้าน">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <Field label="ชื่อร้าน EN"><input value={settings.shop_name}    onChange={set('shop_name')}    style={inputStyle} /></Field>
+            <Field label="ชื่อร้าน TH"><input value={settings.shop_name_th} onChange={set('shop_name_th')} style={inputStyle} /></Field>
+            <Field label="ชื่อร้าน LO"><input value={settings.shop_name_lo} onChange={set('shop_name_lo')} style={inputStyle} /></Field>
+          </div>
+          <Field label="ที่อยู่">
+            <textarea value={settings.shop_address} onChange={set('shop_address')} style={{ ...inputStyle, height: 56, resize: 'vertical' as const }} placeholder="123 ถนน... เวียงจันทน์" />
+          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="เบอร์โทรศัพท์"><input value={settings.shop_phone} onChange={set('shop_phone')} style={inputStyle} placeholder="020-xxx-xxx" /></Field>
+            <Field label="อีเมล"><input value={settings.shop_email} onChange={set('shop_email')} type="email" style={inputStyle} placeholder="cafe@example.com" /></Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <Field label="Facebook"><input value={settings.shop_facebook}  onChange={set('shop_facebook')}  style={inputStyle} placeholder="AlanCoffeeTravel" /></Field>
+            <Field label="Instagram"><input value={settings.shop_instagram} onChange={set('shop_instagram')} style={inputStyle} placeholder="@alancoffee" /></Field>
+            <Field label="Line ID"><input value={settings.shop_line} onChange={set('shop_line')} style={inputStyle} placeholder="@alancoffee" /></Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '120px 120px 1fr', gap: 10, alignItems: 'end' }}>
+            <Field label="เวลาเปิด"><input type="time" value={settings.open_time}  onChange={set('open_time')}  style={inputStyle} /></Field>
+            <Field label="เวลาปิด"> <input type="time" value={settings.close_time} onChange={set('close_time')} style={inputStyle} /></Field>
+            <div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6, letterSpacing: '1px', textTransform: 'uppercase' }}>วันที่เปิด</div>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {DAYS_OF_WEEK.map(d => {
+                  const on = openDays.includes(d.key)
+                  return (
+                    <button key={d.key} type="button" onClick={() => toggleDay(d.key)} style={{
+                      width: 36, height: 36, borderRadius: 8, border: `1px solid ${on ? GOLD : 'rgba(255,255,255,0.12)'}`,
+                      backgroundColor: on ? GOLD + '22' : 'transparent',
+                      color: on ? GOLD : 'rgba(255,255,255,0.3)', fontSize: 12, fontWeight: on ? 700 : 400, cursor: 'pointer',
+                    }}>{d.label}</button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </SettingSection>
+
+      {/* ── 2. การเงิน ── */}
+      <SettingSection icon="💰" title="ตั้งค่าการเงิน">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="สกุลเงินหลัก">
+              <select value={settings.currency_primary} onChange={set('currency_primary')} style={{ ...inputStyle, cursor: 'pointer' }}>
+                <option value="LAK">LAK — กีบลาว</option>
+                <option value="THB">THB — บาทไทย</option>
+                <option value="USD">USD — ดอลลาร์</option>
+              </select>
+            </Field>
+            <Field label="สกุลเงินรอง">
+              <select value={settings.currency_secondary} onChange={set('currency_secondary')} style={{ ...inputStyle, cursor: 'pointer' }}>
+                <option value="">— ไม่มี —</option>
+                <option value="LAK">LAK — กีบลาว</option>
+                <option value="THB">THB — บาทไทย</option>
+                <option value="USD">USD — ดอลลาร์</option>
+              </select>
+            </Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '120px 140px', gap: 10 }}>
+            <Field label="VAT (%)">
+              <input value={settings.vat_percent} onChange={set('vat_percent')} type="number" min="0" max="100" step="0.1" style={inputStyle} placeholder="0 = ไม่มี VAT" />
+            </Field>
+            <Field label="Service Charge (%)">
+              <input value={settings.service_charge_percent} onChange={set('service_charge_percent')} type="number" min="0" max="100" step="0.1" style={inputStyle} placeholder="0 = ไม่มี" />
+            </Field>
+          </div>
+          <SettingsToggle
+            value={isOn('receipt_auto_print')}
+            onChange={toggle('receipt_auto_print')}
+            label="พิมพ์ใบเสร็จอัตโนมัติ"
+            sub="พิมพ์ทันทีหลังชำระเงิน"
+          />
+        </div>
+      </SettingSection>
+
+      {/* ── 3. จอ TV ── */}
+      <SettingSection icon="📺" title="ตั้งค่าจอ TV / คิว">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Field label="Queue Display Mode">
+            <select value={settings.queue_display_mode} onChange={set('queue_display_mode')} style={{ ...inputStyle, cursor: 'pointer' }}>
+              <option value="standard">Standard — แสดงคิวปกติ</option>
+              <option value="compact">Compact — แสดงเยอะขึ้น</option>
+              <option value="large">Large — ตัวใหญ่</option>
+            </select>
+          </Field>
+          <Field label="Queue Ticker Text">
+            <textarea value={settings.queue_ticker_text} onChange={set('queue_ticker_text')} rows={3} style={{ ...inputStyle, resize: 'vertical' as const, fontFamily: 'inherit', lineHeight: 1.6 }} placeholder="ข้อความวิ่งในจอ TV คิว..." />
+          </Field>
+          <Field label="Main Ticker Text">
+            <textarea value={settings.ticker_text} onChange={set('ticker_text')} rows={3} style={{ ...inputStyle, resize: 'vertical' as const, fontFamily: 'inherit', lineHeight: 1.6 }} placeholder="ข้อความวิ่งหลัก..." />
+          </Field>
+        </div>
+      </SettingSection>
+
+      {/* ── 4. แจ้งเตือน ── */}
+      <SettingSection icon="🔔" title="ตั้งค่าแจ้งเตือน (Line)">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: '10px 12px', backgroundColor: CARD2, borderRadius: 8, fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.7 }}>
+            ใช้ Line Notify Token จาก <span style={{ color: GOLD }}>notify-bot.line.me</span> เพื่อรับแจ้งเตือนใน Line
+          </div>
+          <div>
+            <SettingsToggle
+              value={isOn('low_stock_alert_enabled')}
+              onChange={toggle('low_stock_alert_enabled')}
+              label="แจ้งเตือนสต็อกใกล้หมด"
+              sub="ส่ง Line เมื่อวัตถุดิบต่ำกว่า reorder point"
+            />
+            <div style={{ marginTop: 10 }}>
+              <Field label="Line Token — สต็อก">
+                <input value={settings.low_stock_alert_line_token} onChange={set('low_stock_alert_line_token')}
+                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="xxxxxxxxxxxxxxxxxxxx" type="password" />
+              </Field>
+            </div>
+          </div>
+          <div>
+            <SettingsToggle
+              value={isOn('daily_report_enabled')}
+              onChange={toggle('daily_report_enabled')}
+              label="รายงานประจำวัน"
+              sub="ส่งสรุปยอดขายทุกคืน 22:00"
+            />
+            <div style={{ marginTop: 10 }}>
+              <Field label="Line Token — รายงาน">
+                <input value={settings.daily_report_line_token} onChange={set('daily_report_line_token')}
+                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="xxxxxxxxxxxxxxxxxxxx" type="password" />
+              </Field>
+            </div>
+          </div>
+        </div>
+      </SettingSection>
+
+      {/* ── 5. AI Analyst ── */}
+      <SettingSection icon="🤖" title="AI Analyst">
+        <SettingsToggle
+          value={isOn('ai_analyst_enabled')}
+          onChange={toggle('ai_analyst_enabled')}
+          label="เปิดใช้งาน AI Analyst"
+          sub="วิเคราะห์ยอดขาย, แนะนำเมนู, คาดการณ์สต็อก"
+        />
+        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[
+            'วิเคราะห์ยอดขายรายวัน / รายสัปดาห์ / รายเดือน',
+            'แนะนำเมนูที่ควรโปรโมทหรือปรับราคา',
+            'คาดการณ์ปริมาณวัตถุดิบที่ต้องสั่ง',
+            'ตรวจจับ anomaly ยอดขายผิดปกติ',
+            'รายงาน margin ต่ำและแนะนำการปรับต้นทุน',
+          ].map(feat => (
+            <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: isOn('ai_analyst_enabled') ? 1 : 0.35 }}>
+              <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: GOLD, flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{feat}</span>
+            </div>
+          ))}
+        </div>
+        {isOn('ai_analyst_enabled') && (
+          <div style={{ marginTop: 14, padding: '10px 14px', backgroundColor: GOLD + '12', border: `1px solid ${GOLD}22`, borderRadius: 8, fontSize: 11, color: GOLD }}>
+            AI Analyst เปิดใช้งานแล้ว — ดูผลวิเคราะห์ได้ใน Tab Dashboard
+          </div>
+        )}
+      </SettingSection>
+
+      {/* ── Save button ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, marginBottom: 24 }}>
+        <button onClick={saveAll} disabled={saving} style={{
+          ...btnStyle(GOLD), fontSize: 14, padding: '12px 32px',
+          boxShadow: `0 0 20px ${GOLD}22`,
+        }}>
+          {saving ? 'กำลังบันทึก...' : 'บันทึกทั้งหมด'}
+        </button>
+        {saved && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: GREEN, fontSize: 13, fontWeight: 600, animation: 'fadeIn .3s' }}>
+            <span style={{ fontSize: 16 }}>✓</span> บันทึกแล้ว
+          </div>
+        )}
+      </div>
+
+      {/* ── Quick links ── */}
+      <div style={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '20px 24px' }}>
+        <div style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 14, fontWeight: 600 }}>ลิงก์ด่วน</div>
+        {[
+          { href: '/pos',   label: 'หน้า POS',      sub: 'รับออเดอร์และชำระเงิน' },
+          { href: '/queue', label: 'จอ TV คิว',     sub: 'แสดงคิวกำลังทำ / รับได้แล้ว' },
+          { href: '/',      label: 'หน้าหลักเว็บ', sub: 'Alan Coffee & Travel' },
+        ].map(link => (
+          <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: CARD2, border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, textDecoration: 'none', marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 14, color: GOLD, fontWeight: 600 }}>{link.label}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{link.sub}</div>
+            </div>
+            <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 16 }}>→</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Layout ──────────────────────────────────────────────────────────────
+
+const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'dashboard',  label: 'Dashboard',   icon: '📊' },
+  { id: 'menu',       label: 'เมนู',         icon: '🍽️' },
+  { id: 'categories', label: 'หมวดหมู่',    icon: '🗂️' },
+  { id: 'stock',      label: 'สต็อก',       icon: '📦' },
+  { id: 'settings',   label: 'ตั้งค่า',     icon: '⚙️' },
+]
+
+export default function CafeClient() {
+  const [tab, setTab] = useState<Tab>('dashboard')
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: BLACK, color: '#fff', fontFamily: 'var(--font-body, Inter, sans-serif)' }}>
+      {/* ── Sidebar ── */}
+      <div style={{ width: 220, flexShrink: 0, backgroundColor: DARK, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', padding: '32px 0' }}>
+        <div style={{ padding: '0 24px 32px' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: 22, color: '#fff', letterSpacing: '-0.5px' }}>ALAN</div>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '4px', textTransform: 'uppercase' }}>CAFE OS</div>
+        </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px' }}>
+          {NAV_ITEMS.map(item => (
+            <button key={item.id} onClick={() => setTab(item.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 9, border: 'none', cursor: 'pointer', backgroundColor: tab === item.id ? `${GOLD}18` : 'transparent', color: tab === item.id ? GOLD : 'rgba(255,255,255,0.42)', fontSize: 14, fontWeight: tab === item.id ? 600 : 400, textAlign: 'left', transition: 'all .15s' }}>
+              <span style={{ fontSize: 16 }}>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{ marginTop: 'auto', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <a href="/pos"   style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ POS</a>
+          <a href="/queue" style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ จอ TV</a>
+          <a href="/"      style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ หน้าหลัก</a>
+        </div>
+      </div>
+
+      {/* ── Content ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '40px 40px' }}>
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{NAV_ITEMS.find(n => n.id === tab)?.label}</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', marginTop: 6 }}>Alan Cafe OS — Admin</div>
+        </div>
+        {tab === 'dashboard'  && <DashboardTab />}
+        {tab === 'menu'       && <MenuTab />}
+        {tab === 'categories' && <CategoriesTab />}
+        {tab === 'stock'      && <StockTab />}
+        {tab === 'settings'   && <SettingsTab />}
+      </div>
+    </div>
+  )
+}

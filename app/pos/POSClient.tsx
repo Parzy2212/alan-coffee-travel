@@ -38,10 +38,41 @@ type QueueEntry = {
   summary: string
 }
 
+type TodayOrder = {
+  id: string
+  queue_number: number
+  status: string
+  total_lak: number
+  payment_method: string | null
+  customer_name: string | null
+  table_number: string | null
+  receipt_number: string | null
+  discount_amount: number
+  void_reason: string | null
+  created_at_vt: string
+  items: { name: string; qty: number; note: string | null }[]
+}
+
+type PaymentMethod = 'cash' | 'qr' | 'transfer'
+
+type PayDetails = {
+  method: PaymentMethod
+  received: number
+  change: number
+  customer: string
+  table: string
+  discount: number
+  discountReason: string
+  staffNote: string
+  finalTotal: number
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const GOLD = '#c9a84c'
+const GOLD  = '#c9a84c'
 const BLACK = '#0f0f0f'
+const GREEN = '#4cba7f'
+const RED   = '#e05555'
 
 function fmtLak(n: number): string {
   return n.toLocaleString('en-US') + ' LAK'
@@ -51,51 +82,58 @@ function fmtQueue(n: number): string {
   return '#' + String(n).padStart(3, '0')
 }
 
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
 function translateError(msg: string): string {
   if (msg.includes('Insufficient stock')) {
     const match = msg.match(/"([^"]+)"/)
     const ingredient = match?.[1] ?? 'วัตถุดิบ'
     return `วัตถุดิบไม่เพียงพอ: ${ingredient}`
   }
-  if (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('fetch')) {
+  if (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('fetch'))
     return 'ไม่สามารถเชื่อมต่อได้ กรุณาลองใหม่'
-  }
-  if (msg.includes('JWT') || msg.includes('auth')) {
+  if (msg.includes('JWT') || msg.includes('auth'))
     return 'หมดเวลา กรุณาเข้าสู่ระบบใหม่'
-  }
   return 'เกิดข้อผิดพลาด กรุณาลองใหม่'
+}
+
+const PAY_METHODS: { value: PaymentMethod; label: string; icon: string }[] = [
+  { value: 'cash',     label: 'เงินสด',  icon: '💵' },
+  { value: 'qr',       label: 'QR Code', icon: '📱' },
+  { value: 'transfer', label: 'โอนเงิน', icon: '🏦' },
+]
+
+const popupInput: React.CSSProperties = {
+  width: '100%', padding: '8px 12px', borderRadius: 6,
+  border: '1px solid rgba(255,255,255,0.1)',
+  backgroundColor: 'rgba(255,255,255,0.05)',
+  color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box',
 }
 
 // ─── QtyButton ────────────────────────────────────────────────────────────────
 
 function QtyButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        width: 28, height: 28, borderRadius: 4,
-        border: '1px solid rgba(255,255,255,0.14)',
-        backgroundColor: 'transparent', color: '#fff',
-        fontWeight: 700, fontSize: 16, lineHeight: 1,
-        cursor: 'pointer', display: 'flex',
-        alignItems: 'center', justifyContent: 'center',
-      }}
-    >
+    <button onClick={onClick} style={{
+      width: 28, height: 28, borderRadius: 4,
+      border: '1px solid rgba(255,255,255,0.14)',
+      backgroundColor: 'transparent', color: '#fff',
+      fontWeight: 700, fontSize: 16, lineHeight: 1, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
       {label}
     </button>
   )
 }
 
-// ─── Customization Popup ──────────────────────────────────────────────────────
+// ─── CustomPopup ─────────────────────────────────────────────────────────────
 
 const SWEETNESS_OPTIONS = ['หวานปกติ', 'หวานน้อย', 'ไม่หวาน']
 const TEMP_OPTIONS      = ['ร้อน', 'เย็น', 'อุ่น']
 
-function CustomPopup({
-  recipe,
-  onConfirm,
-  onClose,
-}: {
+function CustomPopup({ recipe, onConfirm, onClose }: {
   recipe: Recipe
   onConfirm: (customization: string) => void
   onClose: () => void
@@ -116,135 +154,65 @@ function CustomPopup({
   }
 
   return (
-    <div
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 100,
-        backgroundColor: 'rgba(0,0,0,0.65)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-    >
+    <div ref={overlayRef} onClick={handleOverlayClick} style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      backgroundColor: 'rgba(0,0,0,0.65)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
       <div style={{
-        backgroundColor: '#1a1a1a',
-        border: `1px solid ${GOLD}44`,
+        backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}44`,
         borderRadius: 12, padding: 28, width: 340,
         display: 'flex', flexDirection: 'column', gap: 20,
       }}>
-
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>
-              {recipe.product_name}
-            </div>
-            {recipe.product_name_lo && (
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
-                {recipe.product_name_lo}
-              </div>
-            )}
+            <div style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>{recipe.product_name}</div>
+            {recipe.product_name_lo && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{recipe.product_name_lo}</div>}
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
-              fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: '0 4px',
-              marginLeft: 12, flexShrink: 0,
-            }}
-          >
-            ×
-          </button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: '0 4px', marginLeft: 12, flexShrink: 0 }}>×</button>
         </div>
 
-        {/* Sweetness */}
         <div>
-          <div style={{
-            fontSize: 11, color: 'rgba(255,255,255,0.4)',
-            letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8,
-          }}>
-            ความหวาน
-          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>ความหวาน</div>
           <div style={{ display: 'flex', gap: 6 }}>
             {SWEETNESS_OPTIONS.map(opt => (
-              <button
-                key={opt}
-                onClick={() => setSweetness(opt)}
-                style={{
-                  flex: 1, padding: '7px 4px', borderRadius: 6, border: 'none',
-                  backgroundColor: sweetness === opt ? GOLD : 'rgba(255,255,255,0.07)',
-                  color: sweetness === opt ? BLACK : 'rgba(255,255,255,0.55)',
-                  fontWeight: sweetness === opt ? 700 : 500,
-                  fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
-                {opt}
-              </button>
+              <button key={opt} onClick={() => setSweetness(opt)} style={{
+                flex: 1, padding: '7px 4px', borderRadius: 6, border: 'none',
+                backgroundColor: sweetness === opt ? GOLD : 'rgba(255,255,255,0.07)',
+                color: sweetness === opt ? BLACK : 'rgba(255,255,255,0.55)',
+                fontWeight: sweetness === opt ? 700 : 500, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
+              }}>{opt}</button>
             ))}
           </div>
         </div>
 
-        {/* Temperature */}
         <div>
-          <div style={{
-            fontSize: 11, color: 'rgba(255,255,255,0.4)',
-            letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8,
-          }}>
-            อุณหภูมิ
-          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>อุณหภูมิ</div>
           <div style={{ display: 'flex', gap: 6 }}>
             {TEMP_OPTIONS.map(opt => (
-              <button
-                key={opt}
-                onClick={() => setTemp(opt)}
-                style={{
-                  flex: 1, padding: '7px 4px', borderRadius: 6, border: 'none',
-                  backgroundColor: temp === opt ? GOLD : 'rgba(255,255,255,0.07)',
-                  color: temp === opt ? BLACK : 'rgba(255,255,255,0.55)',
-                  fontWeight: temp === opt ? 700 : 500,
-                  fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
-                {opt}
-              </button>
+              <button key={opt} onClick={() => setTemp(opt)} style={{
+                flex: 1, padding: '7px 4px', borderRadius: 6, border: 'none',
+                backgroundColor: temp === opt ? GOLD : 'rgba(255,255,255,0.07)',
+                color: temp === opt ? BLACK : 'rgba(255,255,255,0.55)',
+                fontWeight: temp === opt ? 700 : 500, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
+              }}>{opt}</button>
             ))}
           </div>
         </div>
 
-        {/* Note */}
         <div>
-          <div style={{
-            fontSize: 11, color: 'rgba(255,255,255,0.4)',
-            letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8,
-          }}>
-            หมายเหตุ
-          </div>
-          <input
-            type="text"
-            placeholder="เช่น ไม่ใส่น้ำแข็ง, extra shot..."
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleConfirm() }}
-            style={{
-              width: '100%', padding: '9px 12px', borderRadius: 6,
-              border: '1px solid rgba(255,255,255,0.1)',
-              backgroundColor: 'rgba(255,255,255,0.05)',
-              color: '#fff', fontSize: 13, outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>หมายเหตุ</div>
+          <input type="text" placeholder="เช่น ไม่ใส่น้ำแข็ง, extra shot..." value={note}
+            onChange={e => setNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleConfirm() }}
+            style={popupInput} />
         </div>
 
-        {/* Confirm */}
-        <button
-          onClick={handleConfirm}
-          style={{
-            width: '100%', padding: '13px 0', borderRadius: 6, border: 'none',
-            backgroundColor: GOLD, color: BLACK,
-            fontWeight: 800, fontSize: 14, letterSpacing: '1.5px',
-            textTransform: 'uppercase', cursor: 'pointer',
-            fontFamily: 'var(--font-heading)',
-          }}
-        >
+        <button onClick={handleConfirm} style={{
+          width: '100%', padding: '13px 0', borderRadius: 6, border: 'none',
+          backgroundColor: GOLD, color: BLACK, fontWeight: 800, fontSize: 14,
+          letterSpacing: '1.5px', textTransform: 'uppercase', cursor: 'pointer',
+          fontFamily: 'var(--font-heading)',
+        }}>
           Confirm
         </button>
       </div>
@@ -252,21 +220,345 @@ function CustomPopup({
   )
 }
 
+// ─── ChargePopup ─────────────────────────────────────────────────────────────
+
+function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
+  subtotal: number
+  cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
+  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod) => void
+  onClose: () => void
+}) {
+  const [method,         setMethod]         = useState<PaymentMethod>('cash')
+  const [received,       setReceived]       = useState('')
+  const [customer,       setCustomer]       = useState('')
+  const [table,          setTable]          = useState('')
+  const [discount,       setDiscount]       = useState('')
+  const [discountReason, setDiscountReason] = useState('')
+  const [staffNote,      setStaffNote]      = useState('')
+  const [loading,        setLoading]        = useState(false)
+  const [errMsg,         setErrMsg]         = useState('')
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  const discountAmt = parseFloat(discount) || 0
+  const finalTotal  = Math.max(subtotal - discountAmt, 0)
+  const receivedAmt = parseFloat(received) || 0
+  const changeAmt   = method === 'cash' && receivedAmt > 0 ? Math.max(receivedAmt - finalTotal, 0) : 0
+  const canConfirm  = method !== 'cash' || receivedAmt >= finalTotal
+
+  function handleOverlay(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target === overlayRef.current && !loading) onClose()
+  }
+
+  async function confirm() {
+    if (!canConfirm) { setErrMsg('เงินที่รับมาไม่เพียงพอ'); return }
+    setLoading(true); setErrMsg('')
+
+    // Step 1: create order
+    const { data, error } = await supabase.rpc('create_order_with_deduction', { p_cart: cartPayload })
+    if (error) { setErrMsg(translateError(error.message)); setLoading(false); return }
+
+    const result = data as { order_id: string; queue_number: number }
+
+    // Step 2: finalize payment details
+    const { data: receipt, error: err2 } = await supabase.rpc('finalize_order_payment', {
+      p_order_id:        result.order_id,
+      p_payment_method:  method,
+      p_amount_received: method === 'cash' ? receivedAmt : null,
+      p_change_amount:   method === 'cash' ? changeAmt   : null,
+      p_table_number:    table    || null,
+      p_customer_name:   customer || null,
+      p_discount_amount: discountAmt || 0,
+      p_discount_reason: discountReason || null,
+      p_staff_note:      staffNote || null,
+    })
+
+    if (err2) {
+      // Order created but finalize failed — still show success with queue number
+      onSuccess(result.queue_number, '—', changeAmt, method)
+    } else {
+      onSuccess(result.queue_number, (receipt as string) ?? '—', changeAmt, method)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div ref={overlayRef} onClick={handleOverlay} style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      backgroundColor: 'rgba(0,0,0,0.75)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        backgroundColor: '#181818', border: `1px solid ${GOLD}44`,
+        borderRadius: 14, padding: '28px 28px 24px', width: 420,
+        maxHeight: '90vh', overflowY: 'auto',
+        display: 'flex', flexDirection: 'column', gap: 18,
+      }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', letterSpacing: '2px', textTransform: 'uppercase' }}>ชำระเงิน</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: GOLD, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+              {fmtLak(finalTotal)}
+            </div>
+            {discountAmt > 0 && (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
+                ก่อนลด: {fmtLak(subtotal)} · ส่วนลด: {fmtLak(discountAmt)}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} disabled={loading} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Payment method */}
+        <div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>วิธีชำระเงิน</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {PAY_METHODS.map(m => (
+              <button key={m.value} onClick={() => setMethod(m.value)} style={{
+                flex: 1, padding: '10px 4px', borderRadius: 8,
+                border: `1px solid ${method === m.value ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                backgroundColor: method === m.value ? `${GOLD}18` : 'transparent',
+                color: method === m.value ? GOLD : 'rgba(255,255,255,0.45)',
+                fontWeight: method === m.value ? 700 : 400,
+                fontSize: 13, cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', gap: 4, transition: 'all .15s',
+              }}>
+                <span style={{ fontSize: 20 }}>{m.icon}</span>
+                <span>{m.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Cash received */}
+        {method === 'cash' && (
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>รับมา (₭)</div>
+            <input autoFocus value={received} onChange={e => setReceived(e.target.value)} type="number" min="0"
+              style={{ ...popupInput, fontSize: 22, fontWeight: 700, color: GOLD, padding: '10px 14px' }}
+              placeholder={String(finalTotal)} onKeyDown={e => { if (e.key === 'Enter') confirm() }} />
+            {receivedAmt > 0 && (
+              <div style={{
+                marginTop: 10, padding: '10px 14px', borderRadius: 8,
+                backgroundColor: changeAmt >= 0 ? `${GREEN}18` : `${RED}18`,
+                border: `1px solid ${changeAmt >= 0 ? GREEN : RED}33`,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>เงินทอน</span>
+                <span style={{ fontSize: 22, fontWeight: 800, color: changeAmt >= 0 ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
+                  {changeAmt >= 0 ? fmtLak(changeAmt) : '⚠ ไม่พอ'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Optional fields */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>ชื่อลูกค้า</div>
+            <input value={customer} onChange={e => setCustomer(e.target.value)} style={popupInput} placeholder="(ไม่บังคับ)" />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>โต๊ะ</div>
+            <input value={table} onChange={e => setTable(e.target.value)} style={popupInput} placeholder="A1" />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>ส่วนลด ₭</div>
+            <input value={discount} onChange={e => setDiscount(e.target.value)} type="number" min="0" style={popupInput} placeholder="0" />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>เหตุผลส่วนลด</div>
+            <input value={discountReason} onChange={e => setDiscountReason(e.target.value)} style={popupInput} placeholder="VIP / โปรโมชัน..." />
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>Staff Note</div>
+          <input value={staffNote} onChange={e => setStaffNote(e.target.value)} style={popupInput} placeholder="หมายเหตุสำหรับร้าน..." />
+        </div>
+
+        {errMsg && (
+          <div style={{ padding: '8px 12px', backgroundColor: `${RED}18`, border: `1px solid ${RED}33`, borderRadius: 6, fontSize: 13, color: '#ff8080' }}>
+            {errMsg}
+          </div>
+        )}
+
+        {/* Confirm button */}
+        <button onClick={confirm} disabled={loading || !canConfirm} style={{
+          width: '100%', padding: '14px 0', borderRadius: 8, border: 'none',
+          backgroundColor: !canConfirm ? 'rgba(255,255,255,0.06)' : loading ? `${GOLD}55` : GOLD,
+          color: !canConfirm ? 'rgba(255,255,255,0.2)' : BLACK,
+          fontWeight: 800, fontSize: 15, letterSpacing: '1.5px', textTransform: 'uppercase',
+          cursor: (!canConfirm || loading) ? 'not-allowed' : 'pointer',
+          fontFamily: 'var(--font-heading)', transition: 'all .2s',
+        }}>
+          {loading ? 'กำลังบันทึก...' : `ยืนยันชำระเงิน ${fmtLak(finalTotal)}`}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── SettingsPopup ────────────────────────────────────────────────────────────
+
+function SettingsPopup({ onClose }: { onClose: () => void }) {
+  const [printerIp,   setPrinterIp]   = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_printer_ip')   ?? '' : '')
+  const [printerPort, setPrinterPort] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_printer_port') ?? '9100' : '9100')
+  const [currency,    setCurrency]    = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_currency')     ?? 'LAK' : 'LAK')
+  const [testDone,    setTestDone]    = useState(false)
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  function save() {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pos_printer_ip',   printerIp)
+      localStorage.setItem('pos_printer_port', printerPort)
+      localStorage.setItem('pos_currency',     currency)
+    }
+    onClose()
+  }
+
+  function testPrint() {
+    setTestDone(true)
+    setTimeout(() => setTestDone(false), 2500)
+  }
+
+  return (
+    <div ref={overlayRef} onClick={e => { if (e.target === overlayRef.current) onClose() }} style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      backgroundColor: 'rgba(0,0,0,0.75)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        backgroundColor: '#181818', border: `1px solid ${GOLD}44`,
+        borderRadius: 14, padding: '28px', width: 380,
+        display: 'flex', flexDirection: 'column', gap: 20,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>⚙️ POS Settings</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 20, cursor: 'pointer' }}>×</button>
+        </div>
+
+        {/* Printer */}
+        <div>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>เครื่องพิมพ์ใบเสร็จ</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 8, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>IP Address</div>
+              <input value={printerIp} onChange={e => setPrinterIp(e.target.value)} style={{ ...popupInput, fontFamily: 'monospace' }} placeholder="192.168.1.100" />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>Port</div>
+              <input value={printerPort} onChange={e => setPrinterPort(e.target.value)} style={{ ...popupInput, fontFamily: 'monospace' }} />
+            </div>
+          </div>
+          <button onClick={testPrint} style={{
+            padding: '7px 16px', borderRadius: 6, border: `1px solid ${GOLD}44`,
+            backgroundColor: 'transparent', color: testDone ? GREEN : GOLD,
+            fontSize: 12, cursor: 'pointer',
+          }}>
+            {testDone ? '✓ ส่งสัญญาณแล้ว' : '🖨️ ทดสอบพิมพ์'}
+          </button>
+        </div>
+
+        {/* Currency */}
+        <div>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>สกุลเงินที่แสดง</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {['LAK', 'THB', 'USD'].map(c => (
+              <button key={c} onClick={() => setCurrency(c)} style={{
+                flex: 1, padding: '8px 0', borderRadius: 6,
+                border: `1px solid ${currency === c ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                backgroundColor: currency === c ? `${GOLD}18` : 'transparent',
+                color: currency === c ? GOLD : 'rgba(255,255,255,0.4)',
+                fontWeight: currency === c ? 700 : 400, fontSize: 13, cursor: 'pointer',
+              }}>{c}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick links */}
+        <div>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>ลิงก์ด่วน</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[{ href: '/cafe', label: '⚙️ Admin' }, { href: '/queue', label: '📺 คิว TV' }, { href: '/', label: '🌐 เว็บ' }].map(l => (
+              <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" style={{
+                flex: 1, padding: '8px 0', borderRadius: 6, textAlign: 'center',
+                border: '1px solid rgba(255,255,255,0.08)',
+                backgroundColor: 'rgba(255,255,255,0.04)',
+                color: 'rgba(255,255,255,0.5)', fontSize: 12, textDecoration: 'none',
+              }}>{l.label}</a>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={save} style={{
+          width: '100%', padding: '12px 0', borderRadius: 8, border: 'none',
+          backgroundColor: GOLD, color: BLACK, fontWeight: 800, fontSize: 14,
+          cursor: 'pointer', fontFamily: 'var(--font-heading)',
+        }}>
+          บันทึก
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── VoidRow ─────────────────────────────────────────────────────────────────
+
+function VoidRow({ order, onVoided }: { order: TodayOrder; onVoided: () => void }) {
+  const [open,    setOpen]    = useState(false)
+  const [reason,  setReason]  = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function doVoid() {
+    setLoading(true)
+    await supabase.rpc('void_order', { p_order_id: order.id, p_reason: reason || 'ยกเลิก' })
+    setLoading(false); setOpen(false)
+    onVoided()
+  }
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{
+      padding: '3px 8px', borderRadius: 4, border: '1px solid rgba(220,80,80,0.3)',
+      backgroundColor: 'rgba(220,80,80,0.08)', color: '#e07070', fontSize: 11, cursor: 'pointer',
+    }}>Void</button>
+  )
+
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผล..."
+        style={{ ...popupInput, padding: '3px 8px', fontSize: 11, width: 100 }} />
+      <button onClick={doVoid} disabled={loading} style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: RED, color: '#fff', fontSize: 11, cursor: 'pointer' }}>
+        {loading ? '...' : 'ยืนยัน'}
+      </button>
+      <button onClick={() => setOpen(false)} style={{ padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}>✕</button>
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function POSClient() {
-  const [recipes, setRecipes]             = useState<Recipe[]>([])
-  const [categories, setCategories]       = useState<Category[]>([])
-  const [loading, setLoading]             = useState(true)
-  const [cart, setCart]                   = useState<CartItem[]>([])
-  const [activeL1, setActiveL1]           = useState<string>('All')
-  const [activeL2, setActiveL2]           = useState<string | null>(null)
-  const [now, setNow]                     = useState(new Date())
-  const [chargeStatus, setChargeStatus]   = useState<ChargeStatus>('idle')
-  const [queueNumber, setQueueNumber]     = useState<number | null>(null)
-  const [errorMessage, setErrorMessage]   = useState<string>('')
+  const [recipes,      setRecipes]      = useState<Recipe[]>([])
+  const [categories,   setCategories]   = useState<Category[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [cart,         setCart]         = useState<CartItem[]>([])
+  const [activeL1,     setActiveL1]     = useState<string>('All')
+  const [activeL2,     setActiveL2]     = useState<string | null>(null)
+  const [now,          setNow]          = useState(new Date())
+  const [chargeStatus, setChargeStatus] = useState<ChargeStatus>('idle')
+  const [successData,  setSuccessData]  = useState<{ queue: number; receipt: string; change: number; method: PaymentMethod } | null>(null)
   const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null)
-  const [queueEntries, setQueueEntries]   = useState<QueueEntry[]>([])
+  const [queueEntries,  setQueueEntries] = useState<QueueEntry[]>([])
+  const [todayOrders,   setTodayOrders]  = useState<TodayOrder[]>([])
+  const [showCharge,    setShowCharge]   = useState(false)
+  const [showSettings,  setShowSettings] = useState(false)
+  const [bottomTab,     setBottomTab]    = useState<'queue' | 'orders'>('queue')
 
   // Live clock
   useEffect(() => {
@@ -276,51 +568,32 @@ export default function POSClient() {
 
   // Fetch categories
   useEffect(() => {
-    supabase
-      .from('categories')
-      .select('id, name, name_lo, parent_id, sort_order')
-      .eq('is_active', true)
-      .order('sort_order')
+    supabase.from('categories').select('id, name, name_lo, parent_id, sort_order')
+      .eq('is_active', true).order('sort_order')
       .then(({ data }) => setCategories((data as Category[]) ?? []))
   }, [])
 
   // Fetch menu
   useEffect(() => {
-    supabase
-      .from('recipes')
-      .select('id, product_name, product_name_lo, category, category_id, price_lak')
-      .eq('is_active', true)
-      .order('category')
-      .then(({ data }) => {
-        setRecipes((data as Recipe[]) ?? [])
-        setLoading(false)
-      })
+    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak')
+      .eq('is_active', true).order('category')
+      .then(({ data }) => { setRecipes((data as Recipe[]) ?? []); setLoading(false) })
   }, [])
 
-  // L1 categories (no parent)
-  const l1Categories = useMemo(
-    () => categories.filter(c => c.parent_id === null),
-    [categories]
-  )
-
-  // Children of active L1
+  // L1 / L2 categories
+  const l1Categories = useMemo(() => categories.filter(c => c.parent_id === null), [categories])
   const l2Categories = useMemo(() => {
     if (activeL1 === 'All') return []
     return categories.filter(c => c.parent_id === activeL1)
   }, [categories, activeL1])
 
-  function selectL1(id: string) {
-    setActiveL1(id)
-    setActiveL2(null)
-  }
+  function selectL1(id: string) { setActiveL1(id); setActiveL2(null) }
 
-  // All category IDs under a parent (recursive — supports future L3+)
   function getFamilyIds(parentId: string): string[] {
     const children = categories.filter(c => c.parent_id === parentId)
     return [parentId, ...children.flatMap(c => getFamilyIds(c.id))]
   }
 
-  // Filtered recipes
   const filtered = useMemo(() => {
     if (activeL1 === 'All') return recipes
     if (activeL2) return recipes.filter(r => r.category_id === activeL2)
@@ -351,192 +624,156 @@ export default function POSClient() {
     })
   }
 
-  // ── Charge ──────────────────────────────────────────────────────────────────
-  async function handleCharge() {
-    if (cart.length === 0) return
-    setChargeStatus('loading')
-    setErrorMessage('')
-
-    const cartPayload = cart.map(item => ({
-      recipe_id:       item.recipe.id,
-      qty:             item.qty,
-      unit_price_lak:  item.recipe.price_lak,
-      customization:   item.customization || null,
-    }))
-
-    const { data, error } = await supabase.rpc('create_order_with_deduction', {
-      p_cart: cartPayload,
-    })
-
-    if (error) {
-      setChargeStatus('error')
-      setErrorMessage(translateError(error.message))
-      setTimeout(() => setChargeStatus('idle'), 4000)
-      return
-    }
-
-    const result = data as { order_id: string; queue_number: number }
-    setQueueNumber(result.queue_number)
+  // Charge success handler (called from ChargePopup)
+  function handleChargeSuccess(queueNum: number, receipt: string, change: number, method: PaymentMethod) {
+    setSuccessData({ queue: queueNum, receipt, change, method })
     setCart([])
     setChargeStatus('success')
+    setShowCharge(false)
+    loadTodayOrders()
     setTimeout(() => {
       setChargeStatus('idle')
-      setQueueNumber(null)
-    }, 3000)
+      setSuccessData(null)
+    }, 5000)
   }
 
-  // ── Today's Queue ────────────────────────────────────────────────────────────
+  // ── Queue ─────────────────────────────────────────────────────────────────
   const fetchTodayQueue = useCallback(async () => {
-    console.log('[POS Queue] calling rpc get_today_pos_queue ...')
     const { data, error } = await supabase.rpc('get_today_pos_queue')
-    console.log('[POS Queue] data:', data, '| error:', error)
     if (error) return
-    // Keep only waiting/making — guard against stale realtime payload arriving after status changed
     const active = ((data as QueueEntry[]) ?? []).filter(
       e => e.queue_status === null || e.queue_status === 'waiting' || e.queue_status === 'making'
     )
-    console.log('[POS Queue] active entries:', active)
     setQueueEntries(active)
   }, [])
 
-  useEffect(() => { fetchTodayQueue() }, [fetchTodayQueue])
+  const loadTodayOrders = useCallback(async () => {
+    const { data } = await supabase.rpc('get_today_orders')
+    setTodayOrders((data as TodayOrder[]) ?? [])
+  }, [])
 
-  // Realtime: listen to INSERT and UPDATE on orders — no page refresh needed
+  useEffect(() => { fetchTodayQueue(); loadTodayOrders() }, [fetchTodayQueue, loadTodayOrders])
+
   useEffect(() => {
     const ch = supabase
       .channel('pos-queue')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, fetchTodayQueue)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, fetchTodayQueue)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => { fetchTodayQueue(); loadTodayOrders() })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, () => { fetchTodayQueue(); loadTodayOrders() })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [fetchTodayQueue])
+  }, [fetchTodayQueue, loadTodayOrders])
 
   async function updateQueueStatus(orderId: string, status: string) {
     await supabase.rpc('update_queue_status', { p_order_id: orderId, p_status: status })
-    fetchTodayQueue() // instant local refresh (realtime also fires shortly after)
+    fetchTodayQueue()
   }
 
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 
+  const cartPayload = cart.map(item => ({
+    recipe_id:      item.recipe.id,
+    qty:            item.qty,
+    unit_price_lak: item.recipe.price_lak,
+    customization:  item.customization || null,
+  }))
+
+  const todayTotal  = todayOrders.filter(o => o.status === 'paid').reduce((s, o) => s + o.total_lak, 0)
+  const todayCount  = todayOrders.filter(o => o.status === 'paid').length
+
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100vh',
       backgroundColor: BLACK, color: '#fff',
-      fontFamily: 'var(--font-body, Inter, sans-serif)',
-      overflow: 'hidden',
+      fontFamily: 'var(--font-body, Inter, sans-serif)', overflow: 'hidden',
     }}>
 
-      {/* Customization popup */}
+      {/* Popups */}
       {pendingRecipe && (
-        <CustomPopup
-          recipe={pendingRecipe}
+        <CustomPopup recipe={pendingRecipe}
           onConfirm={customization => addToCartWithCustomization(pendingRecipe, customization)}
-          onClose={() => setPendingRecipe(null)}
-        />
+          onClose={() => setPendingRecipe(null)} />
       )}
 
-      {/* ── TOP BAR ──────────────────────────────────────────────────────── */}
+      {showCharge && (
+        <ChargePopup subtotal={subtotal} cartPayload={cartPayload}
+          onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
+      )}
+
+      {showSettings && <SettingsPopup onClose={() => setShowSettings(false)} />}
+
+      {/* ── TOP BAR ───────────────────────────────────────────────────────── */}
       <header style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 24px', height: 52,
-        backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.08)',
-        flexShrink: 0,
+        padding: '0 20px', height: 52,
+        backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{
-            fontFamily: 'var(--font-heading)', fontWeight: 800,
-            fontSize: 17, color: '#fff', letterSpacing: '-0.5px',
-          }}>
-            ALAN
-          </span>
+          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: '#fff', letterSpacing: '-0.5px' }}>ALAN</span>
           <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: GOLD }} />
-          <span style={{
-            color: 'rgba(255,255,255,0.35)', fontSize: 11,
-            letterSpacing: '2.5px', textTransform: 'uppercase',
-          }}>
-            Cafe OS · POS
-          </span>
+          <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, letterSpacing: '2.5px', textTransform: 'uppercase' }}>Cafe OS · POS</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {/* Today summary mini */}
+          {todayCount > 0 && (
+            <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+              <span>{todayCount} ออเดอร์</span>
+              <span style={{ color: GOLD }}>{fmtLak(todayTotal)}</span>
+            </div>
+          )}
           <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>{dateStr}</span>
-          <span style={{ color: GOLD, fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>
-            {timeStr}
-          </span>
+          <span style={{ color: GOLD, fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
+          <button onClick={() => setShowSettings(true)} style={{
+            width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
+            backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)',
+            fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>⚙️</button>
         </div>
       </header>
 
-      {/* ── MAIN SPLIT ───────────────────────────────────────────────────── */}
+      {/* ── MAIN SPLIT ──────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
-        {/* ── LEFT: MENU ───────────────────────────────────────────────── */}
-        <div style={{
-          flex: '1 1 0', display: 'flex', flexDirection: 'column',
-          borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden',
-        }}>
+        {/* ── LEFT: MENU ───────────────────────────────────────────────────── */}
+        <div style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
 
-          {/* L1 Category filter */}
+          {/* L1 filter */}
           <div style={{
-            display: 'flex', gap: 6, padding: '10px 16px',
-            backgroundColor: '#111',
+            display: 'flex', gap: 6, padding: '10px 16px', backgroundColor: '#111',
             borderBottom: l2Categories.length > 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
             flexShrink: 0, overflowX: 'auto',
           }}>
-            <button
-              onClick={() => selectL1('All')}
-              style={{
-                padding: '5px 15px', borderRadius: 999, border: 'none', flexShrink: 0,
-                backgroundColor: activeL1 === 'All' ? GOLD : 'rgba(255,255,255,0.07)',
-                color: activeL1 === 'All' ? BLACK : 'rgba(255,255,255,0.5)',
-                fontWeight: activeL1 === 'All' ? 700 : 500,
-                fontSize: 12, letterSpacing: '0.5px', cursor: 'pointer',
-                transition: 'all 0.15s', whiteSpace: 'nowrap',
-              }}
-            >
-              All
-            </button>
+            <button onClick={() => selectL1('All')} style={{
+              padding: '5px 15px', borderRadius: 999, border: 'none', flexShrink: 0,
+              backgroundColor: activeL1 === 'All' ? GOLD : 'rgba(255,255,255,0.07)',
+              color: activeL1 === 'All' ? BLACK : 'rgba(255,255,255,0.5)',
+              fontWeight: activeL1 === 'All' ? 700 : 500, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>All</button>
             {l1Categories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => selectL1(cat.id)}
-                style={{
-                  padding: '5px 15px', borderRadius: 999, border: 'none', flexShrink: 0,
-                  backgroundColor: activeL1 === cat.id ? GOLD : 'rgba(255,255,255,0.07)',
-                  color: activeL1 === cat.id ? BLACK : 'rgba(255,255,255,0.5)',
-                  fontWeight: activeL1 === cat.id ? 700 : 500,
-                  fontSize: 12, letterSpacing: '0.5px', cursor: 'pointer',
-                  transition: 'all 0.15s', whiteSpace: 'nowrap',
-                }}
-              >
-                {cat.name}
-              </button>
+              <button key={cat.id} onClick={() => selectL1(cat.id)} style={{
+                padding: '5px 15px', borderRadius: 999, border: 'none', flexShrink: 0,
+                backgroundColor: activeL1 === cat.id ? GOLD : 'rgba(255,255,255,0.07)',
+                color: activeL1 === cat.id ? BLACK : 'rgba(255,255,255,0.5)',
+                fontWeight: activeL1 === cat.id ? 700 : 500, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>{cat.name}</button>
             ))}
           </div>
 
-          {/* L2 Category filter */}
+          {/* L2 filter */}
           {l2Categories.length > 0 && (
             <div style={{
-              display: 'flex', gap: 6, padding: '6px 16px 8px',
-              backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.06)',
-              flexShrink: 0, overflowX: 'auto',
+              display: 'flex', gap: 6, padding: '6px 16px 8px', backgroundColor: '#111',
+              borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, overflowX: 'auto',
             }}>
               {l2Categories.map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => setActiveL2(activeL2 === cat.id ? null : cat.id)}
-                  style={{
-                    padding: '4px 13px', borderRadius: 999, flexShrink: 0,
-                    border: `1px solid ${activeL2 === cat.id ? GOLD : 'rgba(255,255,255,0.12)'}`,
-                    backgroundColor: activeL2 === cat.id ? `${GOLD}22` : 'transparent',
-                    color: activeL2 === cat.id ? GOLD : 'rgba(255,255,255,0.45)',
-                    fontWeight: activeL2 === cat.id ? 700 : 500,
-                    fontSize: 11, letterSpacing: '0.5px', cursor: 'pointer',
-                    transition: 'all 0.15s', whiteSpace: 'nowrap',
-                  }}
-                >
-                  {cat.name}
-                </button>
+                <button key={cat.id} onClick={() => setActiveL2(activeL2 === cat.id ? null : cat.id)} style={{
+                  padding: '4px 13px', borderRadius: 999, flexShrink: 0,
+                  border: `1px solid ${activeL2 === cat.id ? GOLD : 'rgba(255,255,255,0.12)'}`,
+                  backgroundColor: activeL2 === cat.id ? `${GOLD}22` : 'transparent',
+                  color: activeL2 === cat.id ? GOLD : 'rgba(255,255,255,0.45)',
+                  fontWeight: activeL2 === cat.id ? 700 : 500, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
+                }}>{cat.name}</button>
               ))}
             </div>
           )}
@@ -545,76 +782,57 @@ export default function POSClient() {
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
             {loading ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: 12 }}>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="skeleton" style={{ height: 108, borderRadius: 8 }} />
-                ))}
+                {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton" style={{ height: 108, borderRadius: 8 }} />)}
               </div>
             ) : filtered.length === 0 ? (
-              <div style={{ textAlign: 'center', paddingTop: 80, color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>
-                No items in this category
-              </div>
+              <div style={{ textAlign: 'center', paddingTop: 80, color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>No items in this category</div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: 12 }}>
-                {filtered.map(recipe => (
-                  <MenuCard key={recipe.id} recipe={recipe} onAdd={() => setPendingRecipe(recipe)} />
-                ))}
+                {filtered.map(recipe => <MenuCard key={recipe.id} recipe={recipe} onAdd={() => setPendingRecipe(recipe)} />)}
               </div>
             )}
           </div>
         </div>
 
-        {/* ── RIGHT: CART ──────────────────────────────────────────────── */}
-        <div style={{
-          width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column',
-          backgroundColor: '#111', position: 'relative',
-        }}>
+        {/* ── RIGHT: CART ──────────────────────────────────────────────────── */}
+        <div style={{ width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column', backgroundColor: '#111', position: 'relative' }}>
 
-          {/* Queue success overlay */}
-          {chargeStatus === 'success' && queueNumber !== null && (
+          {/* Success overlay */}
+          {chargeStatus === 'success' && successData && (
             <div style={{
               position: 'absolute', inset: 0, zIndex: 10,
-              backgroundColor: 'rgba(10,10,10,0.94)',
-              display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center', gap: 14,
+              backgroundColor: 'rgba(10,10,10,0.96)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
             }}>
-              <div style={{
-                fontSize: 13, color: 'rgba(255,255,255,0.4)',
-                letterSpacing: '3px', textTransform: 'uppercase',
-              }}>
-                คิวของคุณ
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', letterSpacing: '3px', textTransform: 'uppercase' }}>คิวของคุณ</div>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 80, fontWeight: 900, color: GOLD, letterSpacing: '-2px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                {fmtQueue(successData.queue)}
               </div>
-              <div style={{
-                fontFamily: 'var(--font-heading)',
-                fontSize: 80, fontWeight: 900,
-                color: GOLD, letterSpacing: '-2px',
-                lineHeight: 1, fontVariantNumeric: 'tabular-nums',
-              }}>
-                {fmtQueue(queueNumber)}
-              </div>
-              <div style={{ fontSize: 28 }}>✅</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
-                บันทึกออเดอร์เรียบร้อย
+              <div style={{ fontSize: 24 }}>✅</div>
+              {successData.receipt !== '—' && (
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
+                  ใบเสร็จ <span style={{ color: GOLD, fontFamily: 'monospace' }}>{successData.receipt}</span>
+                </div>
+              )}
+              {successData.method === 'cash' && successData.change > 0 && (
+                <div style={{ marginTop: 8, padding: '10px 24px', backgroundColor: `${GREEN}18`, border: `1px solid ${GREEN}33`, borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>เงินทอน</div>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: GREEN, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(successData.change)}</div>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 6 }}>
+                {PAY_METHODS.find(m => m.value === successData.method)?.icon} {PAY_METHODS.find(m => m.value === successData.method)?.label}
               </div>
             </div>
           )}
 
           {/* Cart header */}
-          <div style={{
-            padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
-          }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
-              Order{totalItems > 0 && (
-                <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>
-              )}
+              Order{totalItems > 0 && <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>}
             </span>
             {cart.length > 0 && chargeStatus === 'idle' && (
-              <button
-                onClick={() => setCart([])}
-                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', padding: '2px 6px' }}
-              >
-                Clear all
-              </button>
+              <button onClick={() => setCart([])} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', padding: '2px 6px' }}>Clear all</button>
             )}
           </div>
 
@@ -627,46 +845,25 @@ export default function POSClient() {
               </div>
             ) : (
               cart.map(item => (
-                <div
-                  key={item.cartKey}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 12px', backgroundColor: '#1a1a1a',
-                    borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)',
-                  }}
-                >
+                <div key={item.cartKey} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', backgroundColor: '#1a1a1a', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 2,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {item.recipe.product_name}
                     </div>
-                    <div style={{
-                      fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 3,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {item.customization}
                     </div>
                     <div style={{ fontSize: 12, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
                       {fmtLak(item.recipe.price_lak * item.qty)}
                     </div>
                   </div>
-
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <QtyButton label="−" onClick={() => decrement(item.cartKey)} />
-                    <span style={{ fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
-                      {item.qty}
-                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{item.qty}</span>
                     <QtyButton label="+" onClick={() => addToCartWithCustomization(item.recipe, item.customization)} />
                   </div>
-
-                  <button
-                    onClick={() => setCart(prev => prev.filter(i => i.cartKey !== item.cartKey))}
-                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.22)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}
-                  >
-                    ×
-                  </button>
+                  <button onClick={() => setCart(prev => prev.filter(i => i.cartKey !== item.cartKey))}
+                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.22)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
                 </div>
               ))
             )}
@@ -674,174 +871,117 @@ export default function POSClient() {
 
           {/* Cart footer */}
           <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-
-            {/* Error message */}
-            {chargeStatus === 'error' && errorMessage && (
-              <div style={{
-                marginBottom: 10, padding: '10px 14px',
-                backgroundColor: 'rgba(220,50,50,0.12)',
-                border: '1px solid rgba(220,50,50,0.3)',
-                borderRadius: 6, fontSize: 13, color: '#ff7a7a',
-                lineHeight: 1.4,
-              }}>
-                {errorMessage}
-              </div>
-            )}
-
-            {/* Total row */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase' }}>
-                Total
-              </span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
-                {fmtLak(subtotal)}
-              </span>
+              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase' }}>Total</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{fmtLak(subtotal)}</span>
             </div>
-
-            {/* Charge button */}
             <button
-              onClick={handleCharge}
-              disabled={cart.length === 0 || chargeStatus === 'loading'}
+              onClick={() => cart.length > 0 && setShowCharge(true)}
+              disabled={cart.length === 0}
               style={{
                 width: '100%', padding: '13px 0', borderRadius: 6, border: 'none',
-                backgroundColor:
-                  chargeStatus === 'loading' ? 'rgba(201,168,76,0.4)'
-                  : chargeStatus === 'error'   ? 'rgba(255,255,255,0.06)'
-                  : cart.length > 0            ? GOLD
-                  :                              'rgba(255,255,255,0.06)',
-                color:
-                  chargeStatus === 'loading' ? GOLD
-                  : chargeStatus === 'error'   ? 'rgba(255,255,255,0.25)'
-                  : cart.length > 0            ? BLACK
-                  :                              'rgba(255,255,255,0.18)',
-                fontWeight: 800, fontSize: 14, letterSpacing: '1.5px',
-                textTransform: 'uppercase',
-                cursor: (cart.length > 0 && chargeStatus !== 'loading') ? 'pointer' : 'not-allowed',
+                backgroundColor: cart.length > 0 ? GOLD : 'rgba(255,255,255,0.06)',
+                color: cart.length > 0 ? BLACK : 'rgba(255,255,255,0.18)',
+                fontWeight: 800, fontSize: 14, letterSpacing: '1.5px', textTransform: 'uppercase',
+                cursor: cart.length > 0 ? 'pointer' : 'not-allowed',
                 fontFamily: 'var(--font-heading)', transition: 'all 0.2s',
               }}
             >
-              {chargeStatus === 'loading'
-                ? 'กำลังบันทึก...'
-                : chargeStatus === 'error'
-                  ? 'ลองใหม่'
-                  : cart.length > 0
-                    ? `Charge ${fmtLak(subtotal)}`
-                    : 'No Items'}
+              {cart.length > 0 ? `Charge ${fmtLak(subtotal)}` : 'No Items'}
             </button>
           </div>
 
-          {/* ── QUEUE SECTION ────────────────────────────────────────────── */}
-          <div style={{
-            flexShrink: 0, display: 'flex', flexDirection: 'column',
-            borderTop: '2px solid rgba(255,255,255,0.07)',
-            maxHeight: 230, backgroundColor: '#0e0e0e',
-          }}>
+          {/* ── BOTTOM TABS ─────────────────────────────────────────────── */}
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', borderTop: '2px solid rgba(255,255,255,0.07)', maxHeight: 260, backgroundColor: '#0e0e0e' }}>
 
-            {/* Queue header */}
-            <div style={{
-              padding: '7px 14px',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.05)',
-            }}>
-              <span style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '2px',
-                textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)',
-              }}>
-                คิววันนี้
-              </span>
-              {queueEntries.length > 0 && (
-                <span style={{
-                  fontSize: 11, color: GOLD, fontWeight: 700,
-                  backgroundColor: `${GOLD}18`, padding: '1px 8px', borderRadius: 999,
+            {/* Tab bar */}
+            <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
+              {([
+                { key: 'queue',  label: 'คิวปัจจุบัน', badge: queueEntries.length },
+                { key: 'orders', label: 'ออเดอร์วันนี้', badge: todayCount },
+              ] as const).map(tab => (
+                <button key={tab.key} onClick={() => setBottomTab(tab.key)} style={{
+                  flex: 1, padding: '7px 0', border: 'none', cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  borderBottom: `2px solid ${bottomTab === tab.key ? GOLD : 'transparent'}`,
+                  color: bottomTab === tab.key ? GOLD : 'rgba(255,255,255,0.3)',
+                  fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s',
                 }}>
-                  {queueEntries.length}
-                </span>
-              )}
+                  {tab.label}
+                  {tab.badge > 0 && (
+                    <span style={{ fontSize: 10, backgroundColor: bottomTab === tab.key ? GOLD : 'rgba(255,255,255,0.1)', color: bottomTab === tab.key ? BLACK : 'rgba(255,255,255,0.5)', padding: '1px 6px', borderRadius: 999, fontWeight: 700 }}>
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
 
-            {/* Queue list */}
+            {/* Tab content */}
             <div style={{ overflowY: 'auto', flex: 1 }}>
-              {queueEntries.length === 0 ? (
-                <div style={{
-                  padding: '12px 14px', textAlign: 'center',
-                  color: 'rgba(255,255,255,0.15)', fontSize: 12,
-                }}>
-                  ยังไม่มีคิว
-                </div>
-              ) : (
-                queueEntries.map(entry => (
-                  <div
-                    key={entry.order_id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '7px 12px',
-                      borderBottom: '1px solid rgba(255,255,255,0.04)',
-                    }}
-                  >
-                    {/* Queue number + status label */}
-                    <div style={{ flexShrink: 0, minWidth: 44 }}>
-                      <div style={{
-                        fontFamily: 'var(--font-heading)', fontWeight: 800,
-                        fontSize: 13, fontVariantNumeric: 'tabular-nums',
-                        color: entry.queue_status === 'making' ? GOLD : 'rgba(255,255,255,0.45)',
-                      }}>
-                        {fmtQueue(entry.queue_number)}
+
+              {/* Queue tab */}
+              {bottomTab === 'queue' && (
+                queueEntries.length === 0 ? (
+                  <div style={{ padding: '12px 14px', textAlign: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 12 }}>ยังไม่มีคิว</div>
+                ) : (
+                  queueEntries.map(entry => (
+                    <div key={entry.order_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <div style={{ flexShrink: 0, minWidth: 44 }}>
+                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 13, fontVariantNumeric: 'tabular-nums', color: entry.queue_status === 'making' ? GOLD : 'rgba(255,255,255,0.45)' }}>
+                          {fmtQueue(entry.queue_number)}
+                        </div>
+                        <div style={{ fontSize: 9, letterSpacing: '0.5px', marginTop: 1, color: entry.queue_status === 'making' ? `${GOLD}99` : 'rgba(255,255,255,0.2)' }}>
+                          {entry.queue_status === 'making' ? 'กำลังทำ' : 'รอคิว'}
+                        </div>
                       </div>
-                      <div style={{
-                        fontSize: 9, letterSpacing: '0.5px', marginTop: 1,
-                        color: entry.queue_status === 'making' ? `${GOLD}99` : 'rgba(255,255,255,0.2)',
-                      }}>
-                        {entry.queue_status === 'making' ? 'กำลังทำ' : 'รอคิว'}
+                      <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'rgba(255,255,255,0.38)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.summary || '—'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                        <button onClick={() => updateQueueStatus(entry.order_id, 'making')} disabled={entry.queue_status === 'making'} title="เริ่มทำ" style={{ width: 28, height: 28, borderRadius: 6, border: 'none', backgroundColor: entry.queue_status === 'making' ? 'rgba(255,255,255,0.03)' : `${GOLD}20`, color: entry.queue_status === 'making' ? 'rgba(255,255,255,0.12)' : GOLD, fontSize: 13, cursor: entry.queue_status === 'making' ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔄</button>
+                        <button onClick={() => updateQueueStatus(entry.order_id, 'ready')} title="พร้อมแล้ว" style={{ width: 28, height: 28, borderRadius: 6, border: 'none', backgroundColor: 'rgba(76,186,127,0.1)', color: GREEN, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✅</button>
                       </div>
                     </div>
+                  ))
+                )
+              )}
 
-                    {/* Summary */}
-                    <div style={{
-                      flex: 1, minWidth: 0, fontSize: 11,
-                      color: 'rgba(255,255,255,0.38)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {entry.summary || '—'}
-                    </div>
-
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                      <button
-                        onClick={() => updateQueueStatus(entry.order_id, 'making')}
-                        disabled={entry.queue_status === 'making'}
-                        title="เริ่มทำ"
-                        style={{
-                          width: 28, height: 28, borderRadius: 6, border: 'none',
-                          backgroundColor: entry.queue_status === 'making'
-                            ? 'rgba(255,255,255,0.03)'
-                            : `${GOLD}20`,
-                          color: entry.queue_status === 'making'
-                            ? 'rgba(255,255,255,0.12)'
-                            : GOLD,
-                          fontSize: 13, cursor: entry.queue_status === 'making' ? 'default' : 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        🔄
-                      </button>
-                      <button
-                        onClick={() => updateQueueStatus(entry.order_id, 'ready')}
-                        title="พร้อมแล้ว"
-                        style={{
-                          width: 28, height: 28, borderRadius: 6, border: 'none',
-                          backgroundColor: 'rgba(76,186,127,0.1)',
-                          color: '#4cba7f',
-                          fontSize: 13, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        ✅
-                      </button>
-                    </div>
-                  </div>
-                ))
+              {/* Orders tab */}
+              {bottomTab === 'orders' && (
+                todayOrders.length === 0 ? (
+                  <div style={{ padding: '12px 14px', textAlign: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 12 }}>ยังไม่มีออเดอร์วันนี้</div>
+                ) : (
+                  todayOrders.map(order => {
+                    const isVoid = order.status === 'void'
+                    const payIcon = PAY_METHODS.find(m => m.value === order.payment_method)?.icon ?? '—'
+                    const summary = order.items.slice(0, 2).map(i => `${i.qty}x ${i.name}`).join(', ') + (order.items.length > 2 ? ` +${order.items.length - 2}` : '')
+                    return (
+                      <div key={order.id} style={{ padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: isVoid ? 0.45 : 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 12, color: isVoid ? 'rgba(255,255,255,0.3)' : GOLD, minWidth: 36, fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtQueue(order.queue_number)}
+                          </span>
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', minWidth: 36 }}>{fmtTime(order.created_at_vt)}</span>
+                          <span style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: isVoid ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                            {fmtLak(order.total_lak)}
+                          </span>
+                          <span title={order.payment_method ?? ''} style={{ fontSize: 13, flexShrink: 0 }}>{payIcon}</span>
+                          {isVoid ? (
+                            <span style={{ fontSize: 10, color: RED, flexShrink: 0 }}>VOID</span>
+                          ) : (
+                            <VoidRow order={order} onVoided={() => { fetchTodayQueue(); loadTodayOrders() }} />
+                          )}
+                        </div>
+                        {isVoid && order.void_reason && (
+                          <div style={{ fontSize: 10, color: 'rgba(255,80,80,0.5)', marginTop: 2, paddingLeft: 44 }}>{order.void_reason}</div>
+                        )}
+                      </div>
+                    )
+                  })
+                )
               )}
             </div>
           </div>
@@ -855,46 +995,22 @@ export default function POSClient() {
 
 function MenuCard({ recipe, onAdd }: { recipe: Recipe; onAdd: () => void }) {
   const [hovered, setHovered] = useState(false)
-
   return (
-    <button
-      onClick={onAdd}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        backgroundColor: hovered ? '#1e1b13' : '#1a1a1a',
-        border: `1px solid ${hovered ? GOLD : 'rgba(255,255,255,0.08)'}`,
-        borderRadius: 8, padding: '14px 12px', textAlign: 'left',
-        cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 7,
-        transition: 'all 0.15s', width: '100%',
-      }}
-    >
+    <button onClick={onAdd} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
+      backgroundColor: hovered ? '#1e1b13' : '#1a1a1a',
+      border: `1px solid ${hovered ? GOLD : 'rgba(255,255,255,0.08)'}`,
+      borderRadius: 8, padding: '14px 12px', textAlign: 'left',
+      cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 7,
+      transition: 'all 0.15s', width: '100%',
+    }}>
       {recipe.category && (
-        <span style={{
-          fontSize: 10, color: GOLD, letterSpacing: '1.5px',
-          textTransform: 'uppercase', fontWeight: 600,
-        }}>
-          {recipe.category}
-        </span>
+        <span style={{ fontSize: 10, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600 }}>{recipe.category}</span>
       )}
-
-      <span style={{
-        fontSize: 14, fontWeight: 700, color: '#fff',
-        lineHeight: 1.3, fontFamily: 'var(--font-heading)',
-      }}>
-        {recipe.product_name}
-      </span>
-
+      <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.3, fontFamily: 'var(--font-heading)' }}>{recipe.product_name}</span>
       {recipe.product_name_lo && (
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.2 }}>
-          {recipe.product_name_lo}
-        </span>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.2 }}>{recipe.product_name_lo}</span>
       )}
-
-      <span style={{
-        fontSize: 15, fontWeight: 800, color: GOLD,
-        marginTop: 4, fontVariantNumeric: 'tabular-nums',
-      }}>
+      <span style={{ fontSize: 15, fontWeight: 800, color: GOLD, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
         {recipe.price_lak.toLocaleString('en-US')}
         <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 3, opacity: 0.75 }}>LAK</span>
       </span>
