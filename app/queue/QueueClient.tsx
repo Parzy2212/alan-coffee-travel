@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -84,6 +84,8 @@ function EmptySlot() {
 export default function QueueClient() {
   const [orders, setOrders] = useState<QueueOrder[]>([])
   const [now, setNow]       = useState<Date | null>(null)
+  const makingEndRef        = useRef<HTMLDivElement>(null)
+  const readyEndRef         = useRef<HTMLDivElement>(null)
 
   // Live clock — starts after mount to avoid hydration mismatch
   useEffect(() => {
@@ -113,27 +115,30 @@ export default function QueueClient() {
 
   useEffect(() => { fetchQueues() }, [fetchQueues])
 
-  // Realtime subscription
+  // Realtime: listen to INSERT and UPDATE on orders — no page refresh needed
   useEffect(() => {
     console.log('[Queue] subscribing to realtime orders...')
     const channel = supabase
       .channel('queue-display')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        (payload) => {
-          console.log('[Queue] realtime event:', payload.eventType, payload.new)
-          fetchQueues()
-        }
-      )
-      .subscribe((status) => {
-        console.log('[Queue] subscription status:', status)
-      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' },
+        (payload) => { console.log('[Queue] INSERT:', payload.new); fetchQueues() })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
+        (payload) => { console.log('[Queue] UPDATE:', payload.new); fetchQueues() })
+      .subscribe((status) => { console.log('[Queue] subscription status:', status) })
     return () => { supabase.removeChannel(channel) }
   }, [fetchQueues])
 
   const making = orders.filter(o => o.queue_status === 'making')
   const ready  = orders.filter(o => o.queue_status === 'ready')
+
+  // Auto-scroll to latest queue card when list changes
+  useEffect(() => {
+    makingEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [making.length])
+
+  useEffect(() => {
+    readyEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [ready.length])
 
   const timeStr = now
     ? now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Vientiane' })
@@ -150,7 +155,7 @@ export default function QueueClient() {
       overflow: 'hidden',
     }}>
 
-      {/* Ticker keyframe */}
+      {/* Ticker keyframe + hide scrollbars globally for this page */}
       <style>{`
         @keyframes queue-ticker {
           0%   { transform: translateX(0) }
@@ -161,6 +166,7 @@ export default function QueueClient() {
           white-space: nowrap;
           animation: queue-ticker 28s linear infinite;
         }
+        .queue-col::-webkit-scrollbar { display: none; }
       `}</style>
 
       {/* ── LEFT PANEL (30%) — Shop info ─────────────────────────────────── */}
@@ -300,40 +306,52 @@ export default function QueueClient() {
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
           {/* Making column */}
-          <div style={{
-            flex: 1,
-            borderRight: '1px solid rgba(255,255,255,0.06)',
-            padding: '28px 20px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 18,
-            alignContent: 'flex-start',
-          }}>
+          <div
+            className="queue-col"
+            style={{
+              flex: 1,
+              borderRight: '1px solid rgba(255,255,255,0.06)',
+              padding: '28px 20px',
+              overflowY: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 18,
+              alignContent: 'flex-start',
+            } as React.CSSProperties}
+          >
             {making.length === 0
               ? <EmptySlot />
               : making.map(o => (
                   <QueueCard key={o.id} number={o.queue_number} color={GOLD} />
                 ))
             }
+            <div ref={makingEndRef} />
           </div>
 
           {/* Ready column */}
-          <div style={{
-            flex: 1,
-            padding: '28px 20px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 18,
-            alignContent: 'flex-start',
-          }}>
+          <div
+            className="queue-col"
+            style={{
+              flex: 1,
+              padding: '28px 20px',
+              overflowY: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 18,
+              alignContent: 'flex-start',
+            } as React.CSSProperties}
+          >
             {ready.length === 0
               ? <EmptySlot />
               : ready.map(o => (
                   <QueueCard key={o.id} number={o.queue_number} color={GREEN} />
                 ))
             }
+            <div ref={readyEndRef} />
           </div>
         </div>
 

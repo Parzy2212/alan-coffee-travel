@@ -401,11 +401,12 @@ export default function POSClient() {
 
   useEffect(() => { fetchTodayQueue() }, [fetchTodayQueue])
 
-  // Realtime: re-fetch queue on any orders change
+  // Realtime: listen to INSERT and UPDATE on orders — no page refresh needed
   useEffect(() => {
     const ch = supabase
       .channel('pos-queue')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchTodayQueue)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, fetchTodayQueue)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, fetchTodayQueue)
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [fetchTodayQueue])
