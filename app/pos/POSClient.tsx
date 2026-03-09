@@ -55,6 +55,14 @@ type TodayOrder = {
 
 type PaymentMethod = 'cash' | 'qr' | 'transfer'
 
+type PaymentBank = {
+  id: string
+  name: string
+  account_number: string
+  account_name: string
+  color: string
+}
+
 type PayDetails = {
   method: PaymentMethod
   received: number
@@ -111,6 +119,20 @@ const popupInput: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.05)',
   color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box',
 }
+
+function useIsSmall() {
+  const [small, setSmall] = useState(false)
+  useEffect(() => {
+    const fn = () => setSmall(window.innerWidth < 768)
+    fn()
+    window.addEventListener('resize', fn)
+    return () => window.removeEventListener('resize', fn)
+  }, [])
+  return small
+}
+
+const QUICK_AMTS = [10000, 20000, 50000, 100000, 200000]
+const NUMPAD_KEYS = ['7','8','9','4','5','6','1','2','3','00','0','⌫'] as const
 
 // ─── QtyButton ────────────────────────────────────────────────────────────────
 
@@ -228,8 +250,13 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod) => void
   onClose: () => void
 }) {
+  const isSmall = useIsSmall()
   const [method,         setMethod]         = useState<PaymentMethod>('cash')
   const [received,       setReceived]       = useState('')
+  const [selectedBank,   setSelectedBank]   = useState<string | null>(null)
+  const [banks,          setBanks]          = useState<PaymentBank[]>([])
+  const [banksLoaded,    setBanksLoaded]    = useState(false)
+  const [showExtra,      setShowExtra]      = useState(false)
   const [customer,       setCustomer]       = useState('')
   const [table,          setTable]          = useState('')
   const [discount,       setDiscount]       = useState('')
@@ -241,164 +268,281 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
 
   const discountAmt = parseFloat(discount) || 0
   const finalTotal  = Math.max(subtotal - discountAmt, 0)
-  const receivedAmt = parseFloat(received) || 0
-  const changeAmt   = method === 'cash' && receivedAmt > 0 ? Math.max(receivedAmt - finalTotal, 0) : 0
-  const canConfirm  = method !== 'cash' || receivedAmt >= finalTotal
+  const receivedNum = received ? (parseInt(received, 10) || 0) : 0
+  const changeAmt   = method === 'cash' ? receivedNum - finalTotal : 0
+  const cashOk      = method !== 'cash' || (received !== '' && receivedNum >= finalTotal)
 
-  function handleOverlay(e: React.MouseEvent<HTMLDivElement>) {
-    if (e.target === overlayRef.current && !loading) onClose()
+  // Load banks when transfer tab is first opened
+  useEffect(() => {
+    if (method !== 'transfer' || banksLoaded) return
+    supabase.rpc('get_site_settings').then(({ data }) => {
+      if (data?.payment_banks) {
+        try { setBanks(JSON.parse(data.payment_banks)) } catch { setBanks([]) }
+      }
+      setBanksLoaded(true)
+    })
+  }, [method, banksLoaded])
+
+  function pressKey(key: string) {
+    if (key === '⌫') { setReceived(p => p.slice(0, -1)); return }
+    if (key === '00' && received === '') return
+    if (received.length >= 9) return
+    setReceived(p => p + key)
   }
 
   async function confirm() {
-    if (!canConfirm) { setErrMsg('เงินที่รับมาไม่เพียงพอ'); return }
+    if (!cashOk) { setErrMsg('เงินที่รับมาไม่เพียงพอ'); return }
     setLoading(true); setErrMsg('')
 
-    // Step 1: create order
     const { data, error } = await supabase.rpc('create_order_with_deduction', { p_cart: cartPayload })
     if (error) { setErrMsg(translateError(error.message)); setLoading(false); return }
 
     const result = data as { order_id: string; queue_number: number }
-
-    // Step 2: finalize payment details
     const { data: receipt, error: err2 } = await supabase.rpc('finalize_order_payment', {
       p_order_id:        result.order_id,
       p_payment_method:  method,
-      p_amount_received: method === 'cash' ? receivedAmt : null,
-      p_change_amount:   method === 'cash' ? changeAmt   : null,
+      p_amount_received: method === 'cash' ? receivedNum : null,
+      p_change_amount:   method === 'cash' ? Math.max(changeAmt, 0) : null,
       p_table_number:    table    || null,
       p_customer_name:   customer || null,
-      p_discount_amount: discountAmt || 0,
+      p_discount_amount: discountAmt,
       p_discount_reason: discountReason || null,
       p_staff_note:      staffNote || null,
     })
 
-    if (err2) {
-      // Order created but finalize failed — still show success with queue number
-      onSuccess(result.queue_number, '—', changeAmt, method)
-    } else {
-      onSuccess(result.queue_number, (receipt as string) ?? '—', changeAmt, method)
-    }
+    const finalReceipt = err2 ? '—' : ((receipt as string) ?? '—')
+    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method)
     setLoading(false)
   }
 
-  return (
-    <div ref={overlayRef} onClick={handleOverlay} style={{
-      position: 'fixed', inset: 0, zIndex: 200,
-      backgroundColor: 'rgba(0,0,0,0.75)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <div style={{
-        backgroundColor: '#181818', border: `1px solid ${GOLD}44`,
-        borderRadius: 14, padding: '28px 28px 24px', width: 420,
-        maxHeight: '90vh', overflowY: 'auto',
-        display: 'flex', flexDirection: 'column', gap: 18,
-      }}>
+  const boxStyle: React.CSSProperties = isSmall
+    ? { position: 'fixed', inset: 0, borderRadius: 0, backgroundColor: '#181818', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 440, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }
 
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', letterSpacing: '2px', textTransform: 'uppercase' }}>ชำระเงิน</div>
-            <div style={{ fontSize: 28, fontWeight: 900, color: GOLD, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-              {fmtLak(finalTotal)}
-            </div>
-            {discountAmt > 0 && (
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
-                ก่อนลด: {fmtLak(subtotal)} · ส่วนลด: {fmtLak(discountAmt)}
+  const btnBg = loading ? `${GOLD}55`
+    : method === 'cash' && received !== '' && receivedNum < finalTotal ? `${RED}22`
+    : method === 'cash' && received === '' ? 'rgba(255,255,255,0.06)'
+    : GOLD
+  const btnColor = method === 'cash' && received !== '' && receivedNum < finalTotal ? RED
+    : method === 'cash' && received === '' ? 'rgba(255,255,255,0.2)' : BLACK
+
+  return (
+    <div ref={overlayRef}
+      onClick={e => { if (!isSmall && e.target === overlayRef.current && !loading) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        backgroundColor: isSmall ? '#181818' : 'rgba(0,0,0,0.75)',
+        display: 'flex', alignItems: isSmall ? 'stretch' : 'center', justifyContent: 'center',
+      }}>
+      <div style={boxStyle}>
+
+        {/* ── Header ── */}
+        <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 3 }}>ชำระเงิน</div>
+              <div style={{ fontSize: 34, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                {fmtLak(finalTotal)}
               </div>
-            )}
+              {discountAmt > 0 && (
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>
+                  ก่อนลด {fmtLak(subtotal)} · ส่วนลด {fmtLak(discountAmt)}
+                </div>
+              )}
+            </div>
+            <button onClick={onClose} disabled={loading}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 28, cursor: 'pointer', lineHeight: 1, padding: '4px 8px', marginTop: -4 }}>×</button>
           </div>
-          <button onClick={onClose} disabled={loading} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
-        {/* Payment method */}
-        <div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>วิธีชำระเงิน</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+        {/* ── Scrollable body ── */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Method selector — 3 big buttons */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             {PAY_METHODS.map(m => (
-              <button key={m.value} onClick={() => setMethod(m.value)} style={{
-                flex: 1, padding: '10px 4px', borderRadius: 8,
-                border: `1px solid ${method === m.value ? GOLD : 'rgba(255,255,255,0.1)'}`,
-                backgroundColor: method === m.value ? `${GOLD}18` : 'transparent',
+              <button key={m.value} onClick={() => { setMethod(m.value); setErrMsg('') }} style={{
+                padding: isSmall ? '15px 8px' : '12px 8px', borderRadius: 10,
+                border: `2px solid ${method === m.value ? GOLD : 'rgba(255,255,255,0.08)'}`,
+                backgroundColor: method === m.value ? `${GOLD}16` : 'rgba(255,255,255,0.03)',
                 color: method === m.value ? GOLD : 'rgba(255,255,255,0.45)',
-                fontWeight: method === m.value ? 700 : 400,
-                fontSize: 13, cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', gap: 4, transition: 'all .15s',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                cursor: 'pointer', transition: 'all .15s',
               }}>
-                <span style={{ fontSize: 20 }}>{m.icon}</span>
-                <span>{m.label}</span>
+                <span style={{ fontSize: 26 }}>{m.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: method === m.value ? 700 : 500 }}>{m.label}</span>
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Cash received */}
-        {method === 'cash' && (
-          <div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>รับมา (₭)</div>
-            <input autoFocus value={received} onChange={e => setReceived(e.target.value)} type="number" min="0"
-              style={{ ...popupInput, fontSize: 22, fontWeight: 700, color: GOLD, padding: '10px 14px' }}
-              placeholder={String(finalTotal)} onKeyDown={e => { if (e.key === 'Enter') confirm() }} />
-            {receivedAmt > 0 && (
+          {/* ── CASH ── */}
+          {method === 'cash' && (<>
+            {/* Received display */}
+            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>รับมา</span>
+              <span style={{ fontSize: 30, fontWeight: 800, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px', color: received ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+                {received ? parseInt(received, 10).toLocaleString('en-US') + ' ₭' : '— ₭'}
+              </span>
+            </div>
+
+            {/* Quick presets */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {QUICK_AMTS.map(amt => (
+                <button key={amt} onClick={() => setReceived(String(amt))} style={{
+                  flex: 1, padding: '8px 0', borderRadius: 7,
+                  border: `1px solid ${received === String(amt) ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                  backgroundColor: received === String(amt) ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
+                  color: received === String(amt) ? GOLD : 'rgba(255,255,255,0.5)',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}>
+                  {amt / 1000}K
+                </button>
+              ))}
+              <button onClick={() => setReceived(String(Math.ceil(finalTotal)))} style={{
+                flex: 1, padding: '8px 0', borderRadius: 7,
+                border: `1px solid ${received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                backgroundColor: received === String(Math.ceil(finalTotal)) && received !== '' ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
+                color: received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.5)',
+                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              }}>พอดี</button>
+            </div>
+
+            {/* Numpad */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              {NUMPAD_KEYS.map(key => (
+                <button key={key} onClick={() => pressKey(key)} style={{
+                  padding: isSmall ? '18px 0' : '14px 0', borderRadius: 9, border: 'none',
+                  backgroundColor: key === '⌫' ? 'rgba(220,80,80,0.14)' : 'rgba(255,255,255,0.07)',
+                  color: key === '⌫' ? '#e07070' : '#fff',
+                  fontSize: key === '⌫' ? 18 : 20, fontWeight: 700, cursor: 'pointer',
+                  transition: 'background .1s', userSelect: 'none' as const,
+                }}>{key}</button>
+              ))}
+            </div>
+
+            {/* Change display */}
+            {received !== '' && (
               <div style={{
-                marginTop: 10, padding: '10px 14px', borderRadius: 8,
-                backgroundColor: changeAmt >= 0 ? `${GREEN}18` : `${RED}18`,
+                padding: '12px 16px', borderRadius: 10,
+                backgroundColor: changeAmt >= 0 ? `${GREEN}15` : `${RED}15`,
                 border: `1px solid ${changeAmt >= 0 ? GREEN : RED}33`,
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}>
-                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>เงินทอน</span>
-                <span style={{ fontSize: 22, fontWeight: 800, color: changeAmt >= 0 ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
-                  {changeAmt >= 0 ? fmtLak(changeAmt) : '⚠ ไม่พอ'}
+                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>เงินทอน</span>
+                <span style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: changeAmt >= 0 ? GREEN : RED }}>
+                  {changeAmt >= 0 ? changeAmt.toLocaleString('en-US') + ' ₭' : '⚠ ไม่พอ'}
                 </span>
               </div>
             )}
-          </div>
-        )}
+          </>)}
 
-        {/* Optional fields */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {/* ── QR ── */}
+          {method === 'qr' && (
+            <div style={{ padding: '28px 16px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 56 }}>📱</div>
+              <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>แสดง QR Code ให้ลูกค้าสแกน</div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>กดยืนยันเมื่อรับเงินแล้ว</div>
+            </div>
+          )}
+
+          {/* ── TRANSFER ── */}
+          {method === 'transfer' && (
+            !banksLoaded ? (
+              <div style={{ padding: '28px', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>กำลังโหลด...</div>
+            ) : banks.length === 0 ? (
+              <div style={{ padding: '28px 16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 40 }}>🏦</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>กรุณาเพิ่มธนาคารในตั้งค่า</div>
+                <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปหน้าตั้งค่า →</a>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {banks.map(bank => (
+                  <button key={bank.id} onClick={() => setSelectedBank(selectedBank === bank.id ? null : bank.id)} style={{
+                    padding: '12px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                    border: `2px solid ${selectedBank === bank.id ? (bank.color || GOLD) : 'rgba(255,255,255,0.08)'}`,
+                    backgroundColor: selectedBank === bank.id ? (bank.color || GOLD) + '18' : 'rgba(255,255,255,0.03)',
+                    display: 'flex', alignItems: 'center', gap: 12, transition: 'all .15s',
+                  }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: bank.color || GOLD, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🏦</div>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{bank.name}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                        {bank.account_number}{bank.account_name ? ' · ' + bank.account_name : ''}
+                      </div>
+                    </div>
+                    {selectedBank === bank.id && (
+                      <span style={{ fontSize: 18, color: bank.color || GOLD }}>✓</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* ── Optional extra fields ── */}
           <div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>ชื่อลูกค้า</div>
-            <input value={customer} onChange={e => setCustomer(e.target.value)} style={popupInput} placeholder="(ไม่บังคับ)" />
+            <button onClick={() => setShowExtra(x => !x)} style={{
+              background: 'none', border: '1px dashed rgba(255,255,255,0.12)', borderRadius: 7,
+              padding: '7px 14px', color: 'rgba(255,255,255,0.35)', fontSize: 12,
+              cursor: 'pointer', width: '100%', textAlign: 'left',
+            }}>
+              {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · โต๊ะ · ส่วนลด · หมายเหตุ
+            </button>
+            {showExtra && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>ชื่อลูกค้า</div>
+                    <input value={customer} onChange={e => setCustomer(e.target.value)} style={popupInput} placeholder="(ไม่บังคับ)" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>โต๊ะ</div>
+                    <input value={table} onChange={e => setTable(e.target.value)} style={popupInput} placeholder="A1" />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>ส่วนลด ₭</div>
+                    <input value={discount} onChange={e => setDiscount(e.target.value)} type="number" min="0" style={popupInput} placeholder="0" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>เหตุผลส่วนลด</div>
+                    <input value={discountReason} onChange={e => setDiscountReason(e.target.value)} style={popupInput} placeholder="VIP / โปรโมชัน..." />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>Staff Note</div>
+                  <input value={staffNote} onChange={e => setStaffNote(e.target.value)} style={popupInput} placeholder="หมายเหตุสำหรับร้าน..." />
+                </div>
+              </div>
+            )}
           </div>
-          <div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>โต๊ะ</div>
-            <input value={table} onChange={e => setTable(e.target.value)} style={popupInput} placeholder="A1" />
-          </div>
+
+          {errMsg && (
+            <div style={{ padding: '8px 12px', backgroundColor: `${RED}18`, border: `1px solid ${RED}33`, borderRadius: 6, fontSize: 13, color: '#ff8080' }}>
+              {errMsg}
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>ส่วนลด ₭</div>
-            <input value={discount} onChange={e => setDiscount(e.target.value)} type="number" min="0" style={popupInput} placeholder="0" />
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>เหตุผลส่วนลด</div>
-            <input value={discountReason} onChange={e => setDiscountReason(e.target.value)} style={popupInput} placeholder="VIP / โปรโมชัน..." />
-          </div>
+        {/* ── Footer ── */}
+        <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+          <button onClick={confirm}
+            disabled={loading || !cashOk}
+            style={{
+              width: '100%', padding: isSmall ? '18px 0' : '14px 0', borderRadius: 10, border: 'none',
+              backgroundColor: btnBg, color: btnColor,
+              fontWeight: 800, fontSize: isSmall ? 16 : 15, letterSpacing: '1.5px', textTransform: 'uppercase',
+              cursor: loading ? 'wait' : !cashOk ? 'not-allowed' : 'pointer',
+              fontFamily: 'var(--font-heading)', transition: 'all .2s',
+            }}>
+            {loading ? 'กำลังบันทึก...'
+              : method === 'cash' && received === '' ? 'กรอกจำนวนเงิน'
+              : `ยืนยันชำระ ${fmtLak(finalTotal)}`}
+          </button>
         </div>
-
-        <div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>Staff Note</div>
-          <input value={staffNote} onChange={e => setStaffNote(e.target.value)} style={popupInput} placeholder="หมายเหตุสำหรับร้าน..." />
-        </div>
-
-        {errMsg && (
-          <div style={{ padding: '8px 12px', backgroundColor: `${RED}18`, border: `1px solid ${RED}33`, borderRadius: 6, fontSize: 13, color: '#ff8080' }}>
-            {errMsg}
-          </div>
-        )}
-
-        {/* Confirm button */}
-        <button onClick={confirm} disabled={loading || !canConfirm} style={{
-          width: '100%', padding: '14px 0', borderRadius: 8, border: 'none',
-          backgroundColor: !canConfirm ? 'rgba(255,255,255,0.06)' : loading ? `${GOLD}55` : GOLD,
-          color: !canConfirm ? 'rgba(255,255,255,0.2)' : BLACK,
-          fontWeight: 800, fontSize: 15, letterSpacing: '1.5px', textTransform: 'uppercase',
-          cursor: (!canConfirm || loading) ? 'not-allowed' : 'pointer',
-          fontFamily: 'var(--font-heading)', transition: 'all .2s',
-        }}>
-          {loading ? 'กำลังบันทึก...' : `ยืนยันชำระเงิน ${fmtLak(finalTotal)}`}
-        </button>
       </div>
     </div>
   )

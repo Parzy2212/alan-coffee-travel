@@ -92,6 +92,7 @@ type FullSettings = {
   low_stock_alert_line_token: string; daily_report_line_token: string
   low_stock_alert_enabled: string; daily_report_enabled: string
   ai_analyst_enabled: string
+  payment_banks: string
 }
 
 const DEFAULT_SETTINGS: FullSettings = {
@@ -105,6 +106,7 @@ const DEFAULT_SETTINGS: FullSettings = {
   low_stock_alert_line_token: '', daily_report_line_token: '',
   low_stock_alert_enabled: 'false', daily_report_enabled: 'false',
   ai_analyst_enabled: 'false',
+  payment_banks: '[]',
 }
 
 const DAYS_OF_WEEK = [
@@ -205,6 +207,14 @@ type CatNode = {
 type CatEdit = {
   name: string; name_th: string; name_lo: string
   icon: string; color: string; parent_id: string; sort_order: string
+}
+
+type PaymentBank = {
+  id: string
+  name: string
+  account_number: string
+  account_name: string
+  color: string
 }
 
 const ICON_OPTIONS = [
@@ -2063,6 +2073,76 @@ function StockTab() {
   )
 }
 
+// ─── Payment Bank Editor ───────────────────────────────────────────────────────
+
+type BankForm = { name: string; account_number: string; account_name: string; color: string }
+const emptyBankForm = (): BankForm => ({ name: '', account_number: '', account_name: '', color: '#1a6cb0' })
+
+function PaymentBankEditor({ banks, onUpdate }: { banks: PaymentBank[]; onUpdate: (b: PaymentBank[]) => void }) {
+  const [adding, setAdding] = useState(false)
+  const [form,   setForm]   = useState<BankForm>(emptyBankForm())
+
+  function addBank() {
+    if (!form.name.trim()) return
+    onUpdate([...banks, { ...form, id: Date.now().toString() }])
+    setForm(emptyBankForm()); setAdding(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {banks.map(bank => (
+        <div key={bank.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', backgroundColor: CARD2, borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: bank.color, flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{bank.name}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>
+              {[bank.account_number, bank.account_name].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          <button onClick={() => onUpdate(banks.filter(b => b.id !== bank.id))}
+            style={{ background: 'none', border: 'none', color: 'rgba(255,80,80,0.6)', fontSize: 18, cursor: 'pointer', padding: '2px 4px', lineHeight: 1 }}>×</button>
+        </div>
+      ))}
+
+      {adding ? (
+        <div style={{ padding: 14, backgroundColor: CARD2, borderRadius: 8, border: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <Field label="ชื่อธนาคาร">
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} placeholder="BCEL, LDB, KBank..." />
+            </Field>
+            <Field label="สีปุ่ม">
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                  style={{ width: 36, height: 34, borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)', backgroundColor: 'transparent', cursor: 'pointer', padding: 2, flexShrink: 0 }} />
+                <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }} placeholder="#1a6cb0" />
+              </div>
+            </Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <Field label="เลขบัญชี">
+              <input value={form.account_number} onChange={e => setForm(f => ({ ...f, account_number: e.target.value }))} style={inputStyle} placeholder="001-234-5678" />
+            </Field>
+            <Field label="ชื่อบัญชี">
+              <input value={form.account_name} onChange={e => setForm(f => ({ ...f, account_name: e.target.value }))} style={inputStyle} placeholder="ร้านอาลัน คอฟฟี่" />
+            </Field>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={addBank} style={{ ...btnStyle(GOLD), fontSize: 12, padding: '8px 20px' }}>+ เพิ่ม</button>
+            <button onClick={() => { setAdding(false); setForm(emptyBankForm()) }}
+              style={{ ...btnStyle('rgba(255,255,255,0.07)'), fontSize: 12, padding: '8px 16px', color: 'rgba(255,255,255,0.5)' }}>ยกเลิก</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} style={{
+          padding: '9px 0', borderRadius: 8, border: `1px dashed rgba(201,168,76,0.3)`,
+          backgroundColor: 'transparent', color: GOLD, fontSize: 13, cursor: 'pointer', fontWeight: 600,
+        }}>+ เพิ่มธนาคาร / บัญชีรับโอน</button>
+      )}
+    </div>
+  )
+}
+
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
 function SettingSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
@@ -2136,6 +2216,12 @@ function SettingsTab() {
     const next = openDays.includes(d) ? openDays.filter(x => x !== d) : [...openDays, d]
     setSettings(s => ({ ...s, open_days: JSON.stringify(next) }))
   }
+
+  // payment_banks as PaymentBank[]
+  let payBanks: PaymentBank[] = []
+  try { payBanks = JSON.parse(settings.payment_banks || '[]') } catch { payBanks = [] }
+  const updateBanks = (next: PaymentBank[]) =>
+    setSettings(s => ({ ...s, payment_banks: JSON.stringify(next) }))
 
   if (loading) return <LoadingSpinner />
 
@@ -2304,6 +2390,14 @@ function SettingsTab() {
             AI Analyst เปิดใช้งานแล้ว — ดูผลวิเคราะห์ได้ใน Tab Dashboard
           </div>
         )}
+      </SettingSection>
+
+      {/* ── 6. วิธีชำระเงิน ── */}
+      <SettingSection icon="💳" title="วิธีชำระเงิน / ธนาคารรับโอน">
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 12, lineHeight: 1.6 }}>
+          ธนาคารที่เพิ่มจะแสดงเป็นปุ่มให้เลือกในหน้า POS เมื่อลูกค้าโอนเงิน
+        </div>
+        <PaymentBankEditor banks={payBanks} onUpdate={updateBanks} />
       </SettingSection>
 
       {/* ── Save button ── */}
