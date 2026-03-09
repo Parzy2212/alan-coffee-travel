@@ -16,7 +16,7 @@ const ORANGE = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'success'
+type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'success' | 'purchase_form' | 'stock_audit'
 
 type StaffEntry = {
   id: string; name: string; name_th: string | null
@@ -25,6 +25,8 @@ type StaffEntry = {
 }
 type TodayRecord = { clock_in: string | null; clock_out: string | null; status: string | null }
 type SuccessInfo = { action: 'in' | 'out'; name: string; time: string; hours_worked?: number }
+type InventorySimple = { id: string; name: string; unit: string }
+type AuditItem = { audit_id: string; inventory_id: string; inventory_name: string; unit: string; counted: string }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -553,6 +555,21 @@ export default function StaffClient() {
   const [errMsg,     setErrMsg]     = useState('')
   const [successInfo,setSuccessInfo]= useState<SuccessInfo | null>(null)
 
+  // ── Purchase form ──
+  const [invList,      setInvList]      = useState<InventorySimple[]>([])
+  const [purchaseForm, setPurchaseForm] = useState({ inventory_id: '', qty: '', unit_price: '', supplier: '' })
+  const [receiptBlob,  setReceiptBlob]  = useState<Blob | null>(null)
+  const [weighBlob,    setWeighBlob]    = useState<Blob | null>(null)
+  const [purchaseStep, setPurchaseStep] = useState<'form' | 'receipt' | 'weigh'>('form')
+  const [purchaseMsg,  setPurchaseMsg]  = useState('')
+  const [purchasing,   setPurchasing]   = useState(false)
+
+  // ── Stock audit ──
+  const [auditItems,  setAuditItems]  = useState<AuditItem[]>([])
+  const [auditLoading,setAuditLoading]= useState(false)
+  const [auditMsg,    setAuditMsg]    = useState('')
+  const [auditDone,   setAuditDone]   = useState(false)
+
   // ── Load staff + shop coords ──
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -581,6 +598,18 @@ export default function StaffClient() {
   }, [])
 
   useEffect(() => { void loadData() }, [loadData])
+
+  // ── Load inventory on purchase_form ──
+  useEffect(() => {
+    if (phase !== 'purchase_form') return
+    void loadInventory()
+  }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Start audit on stock_audit ──
+  useEffect(() => {
+    if (phase !== 'stock_audit') return
+    void startAudit()
+  }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── GPS on action phase ──
   useEffect(() => {
@@ -622,6 +651,68 @@ export default function StaffClient() {
         setPhase('select'); setSelected(null); setSuccessInfo(null); void loadData()
       }, 4000)
     } finally { setSubmitting(false) }
+  }
+
+  // ── Purchase form actions ──
+  async function loadInventory() {
+    const { data } = await supabase.from('inventory').select('id,name,unit').eq('is_active', true).order('name')
+    setInvList((data ?? []) as InventorySimple[])
+  }
+
+  async function submitPurchase() {
+    if (!selected) return
+    if (!purchaseForm.inventory_id) { setPurchaseMsg('เลือกวัตถุดิบ'); return }
+    if (!purchaseForm.qty || !purchaseForm.unit_price) { setPurchaseMsg('กรอกจำนวนและราคา'); return }
+    setPurchasing(true); setPurchaseMsg('')
+    try {
+      let receiptUrl: string | null = null
+      let weighUrl: string | null = null
+      if (receiptBlob) {
+        const path = `purchases/${selected.id}_receipt_${Date.now()}.jpg`
+        const { error: ue } = await supabase.storage.from('staff-photos').upload(path, receiptBlob, { upsert: true, contentType: 'image/jpeg' })
+        if (!ue) receiptUrl = supabase.storage.from('staff-photos').getPublicUrl(path).data?.publicUrl ?? null
+      }
+      if (weighBlob) {
+        const path = `purchases/${selected.id}_weigh_${Date.now()}.jpg`
+        const { error: ue } = await supabase.storage.from('staff-photos').upload(path, weighBlob, { upsert: true, contentType: 'image/jpeg' })
+        if (!ue) weighUrl = supabase.storage.from('staff-photos').getPublicUrl(path).data?.publicUrl ?? null
+      }
+      const { error } = await supabase.rpc('submit_purchase_request', {
+        p_inventory_id:    purchaseForm.inventory_id,
+        p_staff_id:        selected.id,
+        p_qty:             parseFloat(purchaseForm.qty),
+        p_unit_price:      parseFloat(purchaseForm.unit_price),
+        p_supplier:        purchaseForm.supplier || null,
+        p_receipt_url:     receiptUrl,
+        p_weigh_image_url: weighUrl,
+      })
+      if (error) { setPurchaseMsg(error.message); return }
+      setPurchaseMsg('✓ ส่งคำขอซื้อสำเร็จ! รอการอนุมัติ')
+      setTimeout(() => { setPhase('select'); setSelected(null); setPurchaseForm({ inventory_id: '', qty: '', unit_price: '', supplier: '' }); setReceiptBlob(null); setWeighBlob(null); setPurchaseMsg(''); setPurchaseStep('form') }, 3000)
+    } finally { setPurchasing(false) }
+  }
+
+  // ── Stock audit actions ──
+  async function startAudit() {
+    if (!selected) return
+    setAuditLoading(true); setAuditMsg(''); setAuditDone(false)
+    const { data, error } = await supabase.rpc('start_stock_audit', { p_staff_id: selected.id })
+    setAuditLoading(false)
+    if (error || !data) { setAuditMsg(error?.message ?? 'เกิดข้อผิดพลาด'); return }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setAuditItems((data as any[]).map((d: any) => ({ audit_id: d.audit_id, inventory_id: d.inventory_id, inventory_name: d.inventory_name, unit: d.unit, counted: '' })))
+  }
+
+  async function submitAudit() {
+    setAuditLoading(true); setAuditMsg('')
+    try {
+      for (const item of auditItems) {
+        if (item.counted === '') { setAuditMsg(`กรอกจำนวน: ${item.inventory_name}`); return }
+        await supabase.rpc('submit_stock_audit', { p_audit_id: item.audit_id, p_counted_qty: parseFloat(item.counted) })
+      }
+      setAuditDone(true); setAuditMsg('✓ บันทึกผลการนับสต็อกแล้ว')
+      setTimeout(() => { setPhase('select'); setSelected(null); setAuditItems([]); setAuditMsg(''); setAuditDone(false) }, 3500)
+    } finally { setAuditLoading(false) }
   }
 
   // ── Select → PIN ──
@@ -786,7 +877,7 @@ export default function StaffClient() {
 
       {/* ── PHASE: success ── */}
       {phase === 'success' && successInfo && (
-        <div style={{ width: '100%', maxWidth: 400, padding: '80px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, textAlign: 'center' }}>
+        <div style={{ width: '100%', maxWidth: 400, padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, textAlign: 'center' }}>
           <div style={{ fontSize: 64 }}>{successInfo.action === 'in' ? '✅' : '👋'}</div>
           <div style={{ fontSize: 26, fontWeight: 800 }}>{successInfo.action === 'in' ? 'เข้างานสำเร็จ!' : 'ออกงานสำเร็จ!'}</div>
           <div style={{ fontSize: 16, color: 'rgba(255,255,255,0.6)' }}>{successInfo.name} — {successInfo.time}</div>
@@ -798,7 +889,133 @@ export default function StaffClient() {
           {distanceM !== null && distanceM > 200 && (
             <div style={{ fontSize: 12, color: ORANGE }}>ระยะห่างจากร้าน: {distanceM} เมตร (บันทึกแล้ว)</div>
           )}
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginTop: 8 }}>กลับหน้าหลักใน 4 วินาที...</div>
+          {successInfo.action === 'in' && (
+            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+              <button onClick={() => setPhase('purchase_form')}
+                style={{ padding: '12px 20px', borderRadius: 12, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+                🧾 แจ้งซื้อวัตถุดิบ
+              </button>
+              <button onClick={() => setPhase('stock_audit')}
+                style={{ padding: '12px 20px', borderRadius: 12, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+                📦 นับสต็อก
+              </button>
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>กลับหน้าหลักใน 4 วินาที...</div>
+        </div>
+      )}
+
+      {/* ── PHASE: purchase_form ── */}
+      {phase === 'purchase_form' && selected && (
+        <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <button onClick={() => setPhase('select')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>🧾 แจ้งซื้อวัตถุดิบ</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {selected.name_th ?? selected.name}</div>
+
+          {purchaseStep === 'form' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>วัตถุดิบ *</div>
+                <select value={purchaseForm.inventory_id} onChange={e => setPurchaseForm(f => ({ ...f, inventory_id: e.target.value }))}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14 }}>
+                  <option value="">-- เลือกรายการ --</option>
+                  {invList.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>จำนวนที่ซื้อ *</div>
+                  <input type="number" value={purchaseForm.qty} onChange={e => setPurchaseForm(f => ({ ...f, qty: e.target.value }))} placeholder="0"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>ราคาต่อหน่วย (LAK) *</div>
+                  <input type="number" value={purchaseForm.unit_price} onChange={e => setPurchaseForm(f => ({ ...f, unit_price: e.target.value }))} placeholder="0"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>ซัพพลายเออร์</div>
+                <input value={purchaseForm.supplier} onChange={e => setPurchaseForm(f => ({ ...f, supplier: e.target.value }))} placeholder="ชื่อร้านค้า / บุคคล"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+              </div>
+              <button onClick={() => setPurchaseStep('receipt')}
+                style={{ marginTop: 4, padding: 16, borderRadius: 12, border: 'none', backgroundColor: GOLD, color: '#000', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
+                ถัดไป → ถ่ายใบเสร็จ
+              </button>
+            </div>
+          )}
+
+          {purchaseStep === 'receipt' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>ถ่ายรูปใบเสร็จ (ไม่บังคับ)</div>
+              <CameraCapture onCapture={b => setReceiptBlob(b)} />
+              {receiptBlob && <div style={{ fontSize: 12, color: GREEN }}>✓ ได้รูปใบเสร็จแล้ว</div>}
+              <button onClick={() => setPurchaseStep('weigh')}
+                style={{ padding: 14, borderRadius: 12, border: 'none', backgroundColor: GOLD, color: '#000', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>
+                ถัดไป → ถ่ายรูปชั่งน้ำหนัก
+              </button>
+              <button onClick={() => setPurchaseStep('form')} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← ย้อนกลับ</button>
+            </div>
+          )}
+
+          {purchaseStep === 'weigh' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>ถ่ายรูปชั่งน้ำหนัก (ไม่บังคับ)</div>
+              <CameraCapture onCapture={b => setWeighBlob(b)} />
+              {weighBlob && <div style={{ fontSize: 12, color: GREEN }}>✓ ได้รูปชั่งน้ำหนักแล้ว</div>}
+              {purchaseMsg && (
+                <div style={{ padding: '10px 14px', borderRadius: 9, backgroundColor: purchaseMsg.startsWith('✓') ? `${GREEN}10` : `${RED}10`, color: purchaseMsg.startsWith('✓') ? GREEN : RED, fontSize: 13, fontWeight: 600 }}>{purchaseMsg}</div>
+              )}
+              <button onClick={() => void submitPurchase()} disabled={purchasing}
+                style={{ padding: 16, borderRadius: 12, border: 'none', backgroundColor: GREEN, color: '#fff', fontSize: 16, fontWeight: 800, cursor: 'pointer', opacity: purchasing ? 0.6 : 1 }}>
+                {purchasing ? 'กำลังส่ง...' : '✓ ส่งคำขอซื้อ'}
+              </button>
+              <button onClick={() => setPurchaseStep('receipt')} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← ย้อนกลับ</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PHASE: stock_audit ── */}
+      {phase === 'stock_audit' && selected && (
+        <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <button onClick={() => setPhase('select')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>📦 นับสต็อก</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {selected.name_th ?? selected.name}</div>
+
+          {auditLoading && auditItems.length === 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Array.from({ length: 3 }).map((_, i) => <div key={i} style={{ height: 70, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)}
+            </div>
+          )}
+
+          {auditItems.length > 0 && !auditDone && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>ระบบสุ่ม {auditItems.length} รายการ — กรอกจำนวนที่นับได้จริง</div>
+              {auditItems.map((item, idx) => (
+                <div key={item.audit_id} style={{ padding: '14px 16px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{item.inventory_name}</div>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>หน่วย: {item.unit}</div>
+                  </div>
+                  <input type="number" value={item.counted} onChange={e => setAuditItems(prev => prev.map((a, i) => i === idx ? { ...a, counted: e.target.value } : a))}
+                    placeholder="0" style={{ width: 90, padding: '10px 10px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 15, textAlign: 'right', fontWeight: 700 }} />
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 28 }}>{item.unit}</div>
+                </div>
+              ))}
+              <button onClick={() => void submitAudit()} disabled={auditLoading}
+                style={{ padding: 16, borderRadius: 12, border: 'none', backgroundColor: GREEN, color: '#fff', fontSize: 16, fontWeight: 800, cursor: 'pointer', opacity: auditLoading ? 0.6 : 1 }}>
+                {auditLoading ? 'กำลังบันทึก...' : '✓ ยืนยันการนับ'}
+              </button>
+            </div>
+          )}
+
+          {auditMsg && (
+            <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: auditMsg.startsWith('✓') ? `${GREEN}10` : `${RED}10`, color: auditMsg.startsWith('✓') ? GREEN : RED, fontSize: 14, fontWeight: 600 }}>
+              {auditMsg}
+            </div>
+          )}
         </div>
       )}
 

@@ -23,7 +23,7 @@ const ORANGE  = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff'
+type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'purchase' | 'finance'
 
 type ExtDashStats = {
   today_sales:     number
@@ -81,6 +81,27 @@ type PurchaseLog = {
 type SiteSettings = {
   shop_name: string; shop_name_th: string; shop_name_lo: string; ticker_text: string
 }
+
+type Customer = {
+  id: string; name: string | null; phone: string | null; nationality: string | null
+  language_pref: string; allergies: string[]; loyalty_points: number
+  visit_count: number; lifetime_spend_lak: number; email: string | null
+  created_at: string; updated_at: string
+}
+
+type PurchaseEntry = {
+  id: string; inventory_name: string | null; unit: string | null; staff_name: string | null
+  qty_purchased: number; unit_price_lak: number; market_price_lak: number | null
+  supplier: string | null; status: string; flag_reason: string | null
+  receipt_url: string | null; weigh_image_url: string | null; created_at: string
+  inventory_id?: string; staff_id?: string
+}
+
+type CashflowRow = {
+  log_date: string; shift: string; system_sales: number; actual_cash: number; variance_lak: number
+}
+
+type InventorySimple = { id: string; name: string; unit: string }
 
 type FullSettings = {
   shop_name: string; shop_name_th: string; shop_name_lo: string
@@ -3125,6 +3146,416 @@ function StaffTab() {
   )
 }
 
+// ─── CustomersTab ─────────────────────────────────────────────────────────────
+
+const ALLERGY_MAP: Record<string, string> = {
+  นม: '🥛', กลูเตน: '🌾', ถั่ว: '🥜', ไข่: '🥚', ซีฟู้ด: '🦐',
+}
+
+function CustomersTab() {
+  const [customers, setCustomers]   = useState<Customer[]>([])
+  const [search,    setSearch]      = useState('')
+  const [loading,   setLoading]     = useState(false)
+  const [editId,    setEditId]      = useState<string | null>(null)
+  const [form, setForm] = useState({ name: '', phone: '', nationality: '', language_pref: 'lo', allergies: [] as string[] })
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async (q = '') => {
+    setLoading(true)
+    try {
+      const { data } = await supabase.rpc('get_customers', { p_search: q })
+      setCustomers((data as Customer[]) ?? [])
+    } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { void load('') }, [load])
+
+  async function doSearch() { await load(search) }
+
+  function openNew() {
+    setEditId('new')
+    setForm({ name: '', phone: '', nationality: '', language_pref: 'lo', allergies: [] })
+    setMsg('')
+  }
+
+  function openEdit(c: Customer) {
+    setEditId(c.id)
+    setForm({ name: c.name ?? '', phone: c.phone ?? '', nationality: c.nationality ?? '', language_pref: c.language_pref, allergies: c.allergies ?? [] })
+    setMsg('')
+  }
+
+  async function save() {
+    if (!form.phone) { setMsg('กรุณากรอกเบอร์โทร'); return }
+    setSaving(true); setMsg('')
+    try {
+      const { error } = await supabase.rpc('upsert_customer', {
+        p_phone: form.phone, p_name: form.name,
+        p_nationality: form.nationality || null,
+        p_language_pref: form.language_pref,
+        p_allergies: form.allergies,
+      })
+      if (error) { setMsg(error.message); return }
+      setEditId(null); await load(search)
+    } finally { setSaving(false) }
+  }
+
+  function toggleAllergy(a: string) {
+    setForm(f => ({
+      ...f,
+      allergies: f.allergies.includes(a) ? f.allergies.filter(x => x !== a) : [...f.allergies, a],
+    }))
+  }
+
+  return (
+    <div>
+      {/* Search + Add */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && void doSearch()}
+          placeholder="ค้นหาชื่อ / เบอร์โทร..." style={{ flex: 1, padding: '10px 14px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14 }} />
+        <button onClick={() => void doSearch()} style={{ padding: '10px 20px', borderRadius: 9, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>ค้นหา</button>
+        <button onClick={openNew} style={{ padding: '10px 20px', borderRadius: 9, border: 'none', backgroundColor: GOLD, color: '#000', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ เพิ่มลูกค้า</button>
+      </div>
+
+      {/* Add / Edit Form */}
+      {editId && (
+        <div style={{ padding: 24, borderRadius: 14, border: `1px solid ${GOLD}44`, backgroundColor: CARD, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: GOLD }}>{editId === 'new' ? 'เพิ่มลูกค้าใหม่' : 'แก้ไขข้อมูลลูกค้า'}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {[['name', 'ชื่อ'], ['phone', 'เบอร์โทร *'], ['nationality', 'สัญชาติ']].map(([key, lbl]) => (
+              <div key={key}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>{lbl}</div>
+                <input value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}  // eslint-disable-line @typescript-eslint/no-explicit-any
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+              </div>
+            ))}
+            <div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>ภาษา</div>
+              <select value={form.language_pref} onChange={e => setForm(f => ({ ...f, language_pref: e.target.value }))}
+                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14 }}>
+                <option value="lo">ลาว</option>
+                <option value="th">ไทย</option>
+                <option value="en">English</option>
+                <option value="zh">中文</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>แพ้อาหาร</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {Object.entries(ALLERGY_MAP).map(([k, emoji]) => {
+                const on = form.allergies.includes(k)
+                return (
+                  <button key={k} onClick={() => toggleAllergy(k)}
+                    style={{ padding: '5px 12px', borderRadius: 99, border: `1px solid ${on ? ORANGE : BORDER}`, backgroundColor: on ? `${ORANGE}18` : 'transparent', color: on ? ORANGE : 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 13 }}>
+                    {emoji} {k}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          {msg && <div style={{ color: RED, fontSize: 13 }}>{msg}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={() => void save()} disabled={saving} style={{ padding: '10px 24px', borderRadius: 9, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+            </button>
+            <button onClick={() => setEditId(null)} style={{ padding: '10px 20px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {Array.from({ length: 5 }).map((_, i) => <div key={i} style={{ height: 70, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)}
+        </div>
+      ) : customers.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.25)' }}>ไม่พบลูกค้า</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {customers.map(c => (
+            <div key={c.id} style={{ padding: '14px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: `${GOLD}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: GOLD, flexShrink: 0 }}>
+                {(c.name ?? '?')[0]?.toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name ?? '—'} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{c.phone}</span></div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                  {(c.allergies ?? []).map(a => (
+                    <span key={a} style={{ fontSize: 11, padding: '1px 8px', borderRadius: 99, border: `1px solid ${ORANGE}44`, color: ORANGE, backgroundColor: `${ORANGE}10` }}>
+                      {ALLERGY_MAP[a] ?? ''} {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: GOLD }}>{c.loyalty_points} pts</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{c.visit_count} ครั้ง</div>
+              </div>
+              <button onClick={() => openEdit(c)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12 }}>แก้ไข</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── PurchaseTab ──────────────────────────────────────────────────────────────
+
+function PurchaseTab() {
+  const [sub,      setSub]      = useState<'pending' | 'history'>('pending')
+  const [pending,  setPending]  = useState<PurchaseEntry[]>([])
+  const [history,  setHistory]  = useState<PurchaseEntry[]>([])
+  const [loading,  setLoading]  = useState(false)
+  const [actingId, setActingId] = useState<string | null>(null)
+
+  const loadPending = useCallback(async () => {
+    const { data } = await supabase.rpc('get_pending_purchases')
+    setPending((data as PurchaseEntry[]) ?? [])
+  }, [])
+  const loadHistory = useCallback(async () => {
+    const { data } = await supabase.rpc('get_all_purchases', { p_limit: 60 })
+    setHistory((data as PurchaseEntry[]) ?? [])
+  }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    void Promise.all([loadPending(), loadHistory()]).finally(() => setLoading(false))
+  }, [loadPending, loadHistory])
+
+  async function act(id: string, approve: boolean) {
+    setActingId(id)
+    await supabase.rpc('approve_purchase', { p_purchase_id: id, p_approve: approve })
+    await Promise.all([loadPending(), loadHistory()])
+    setActingId(null)
+  }
+
+  function StatusBadge({ status, flag }: { status: string; flag: string | null }) {
+    const map: Record<string, [string, string]> = {
+      pending:  [GOLD,   'รออนุมัติ'],
+      flagged:  [ORANGE, '⚠ ตั้งข้อสังเกต'],
+      approved: [GREEN,  '✓ อนุมัติ'],
+      rejected: [RED,    '✗ ปฏิเสธ'],
+    }
+    const [color, label] = map[status] ?? ['#888', status]
+    return (
+      <div>
+        <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 99, border: `1px solid ${color}44`, color, backgroundColor: `${color}10` }}>{label}</span>
+        {flag && <div style={{ fontSize: 11, color: ORANGE, marginTop: 4 }}>{flag}</div>}
+      </div>
+    )
+  }
+
+  const subs = [{ id: 'pending' as const, label: 'รออนุมัติ' }, { id: 'history' as const, label: 'ประวัติ' }]
+  const rows = sub === 'pending' ? pending : history
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: `1px solid ${BORDER}` }}>
+        {subs.map(s => (
+          <button key={s.id} onClick={() => setSub(s.id)}
+            style={{ padding: '8px 20px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+              color: sub === s.id ? GOLD : 'rgba(255,255,255,0.4)', fontWeight: sub === s.id ? 600 : 400,
+              borderBottom: sub === s.id ? `2px solid ${GOLD}` : '2px solid transparent', marginBottom: -1 }}>
+            {s.label} {s.id === 'pending' && pending.length > 0 && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, backgroundColor: ORANGE, color: '#000', marginLeft: 4 }}>{pending.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} style={{ height: 80, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)}
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.25)' }}>ไม่มีรายการ</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {rows.map(p => (
+            <div key={p.id} style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${p.status === 'flagged' ? ORANGE + '66' : BORDER}` }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.inventory_name ?? '—'} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>({p.unit})</span></div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+                    {p.qty_purchased} {p.unit} × {p.unit_price_lak?.toLocaleString()} LAK
+                    {p.market_price_lak ? ` | ราคาตลาด ${p.market_price_lak?.toLocaleString()}` : ''}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
+                    โดย {p.staff_name ?? '—'} — {new Date(p.created_at).toLocaleDateString('th-TH')}
+                    {p.supplier && ` | ${p.supplier}`}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                  <StatusBadge status={p.status} flag={p.flag_reason} />
+                  {(p.status === 'pending' || p.status === 'flagged') && (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => void act(p.id, true)} disabled={actingId === p.id}
+                        style={{ padding: '5px 14px', borderRadius: 7, border: 'none', backgroundColor: GREEN, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: actingId === p.id ? 0.5 : 1 }}>อนุมัติ</button>
+                      <button onClick={() => void act(p.id, false)} disabled={actingId === p.id}
+                        style={{ padding: '5px 14px', borderRadius: 7, border: `1px solid ${RED}44`, backgroundColor: `${RED}10`, color: RED, cursor: 'pointer', fontSize: 12 }}>ปฏิเสธ</button>
+                    </div>
+                  )}
+                  {(p.receipt_url || p.weigh_image_url) && (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {p.receipt_url && <a href={p.receipt_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: GOLD }}>ใบเสร็จ ↗</a>}
+                      {p.weigh_image_url && <a href={p.weigh_image_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: GOLD }}>รูปชั่ง ↗</a>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── FinanceTab ───────────────────────────────────────────────────────────────
+
+function FinanceTab() {
+  const [cashflow, setCashflow] = useState<CashflowRow[]>([])
+  const [loading,  setLoading]  = useState(false)
+  const [form, setForm] = useState({ shift: 'morning', opening_cash: '', actual_cash: '' })
+  const [saving,  setSaving]  = useState(false)
+  const [msg,     setMsg]     = useState('')
+  const [staffId, setStaffId] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.rpc('get_cashflow_summary', { p_days: 7 })
+    setCashflow((data as CashflowRow[]) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void load()
+    void supabase.from('staff').select('id').eq('is_active', true).limit(1).single().then(({ data }) => {
+      if (data) setStaffId(data.id)
+    })
+  }, [load])
+
+  async function closeShift() {
+    const opening = parseFloat(form.opening_cash)
+    const actual  = parseFloat(form.actual_cash)
+    if (isNaN(opening) || isNaN(actual)) { setMsg('กรุณากรอกยอดเงินให้ถูกต้อง'); return }
+    setSaving(true); setMsg('')
+    const { error } = await supabase.rpc('close_shift', {
+      p_staff_id:    staffId,
+      p_shift:       form.shift,
+      p_opening_cash: opening,
+      p_actual_cash:  actual,
+      p_system_sales: 0,
+    })
+    if (error) { setMsg(error.message) } else {
+      setForm(f => ({ ...f, opening_cash: '', actual_cash: '' }))
+      await load()
+    }
+    setSaving(false)
+  }
+
+  const chartData = [...cashflow].reverse().map(r => ({
+    name: `${r.log_date.slice(5)} ${r.shift === 'morning' ? 'เช้า' : 'บ่าย'}`,
+    ยอดขาย: r.system_sales,
+    เงินจริง: r.actual_cash,
+    ผลต่าง: r.variance_lak,
+  }))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      {/* Close shift form */}
+      <div style={{ padding: 24, borderRadius: 14, border: `1px solid ${GOLD}33`, backgroundColor: CARD }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: GOLD, marginBottom: 16 }}>ปิดกะ</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>กะ</div>
+            <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14 }}>
+              <option value="morning">เช้า</option>
+              <option value="afternoon">บ่าย</option>
+              <option value="evening">เย็น</option>
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>เงินเปิดกะ (LAK)</div>
+            <input type="number" value={form.opening_cash} onChange={e => setForm(f => ({ ...f, opening_cash: e.target.value }))}
+              placeholder="0" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>เงินจริง (LAK)</div>
+            <input type="number" value={form.actual_cash} onChange={e => setForm(f => ({ ...f, actual_cash: e.target.value }))}
+              placeholder="0" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+          </div>
+        </div>
+        {form.opening_cash && form.actual_cash && (() => {
+          const v = parseFloat(form.actual_cash) - parseFloat(form.opening_cash)
+          return (
+            <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 9, backgroundColor: `${v >= 0 ? GREEN : RED}10`, border: `1px solid ${v >= 0 ? GREEN : RED}33` }}>
+              <span style={{ fontSize: 13, color: v >= 0 ? GREEN : RED, fontWeight: 600 }}>
+                ผลต่าง: {v >= 0 ? '+' : ''}{v.toLocaleString()} LAK
+              </span>
+            </div>
+          )
+        })()}
+        {msg && <div style={{ color: RED, fontSize: 13, marginTop: 8 }}>{msg}</div>}
+        <button onClick={() => void closeShift()} disabled={saving}
+          style={{ marginTop: 14, padding: '11px 28px', borderRadius: 9, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+          {saving ? 'กำลังบันทึก...' : 'บันทึกปิดกะ'}
+        </button>
+      </div>
+
+      {/* Chart */}
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: 'rgba(255,255,255,0.7)' }}>สรุป 7 วัน</div>
+        {loading ? (
+          <div style={{ height: 200, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />
+        ) : cashflow.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.25)' }}>ยังไม่มีข้อมูล</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={BORDER} />
+              <XAxis dataKey="name" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} />
+              <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+              <Tooltip contentStyle={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 8 }} labelStyle={{ color: GOLD }} />
+              <Bar dataKey="เงินจริง" fill={GREEN} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="ผลต่าง"  fill={GOLD}  radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+
+        {/* Table */}
+        {cashflow.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>
+                  {['วันที่', 'กะ', 'ยอดขาย', 'เงินจริง', 'ผลต่าง'].map(h => (
+                    <th key={h} style={{ padding: '6px 10px', textAlign: h === 'วันที่' || h === 'กะ' ? 'left' : 'right', fontWeight: 500, borderBottom: `1px solid ${BORDER}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cashflow.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${BORDER}33` }}>
+                    <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.7)' }}>{r.log_date}</td>
+                    <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.5)' }}>{r.shift === 'morning' ? 'เช้า' : r.shift === 'afternoon' ? 'บ่าย' : 'เย็น'}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', color: GOLD }}>{r.system_sales.toLocaleString()}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{r.actual_cash.toLocaleString()}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', color: r.variance_lak >= 0 ? GREEN : RED, fontWeight: 600 }}>
+                      {r.variance_lak >= 0 ? '+' : ''}{r.variance_lak.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
@@ -3134,6 +3565,9 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: 'stock',      label: 'สต็อก',       icon: '📦' },
   { id: 'settings',   label: 'ตั้งค่า',     icon: '⚙️' },
   { id: 'staff',      label: 'พนักงาน',     icon: '👥' },
+  { id: 'customers',  label: 'ลูกค้า',      icon: '🧑‍🤝‍🧑' },
+  { id: 'purchase',   label: 'การซื้อ',     icon: '🧾' },
+  { id: 'finance',    label: 'การเงิน',     icon: '💰' },
 ]
 
 export default function CafeClient() {
@@ -3174,6 +3608,9 @@ export default function CafeClient() {
         {tab === 'stock'      && <StockTab />}
         {tab === 'settings'   && <SettingsTab />}
         {tab === 'staff'      && <StaffTab />}
+        {tab === 'customers'  && <CustomersTab />}
+        {tab === 'purchase'   && <PurchaseTab />}
+        {tab === 'finance'    && <FinanceTab />}
       </div>
     </div>
   )
