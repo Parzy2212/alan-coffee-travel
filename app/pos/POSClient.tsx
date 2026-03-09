@@ -652,6 +652,145 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ─── ShiftClosePopup ─────────────────────────────────────────────────────────
+
+function ShiftClosePopup({ todayTotal, todayCount, onClose }: { todayTotal: number; todayCount: number; onClose: () => void }) {
+  const [shift,       setShift]       = useState('morning')
+  const [openingCash, setOpeningCash] = useState('')
+  const [actualCash,  setActualCash]  = useState('')
+  const [activeField, setActiveField] = useState<'opening' | 'actual'>('actual')
+  const [saving,      setSaving]      = useState(false)
+  const [done,        setDone]        = useState(false)
+  const [errMsg,      setErrMsg]      = useState('')
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  const variance = actualCash !== '' && openingCash !== ''
+    ? parseFloat(actualCash) - (parseFloat(openingCash) + todayTotal)
+    : null
+
+  function pressKey(k: string) {
+    const setter = activeField === 'opening' ? setOpeningCash : setActualCash
+    setter(prev => {
+      if (k === '⌫') return prev.slice(0, -1)
+      if (k === '00') return prev === '' ? '' : prev + '00'
+      return prev + k
+    })
+  }
+
+  async function confirm() {
+    if (!openingCash || !actualCash) { setErrMsg('กรอกยอดเงินให้ครบ'); return }
+    setSaving(true); setErrMsg('')
+    const { error } = await supabase.rpc('close_shift', {
+      p_staff_id:     null,
+      p_shift:        shift,
+      p_opening_cash: parseFloat(openingCash),
+      p_actual_cash:  parseFloat(actualCash),
+      p_system_sales: todayTotal,
+    })
+    setSaving(false)
+    if (error) { setErrMsg(error.message); return }
+    setDone(true)
+    setTimeout(onClose, 2000)
+  }
+
+  return (
+    <div ref={overlayRef} onClick={e => { if (e.target === overlayRef.current) onClose() }}
+      style={{ position: 'fixed', inset: 0, zIndex: 200, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ backgroundColor: '#111', border: `1px solid ${GOLD}44`, borderRadius: 16, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 16, color: '#fff' }}>🔒 ปิดกะ</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>สรุปรายได้และนับเงินสด</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 22, cursor: 'pointer' }}>×</button>
+        </div>
+
+        {done ? (
+          <div style={{ padding: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 48 }}>✅</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>บันทึกปิดกะสำเร็จ!</div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>กำลังปิดหน้าต่าง...</div>
+          </div>
+        ) : (
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* System summary */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ padding: '12px 14px', borderRadius: 10, backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px' }}>ยอดขายระบบ</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: GOLD, marginTop: 4 }}>{todayTotal.toLocaleString('en-US')}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>LAK</div>
+              </div>
+              <div style={{ padding: '12px 14px', borderRadius: 10, backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px' }}>จำนวนออเดอร์</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 4 }}>{todayCount}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>รายการ</div>
+              </div>
+            </div>
+
+            {/* Shift selector */}
+            <div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '1px' }}>กะ</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[['morning', 'เช้า'], ['afternoon', 'บ่าย'], ['evening', 'เย็น']].map(([v, l]) => (
+                  <button key={v} onClick={() => setShift(v)}
+                    style={{ flex: 1, padding: '7px 0', borderRadius: 7, fontSize: 13, fontWeight: shift === v ? 700 : 400, cursor: 'pointer', border: `1px solid ${shift === v ? GOLD : 'rgba(255,255,255,0.1)'}`, backgroundColor: shift === v ? `${GOLD}18` : 'rgba(255,255,255,0.04)', color: shift === v ? GOLD : 'rgba(255,255,255,0.45)' }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cash fields */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {([['opening', 'เงินเปิดกะ', openingCash], ['actual', 'เงินที่นับได้', actualCash]] as const).map(([field, label, val]) => (
+                <div key={field}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '1px' }}>{label}</div>
+                  <div onClick={() => setActiveField(field)}
+                    style={{ padding: '10px 12px', borderRadius: 8, border: `2px solid ${activeField === field ? GOLD : 'rgba(255,255,255,0.1)'}`, backgroundColor: activeField === field ? `${GOLD}08` : '#1a1a1a', cursor: 'text', minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                    <span style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: val ? '#fff' : 'rgba(255,255,255,0.2)' }}>
+                      {val ? parseInt(val).toLocaleString('en-US') : '0'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Numpad */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7 }}>
+              {NUMPAD_KEYS.map(key => (
+                <button key={key} onClick={() => pressKey(key)} style={{
+                  padding: '14px 0', borderRadius: 8, border: 'none',
+                  backgroundColor: key === '⌫' ? 'rgba(220,80,80,0.14)' : 'rgba(255,255,255,0.07)',
+                  color: key === '⌫' ? '#e07070' : '#fff',
+                  fontSize: key === '⌫' ? 16 : 18, fontWeight: 700, cursor: 'pointer',
+                }}>{key}</button>
+              ))}
+            </div>
+
+            {/* Variance */}
+            {variance !== null && (
+              <div style={{ padding: '10px 14px', borderRadius: 9, backgroundColor: Math.abs(variance) <= 5000 ? `${GREEN}12` : `${RED}12`, border: `1px solid ${Math.abs(variance) <= 5000 ? GREEN : RED}33`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>ผลต่าง (เงินจริง − ยอดขาย − เปิดกะ)</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: Math.abs(variance) <= 5000 ? GREEN : RED }}>
+                  {variance >= 0 ? '+' : ''}{variance.toLocaleString('en-US')}
+                </span>
+              </div>
+            )}
+
+            {errMsg && <div style={{ color: RED, fontSize: 13 }}>{errMsg}</div>}
+
+            <button onClick={() => void confirm()} disabled={saving}
+              style={{ padding: '14px', borderRadius: 10, border: 'none', backgroundColor: GOLD, color: BLACK, fontWeight: 800, fontSize: 15, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'กำลังบันทึก...' : '✓ ยืนยันปิดกะ'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── VoidRow ─────────────────────────────────────────────────────────────────
 
 function VoidRow({ order, onVoided }: { order: TodayOrder; onVoided: () => void }) {
@@ -700,9 +839,10 @@ export default function POSClient() {
   const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null)
   const [queueEntries,  setQueueEntries] = useState<QueueEntry[]>([])
   const [todayOrders,   setTodayOrders]  = useState<TodayOrder[]>([])
-  const [showCharge,    setShowCharge]   = useState(false)
-  const [showSettings,  setShowSettings] = useState(false)
-  const [bottomTab,     setBottomTab]    = useState<'queue' | 'orders'>('queue')
+  const [showCharge,     setShowCharge]    = useState(false)
+  const [showSettings,   setShowSettings]  = useState(false)
+  const [showShiftClose, setShowShiftClose] = useState(false)
+  const [bottomTab,      setBottomTab]     = useState<'queue' | 'orders'>('queue')
 
   // Live clock
   useEffect(() => {
@@ -845,6 +985,7 @@ export default function POSClient() {
       )}
 
       {showSettings && <SettingsPopup onClose={() => setShowSettings(false)} />}
+      {showShiftClose && <ShiftClosePopup todayTotal={todayTotal} todayCount={todayCount} onClose={() => setShowShiftClose(false)} />}
 
       {/* ── TOP BAR ───────────────────────────────────────────────────────── */}
       <header style={{
@@ -868,6 +1009,11 @@ export default function POSClient() {
           )}
           <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>{dateStr}</span>
           <span style={{ color: GOLD, fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
+          <button onClick={() => setShowShiftClose(true)} style={{
+            padding: '0 14px', height: 32, borderRadius: 8, border: `1px solid ${GOLD}44`,
+            backgroundColor: `${GOLD}10`, color: GOLD,
+            fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>🔒 ปิดกะ</button>
           <button onClick={() => setShowSettings(true)} style={{
             width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
             backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)',

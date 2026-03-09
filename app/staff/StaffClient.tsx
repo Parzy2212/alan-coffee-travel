@@ -16,7 +16,7 @@ const ORANGE = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'success' | 'purchase_form' | 'stock_audit'
+type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'dashboard' | 'success' | 'purchase_form' | 'stock_audit'
 
 type StaffEntry = {
   id: string; name: string; name_th: string | null
@@ -637,6 +637,8 @@ export default function StaffClient() {
         const r = data as any // eslint-disable-line @typescript-eslint/no-explicit-any
         if (!r?.success) { setErrMsg(r?.error ?? 'เกิดข้อผิดพลาด'); return }
         setSuccessInfo({ action: 'in', name: selected.name, time: fmtTime(new Date().toISOString()) })
+        setPhase('dashboard')
+        void loadData()
       } else {
         const today = new Date().toISOString().slice(0, 10)
         const { error } = await supabase.from('attendance').update({
@@ -645,11 +647,11 @@ export default function StaffClient() {
         }).eq('staff_id', selected.id).eq('date', today).is('clock_out', null)
         if (error) { setErrMsg(error.message); return }
         setSuccessInfo({ action: 'out', name: selected.name, time: fmtTime(new Date().toISOString()) })
+        setPhase('success')
+        setTimeout(() => {
+          setPhase('select'); setSelected(null); setSuccessInfo(null); void loadData()
+        }, 3000)
       }
-      setPhase('success')
-      setTimeout(() => {
-        setPhase('select'); setSelected(null); setSuccessInfo(null); void loadData()
-      }, 4000)
     } finally { setSubmitting(false) }
   }
 
@@ -688,7 +690,7 @@ export default function StaffClient() {
       })
       if (error) { setPurchaseMsg(error.message); return }
       setPurchaseMsg('✓ ส่งคำขอซื้อสำเร็จ! รอการอนุมัติ')
-      setTimeout(() => { setPhase('select'); setSelected(null); setPurchaseForm({ inventory_id: '', qty: '', unit_price: '', supplier: '' }); setReceiptBlob(null); setWeighBlob(null); setPurchaseMsg(''); setPurchaseStep('form') }, 3000)
+      setTimeout(() => { setPhase('dashboard'); setPurchaseForm({ inventory_id: '', qty: '', unit_price: '', supplier: '' }); setReceiptBlob(null); setWeighBlob(null); setPurchaseMsg(''); setPurchaseStep('form') }, 2500)
     } finally { setPurchasing(false) }
   }
 
@@ -711,7 +713,7 @@ export default function StaffClient() {
         await supabase.rpc('submit_stock_audit', { p_audit_id: item.audit_id, p_counted_qty: parseFloat(item.counted) })
       }
       setAuditDone(true); setAuditMsg('✓ บันทึกผลการนับสต็อกแล้ว')
-      setTimeout(() => { setPhase('select'); setSelected(null); setAuditItems([]); setAuditMsg(''); setAuditDone(false) }, 3500)
+      setTimeout(() => { setPhase('dashboard'); setAuditItems([]); setAuditMsg(''); setAuditDone(false) }, 2500)
     } finally { setAuditLoading(false) }
   }
 
@@ -875,40 +877,77 @@ export default function StaffClient() {
         </div>
       )}
 
-      {/* ── PHASE: success ── */}
+      {/* ── PHASE: dashboard ── */}
+      {phase === 'dashboard' && selected && successInfo && (
+        <div style={{ width: '100%', maxWidth: 480, padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Logout */}
+          <button onClick={() => { setPhase('select'); setSelected(null); setSuccessInfo(null) }}
+            style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 12 }}>
+            ← ออกจากระบบ
+          </button>
+
+          {/* Profile card */}
+          <div style={{ padding: '20px 20px', borderRadius: 16, backgroundColor: CARD, border: `1px solid ${GOLD}33`, display: 'flex', alignItems: 'center', gap: 18 }}>
+            <Avatar name={selected.name} url={selected.avatar_url} size={64} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>{selected.name_th ?? selected.name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 99, backgroundColor: `${GREEN}18`, color: GREEN, fontWeight: 600 }}>● ออนดิวตี้</span>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>เข้างาน {successInfo.time}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <button onClick={() => setPhase('purchase_form')}
+              style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}08`, color: GOLD, cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 30 }}>🧾</span>
+              แจ้งซื้อวัตถุดิบ
+            </button>
+            <button onClick={() => setPhase('stock_audit')}
+              style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 30 }}>📦</span>
+              นับสต็อก
+            </button>
+          </div>
+
+          {/* Clock-out button */}
+          {(() => {
+            const rec = todayMap[selected.id]
+            if (rec?.clock_in && !rec?.clock_out) return (
+              <button onClick={() => {
+                setAction('out'); setPhotoBlob(null); setGpsStatus('idle'); setGpsCoords(null); setDistanceM(null); setErrMsg('')
+                setPhase('action')
+              }}
+                style={{ padding: '16px', borderRadius: 14, border: 'none', backgroundColor: ORANGE, color: '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 800 }}>
+                🚪 ออกงาน
+              </button>
+            )
+            return null
+          })()}
+        </div>
+      )}
+
+      {/* ── PHASE: success (clock-out) ── */}
       {phase === 'success' && successInfo && (
-        <div style={{ width: '100%', maxWidth: 400, padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, textAlign: 'center' }}>
-          <div style={{ fontSize: 64 }}>{successInfo.action === 'in' ? '✅' : '👋'}</div>
-          <div style={{ fontSize: 26, fontWeight: 800 }}>{successInfo.action === 'in' ? 'เข้างานสำเร็จ!' : 'ออกงานสำเร็จ!'}</div>
+        <div style={{ width: '100%', maxWidth: 400, padding: '80px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, textAlign: 'center' }}>
+          <div style={{ fontSize: 64 }}>👋</div>
+          <div style={{ fontSize: 26, fontWeight: 800 }}>ออกงานสำเร็จ!</div>
           <div style={{ fontSize: 16, color: 'rgba(255,255,255,0.6)' }}>{successInfo.name} — {successInfo.time}</div>
           {successInfo.hours_worked !== undefined && (
             <div style={{ padding: '10px 20px', borderRadius: 99, backgroundColor: `${GREEN}18`, color: GREEN, fontSize: 14, fontWeight: 600 }}>
               ทำงาน {successInfo.hours_worked.toFixed(1)} ชั่วโมง
             </div>
           )}
-          {distanceM !== null && distanceM > 200 && (
-            <div style={{ fontSize: 12, color: ORANGE }}>ระยะห่างจากร้าน: {distanceM} เมตร (บันทึกแล้ว)</div>
-          )}
-          {successInfo.action === 'in' && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-              <button onClick={() => setPhase('purchase_form')}
-                style={{ padding: '12px 20px', borderRadius: 12, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-                🧾 แจ้งซื้อวัตถุดิบ
-              </button>
-              <button onClick={() => setPhase('stock_audit')}
-                style={{ padding: '12px 20px', borderRadius: 12, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-                📦 นับสต็อก
-              </button>
-            </div>
-          )}
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>กลับหน้าหลักใน 4 วินาที...</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginTop: 8 }}>กลับหน้าหลักใน 3 วินาที...</div>
         </div>
       )}
 
       {/* ── PHASE: purchase_form ── */}
       {phase === 'purchase_form' && selected && (
         <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <button onClick={() => setPhase('select')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
+          <button onClick={() => setPhase('dashboard')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
           <div style={{ fontSize: 18, fontWeight: 800 }}>🧾 แจ้งซื้อวัตถุดิบ</div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {selected.name_th ?? selected.name}</div>
 
@@ -980,7 +1019,7 @@ export default function StaffClient() {
       {/* ── PHASE: stock_audit ── */}
       {phase === 'stock_audit' && selected && (
         <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <button onClick={() => setPhase('select')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
+          <button onClick={() => setPhase('dashboard')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
           <div style={{ fontSize: 18, fontWeight: 800 }}>📦 นับสต็อก</div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {selected.name_th ?? selected.name}</div>
 
