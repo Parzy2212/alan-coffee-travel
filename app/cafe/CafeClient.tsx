@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
+import { getFaceApi } from '@/lib/faceapi'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ const ORANGE  = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings'
+type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff'
 
 type ExtDashStats = {
   today_sales:     number
@@ -93,6 +94,8 @@ type FullSettings = {
   low_stock_alert_enabled: string; daily_report_enabled: string
   ai_analyst_enabled: string
   payment_banks: string
+  shop_lat: string
+  shop_lng: string
 }
 
 const DEFAULT_SETTINGS: FullSettings = {
@@ -107,6 +110,8 @@ const DEFAULT_SETTINGS: FullSettings = {
   low_stock_alert_enabled: 'false', daily_report_enabled: 'false',
   ai_analyst_enabled: 'false',
   payment_banks: '[]',
+  shop_lat: '',
+  shop_lng: '',
 }
 
 const DAYS_OF_WEEK = [
@@ -215,6 +220,52 @@ type PaymentBank = {
   account_number: string
   account_name: string
   color: string
+}
+
+// ─── Staff Types ──────────────────────────────────────────────────────────────
+
+type StaffMember = {
+  id: string; name: string; name_th: string | null; name_lo: string | null
+  phone: string | null; avatar_url: string | null
+  salary: number | null; salary_type: string | null
+  start_date: string | null; is_active: boolean; is_verified: boolean
+  scheduled_start_time: string | null; rating: number | null
+  skills: string[] | null; notes: string | null
+}
+
+type StaffToday = {
+  id: string; name: string; name_th: string | null; avatar_url: string | null
+  clock_in: string | null; clock_out: string | null
+  status: string; late_minutes: number | null; scheduled_start: string | null
+}
+
+type StaffAnalytics = {
+  id: string; name: string; name_th: string | null; avatar_url: string | null
+  days_present: number; days_late: number; total_hours: number
+  punctuality_pct: number; orders_served: number
+}
+
+type AttendanceRow = {
+  staff_id: string; staff_name: string; report_date: string
+  clock_in: string | null; clock_out: string | null
+  status: string; late_minutes: number | null
+}
+
+type StaffForm = {
+  name: string; name_th: string; name_lo: string
+  phone: string; salary: string; salary_type: string
+  start_date: string; scheduled_start_time: string
+  skills: string; notes: string; pin: string
+}
+
+function emptyStaffForm(): StaffForm {
+  return {
+    name: '', name_th: '', name_lo: '', phone: '',
+    salary: '', salary_type: 'monthly',
+    start_date: new Date().toISOString().slice(0, 10),
+    scheduled_start_time: '08:00',
+    skills: '', notes: '', pin: '',
+  }
 }
 
 const ICON_OPTIONS = [
@@ -2393,6 +2444,50 @@ function SettingsTab() {
       </SettingSection>
 
       {/* ── 6. วิธีชำระเงิน ── */}
+      <SettingSection icon="📍" title="ตำแหน่งร้าน (สำหรับตรวจสอบ GPS พนักงาน)">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+            <Field label="Latitude">
+              <input value={settings.shop_lat} onChange={set('shop_lat')} placeholder="18.7883" style={inputStyle} />
+            </Field>
+            <Field label="Longitude">
+              <input value={settings.shop_lng} onChange={set('shop_lng')} placeholder="102.9979" style={inputStyle} />
+            </Field>
+            <button
+              onClick={() => {
+                if (!navigator.geolocation) return
+                navigator.geolocation.getCurrentPosition(pos => {
+                  setSettings(s => ({
+                    ...s,
+                    shop_lat: String(pos.coords.latitude),
+                    shop_lng: String(pos.coords.longitude),
+                  }))
+                })
+              }}
+              style={{ padding: '9px 14px', borderRadius: 8, border: `1px solid ${GOLD}44`,
+                cursor: 'pointer', backgroundColor: `${GOLD}12`, color: GOLD, fontSize: 12,
+                fontWeight: 600, whiteSpace: 'nowrap', marginBottom: 0 }}>
+              📍 ตำแหน่งปัจจุบัน
+            </button>
+          </div>
+          {settings.shop_lat && settings.shop_lng && (
+            <div style={{ borderRadius: 10, overflow: 'hidden', border: `1px solid ${BORDER}` }}>
+              <iframe
+                width="100%"
+                height="200"
+                frameBorder="0"
+                style={{ display: 'block' }}
+                src={`https://maps.google.com/maps?q=${settings.shop_lat},${settings.shop_lng}&z=16&output=embed`}
+                allowFullScreen
+              />
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
+            พิกัดนี้จะใช้คำนวณระยะห่างเมื่อพนักงาน clock-in ถ้าห่างเกิน 200 เมตรจะแจ้งเตือน
+          </div>
+        </div>
+      </SettingSection>
+
       <SettingSection icon="💳" title="วิธีชำระเงิน / ธนาคารรับโอน">
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 12, lineHeight: 1.6 }}>
           ธนาคารที่เพิ่มจะแสดงเป็นปุ่มให้เลือกในหน้า POS เมื่อลูกค้าโอนเงิน
@@ -2436,6 +2531,600 @@ function SettingsTab() {
   )
 }
 
+// ─── Staff Components ─────────────────────────────────────────────────────────
+
+function StaffAvatar({ name, avatarUrl, size = 40 }: { name: string; avatarUrl: string | null; size?: number }) {
+  const [err, setErr] = useState(false)
+  const ini = name.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase()
+  return (
+    <div style={{ width: size, height: size, borderRadius: '50%', flexShrink: 0, overflow: 'hidden',
+      backgroundColor: `${GOLD}22`, border: `2px solid ${BORDER}`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {avatarUrl && !err
+        ? <img src={avatarUrl} alt={name} width={size} height={size}
+            style={{ width: size, height: size, objectFit: 'cover' }}
+            onError={() => setErr(true)} />
+        : <span style={{ fontSize: size * 0.35, fontWeight: 700, color: GOLD }}>{ini}</span>
+      }
+    </div>
+  )
+}
+
+function staffStatusColor(s: string): string {
+  if (s === 'present') return GREEN
+  if (s === 'late')    return ORANGE
+  if (s === 'absent')  return RED
+  return 'rgba(255,255,255,0.3)'
+}
+function staffStatusLabel(s: string): string {
+  if (s === 'present') return 'มาแล้ว'
+  if (s === 'late')    return 'สาย'
+  if (s === 'absent')  return 'ขาด'
+  if (s === 'leave')   return 'ลา'
+  return 'ยังไม่มา'
+}
+
+function StaffTodayView() {
+  const [rows,    setRows]    = useState<StaffToday[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.rpc('get_staff_today_status').then(({ data }) => {
+      setRows((data ?? []) as StaffToday[])
+      setLoading(false)
+    })
+  }, [])
+
+  const present = rows.filter(r => r.status === 'present' || r.status === 'late').length
+  const absent  = rows.filter(r => r.status === 'absent').length
+  const onTime  = rows.filter(r => r.status === 'present').length
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        {[
+          { label: 'มาทำงาน',  value: present,  color: GREEN },
+          { label: 'ตรงเวลา',  value: onTime,   color: GOLD },
+          { label: 'ขาดงาน',   value: absent,   color: RED },
+        ].map(k => (
+          <div key={k.label} style={{ backgroundColor: CARD, borderRadius: 12, padding: '16px 18px', border: `1px solid ${BORDER}` }}>
+            <div style={{ fontSize: 28, fontWeight: 800, color: k.color }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Staff list */}
+      {loading ? (
+        <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13 }}>กำลังโหลด...</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rows.map(r => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px',
+              backgroundColor: CARD, borderRadius: 10, border: `1px solid ${BORDER}` }}>
+              <StaffAvatar name={r.name} avatarUrl={r.avatar_url} size={40} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{r.name_th ?? r.name}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>
+                  {r.clock_in ? `เข้า ${new Date(r.clock_in).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : 'ยังไม่ลงชื่อ'}
+                  {r.clock_out ? ` · ออก ${new Date(r.clock_out).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99,
+                  color: staffStatusColor(r.status), backgroundColor: `${staffStatusColor(r.status)}18` }}>
+                  {staffStatusLabel(r.status)}
+                </span>
+                {r.late_minutes && r.late_minutes > 0
+                  ? <span style={{ fontSize: 10, color: ORANGE }}>สาย {r.late_minutes} นาที</span>
+                  : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StaffPerfView() {
+  const [rows,    setRows]    = useState<StaffAnalytics[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.rpc('get_staff_analytics').then(({ data }) => {
+      setRows((data ?? []) as StaffAnalytics[])
+      setLoading(false)
+    })
+  }, [])
+
+  if (loading) return <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13 }}>กำลังโหลด...</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 4 }}>ประสิทธิภาพ 30 วันล่าสุด</div>
+      {rows.map((r, i) => (
+        <div key={r.id ?? i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px',
+          backgroundColor: CARD, borderRadius: 12, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'rgba(255,255,255,0.2)', width: 28 }}>#{i + 1}</div>
+          <StaffAvatar name={r.name} avatarUrl={r.avatar_url} size={40} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{r.name_th ?? r.name}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
+              {r.days_present} วัน · {r.total_hours.toFixed(0)} ชม. · {r.orders_served} ออเดอร์
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: r.punctuality_pct >= 90 ? GREEN : r.punctuality_pct >= 70 ? GOLD : RED }}>
+              {r.punctuality_pct.toFixed(0)}%
+            </div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>ตรงเวลา</div>
+          </div>
+        </div>
+      ))}
+      {rows.length === 0 && <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>ไม่มีข้อมูล</div>}
+    </div>
+  )
+}
+
+// ─── Photo Enroll Modal ───────────────────────────────────────────────────────
+
+function FaceEnrollModal({ staff, onClose, onSaved }: { staff: StaffMember; onClose: () => void; onSaved: () => void }) {
+  const streamRef  = useRef<MediaStream | null>(null)
+  const videoRef   = useRef<HTMLVideoElement | null>(null)
+  const canvasRef  = useRef<HTMLCanvasElement>(null)
+
+  const [status,   setStatus]  = useState<'idle' | 'live' | 'captured' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveStep, setSaveStep] = useState('')
+  const [preview,  setPreview] = useState<string | null>(null)
+  const [photoBlob,setPhotoBlob] = useState<Blob | null>(null)
+  const [errMsg,   setErrMsg]  = useState('')
+
+  // Callback ref: binds stream as soon as video element mounts
+  const setVideoRef = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node
+    if (node && streamRef.current) {
+      node.srcObject = streamRef.current
+      node.onloadedmetadata = () => { node.play().catch(() => {}) }
+    }
+  }, [])
+
+  async function openCamera() {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+      streamRef.current = s
+      setStatus('live')
+    } catch (e) {
+      console.warn('[PhotoEnroll] Camera failed:', e)
+      setErrMsg('ไม่สามารถเปิดกล้องได้')
+      setStatus('error')
+    }
+  }
+
+  function shoot() {
+    const v = videoRef.current, c = canvasRef.current; if (!v || !c) return
+    c.width = v.videoWidth || 640; c.height = v.videoHeight || 480
+    c.getContext('2d')?.drawImage(v, 0, 0)
+    c.toBlob(b => {
+      if (!b) return
+      setPreview(c.toDataURL())
+      setPhotoBlob(b)
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+      setStatus('captured')
+    }, 'image/jpeg', 0.88)
+  }
+
+  function retake() {
+    setPreview(null); setPhotoBlob(null); void openCamera()
+  }
+
+  async function save() {
+    console.log('Starting save...')
+    if (!photoBlob) { setErrMsg('กรุณาถ่ายรูปก่อน'); return }
+    if (!preview) { setErrMsg('ไม่มีข้อมูลรูปภาพ'); return }
+    setStatus('saving'); setErrMsg('')
+    try {
+      // 1. Load face-api
+      console.log('Loading face-api models...')
+      setSaveStep('กำลังโหลด AI...')
+      const fa = await getFaceApi()
+
+      // 2. Detect face from preview dataURL (canvas may be unmounted)
+      console.log('Detecting face...')
+      setSaveStep('กำลังตรวจจับใบหน้า...')
+      const img = document.createElement('img')
+      img.src = preview
+      await new Promise<void>(r => { img.onload = () => r() })
+      const det = await fa.detectSingleFace(img, new fa.TinyFaceDetectorOptions())
+        .withFaceLandmarks().withFaceDescriptor()
+      if (!det) {
+        console.warn('No face detected')
+        setErrMsg('ไม่พบใบหน้าในรูป กรุณาถ่ายใหม่ให้เห็นหน้าชัดเจน')
+        setStatus('captured'); setSaveStep(''); return
+      }
+      const descriptor = Array.from(det.descriptor as Float32Array)
+      console.log('Face detected, descriptor length:', descriptor.length)
+
+      // 3. Upload photo
+      console.log('Uploading photo...')
+      setSaveStep('กำลังอัปโหลดรูป...')
+      const path = `avatars/${staff.id}_${Date.now()}.jpg`
+      const { error: upErr } = await supabase.storage.from('staff-photos').upload(path, photoBlob, { upsert: true, contentType: 'image/jpeg' })
+      if (upErr) { console.error('Upload error:', upErr.message); setErrMsg(upErr.message); setStatus('captured'); setSaveStep(''); return }
+      const url = supabase.storage.from('staff-photos').getPublicUrl(path).data?.publicUrl
+      console.log('Uploaded:', url)
+
+      // 4. Save to DB
+      console.log('Saving to DB...')
+      setSaveStep('กำลังบันทึก...')
+      const { error: dbErr } = await supabase.from('staff').update({ avatar_url: url, face_descriptor: descriptor }).eq('id', staff.id)
+      if (dbErr) { console.error('DB error:', dbErr.message); setErrMsg(dbErr.message); setStatus('captured'); setSaveStep(''); return }
+
+      console.log('Done!')
+      setSaveStep(''); setStatus('saved')
+      setTimeout(() => { onSaved(); onClose() }, 1500)
+    } catch (e) {
+      console.error('Save failed:', e)
+      setErrMsg(e instanceof Error ? e.message : String(e))
+      setStatus('captured'); setSaveStep('')
+    }
+  }
+
+  useEffect(() => {
+    void openCamera()
+    return () => { streamRef.current?.getTracks().forEach(t => t.stop()) }
+  }, [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}`}</style>
+      <div style={{ backgroundColor: CARD, borderRadius: 16, border: `1px solid ${BORDER}`, padding: 24, width: '100%', maxWidth: 400 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>ถ่ายรูปพนักงาน</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{staff.name_th ?? staff.name}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 22, lineHeight: 1 }}>×</button>
+        </div>
+
+        {status === 'idle' && (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>กำลังเปิดกล้อง...</div>
+        )}
+        {status === 'saved' && (
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <div style={{ fontSize: 52, marginBottom: 12 }}>✅</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: GREEN }}>บันทึกรูปถ่าย + ใบหน้าแล้ว</div>
+          </div>
+        )}
+        {status === 'error' && (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: RED, fontSize: 13 }}>{errMsg || 'เกิดข้อผิดพลาด'}</div>
+        )}
+        {/* canvas always mounted so canvasRef is valid when save() runs */}
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+        {status === 'live' && (
+          <>
+            <div style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 14, backgroundColor: '#000' }}>
+              <video ref={setVideoRef} autoPlay playsInline muted
+                style={{ width: '100%', display: 'block', maxHeight: 260, objectFit: 'cover' }} />
+            </div>
+            <button onClick={shoot}
+              style={{ width: '100%', padding: 13, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 14, cursor: 'pointer', backgroundColor: GOLD, color: BLACK }}>
+              📷 ถ่ายรูป
+            </button>
+          </>
+        )}
+        {(status === 'captured' || status === 'saving') && (
+          <>
+            {preview && <img src={preview} style={{ width: '100%', borderRadius: 10, marginBottom: 14, maxHeight: 260, objectFit: 'cover' }} />}
+            {saveStep && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, backgroundColor: `${GOLD}12`, marginBottom: 8 }}>
+                <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${GOLD}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: GOLD, fontWeight: 600 }}>{saveStep}</span>
+              </div>
+            )}
+            {errMsg && <div style={{ color: RED, fontSize: 12, textAlign: 'center', marginBottom: 8 }}>{errMsg}</div>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={retake} disabled={status === 'saving'}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: `1px solid ${BORDER}`, background: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 13 }}>
+                ถ่ายใหม่
+              </button>
+              <button onClick={() => void save()} disabled={status === 'saving'}
+                style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 14, cursor: status === 'saving' ? 'not-allowed' : 'pointer', backgroundColor: GOLD, color: BLACK, opacity: status === 'saving' ? 0.7 : 1 }}>
+                {status === 'saving' ? '...' : 'บันทึกรูปถ่าย + ใบหน้า'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function StaffManageView() {
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [showForm,  setShowForm]  = useState(false)
+  const [editing,   setEditing]   = useState<StaffMember | null>(null)
+  const [form,      setForm]      = useState<StaffForm>(emptyStaffForm())
+  const [saving,       setSaving]       = useState(false)
+  const [errMsg,       setErrMsg]       = useState('')
+  const [showPin,      setShowPin]      = useState(false)
+  const [enrollTarget, setEnrollTarget] = useState<StaffMember | null>(null)
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.rpc('get_all_staff')
+    setStaffList((data ?? []) as StaffMember[])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function openNew() {
+    setEditing(null)
+    setForm(emptyStaffForm())
+    setErrMsg('')
+    setShowPin(false)
+    setShowForm(true)
+  }
+
+  function openEdit(s: StaffMember) {
+    setEditing(s)
+    setForm({
+      name: s.name, name_th: s.name_th ?? '', name_lo: s.name_lo ?? '',
+      phone: s.phone ?? '', salary: String(s.salary ?? ''), salary_type: s.salary_type ?? 'monthly',
+      start_date: s.start_date ?? new Date().toISOString().slice(0, 10),
+      scheduled_start_time: s.scheduled_start_time ?? '08:00',
+      skills: (s.skills ?? []).join(', '), notes: s.notes ?? '', pin: '',
+    })
+    setErrMsg('')
+    setShowPin(false)
+    setShowForm(true)
+  }
+
+  async function save() {
+    if (!form.name.trim()) { setErrMsg('กรุณากรอกชื่อ'); return }
+    if (form.pin && (!/^\d{4}$/.test(form.pin))) { setErrMsg('PIN ต้องเป็นตัวเลข 4 หลัก'); return }
+    if (!editing && !form.pin) { setErrMsg('กรุณากรอก PIN 4 หลัก'); return }
+    setSaving(true); setErrMsg('')
+    try {
+      const skillsArr = form.skills.split(',').map(s => s.trim()).filter(Boolean)
+      if (editing) {
+        const payload: Record<string, unknown> = {
+          name:                   form.name || null,
+          name_th:                form.name_th || null,
+          name_lo:                form.name_lo || null,
+          phone:                  form.phone || null,
+          salary:                 form.salary ? parseFloat(form.salary) : null,
+          salary_type:            form.salary_type || null,
+          start_date:             form.start_date || null,
+          scheduled_start_time:   form.scheduled_start_time || null,
+          skills:                 skillsArr.length ? skillsArr : null,
+          notes:                  form.notes || null,
+        }
+        if (form.pin) payload.pin_code = form.pin
+        const { error } = await supabase.from('staff').update(payload).eq('id', editing.id)
+        if (error) { setErrMsg(error.message); return }
+      } else {
+        const { error } = await supabase.from('staff').insert({
+          name:                 form.name,
+          name_th:              form.name_th || null,
+          name_lo:              form.name_lo || null,
+          phone:                form.phone || null,
+          salary:               form.salary ? parseFloat(form.salary) : null,
+          salary_type:          form.salary_type || null,
+          start_date:           form.start_date || null,
+          scheduled_start_time: form.scheduled_start_time || null,
+          skills:               skillsArr.length ? skillsArr : null,
+          notes:                form.notes || null,
+          pin_code:             form.pin,
+          role:                 'staff',
+          is_active:            true,
+        })
+        if (error) { setErrMsg(error.message); return }
+      }
+      setShowForm(false)
+      load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggle(id: string) {
+    await supabase.rpc('toggle_staff_active', { p_id: id })
+    load()
+  }
+
+  const f = (k: keyof StaffForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.value }))
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', backgroundColor: '#1a1a1a', border: `1px solid ${BORDER}`,
+    borderRadius: 8, color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box',
+  }
+  const labelStyle: React.CSSProperties = { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: 4 }
+
+  return (
+    <div>
+      {enrollTarget && (
+        <FaceEnrollModal
+          staff={enrollTarget}
+          onClose={() => setEnrollTarget(null)}
+          onSaved={() => { setEnrollTarget(null); load() }}
+        />
+      )}
+
+      {showForm && (
+        <div style={{ marginBottom: 24, padding: '20px', backgroundColor: CARD, borderRadius: 14, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>{editing ? 'แก้ไขพนักงาน' : 'เพิ่มพนักงาน'}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><div style={labelStyle}>ชื่อ (EN) *</div><input value={form.name} onChange={f('name')} style={inputStyle} /></div>
+            <div><div style={labelStyle}>ชื่อ (TH)</div><input value={form.name_th} onChange={f('name_th')} style={inputStyle} /></div>
+            <div><div style={labelStyle}>ชื่อ (LO)</div><input value={form.name_lo} onChange={f('name_lo')} style={inputStyle} /></div>
+            <div><div style={labelStyle}>โทรศัพท์</div><input value={form.phone} onChange={f('phone')} style={inputStyle} /></div>
+            <div><div style={labelStyle}>เงินเดือน (LAK)</div><input type="number" value={form.salary} onChange={f('salary')} style={inputStyle} /></div>
+            <div>
+              <div style={labelStyle}>ประเภทเงินเดือน</div>
+              <select value={form.salary_type} onChange={f('salary_type')} style={inputStyle}>
+                <option value="monthly">รายเดือน</option>
+                <option value="daily">รายวัน</option>
+                <option value="hourly">รายชั่วโมง</option>
+              </select>
+            </div>
+            <div><div style={labelStyle}>วันเริ่มงาน</div><input type="date" value={form.start_date} onChange={f('start_date')} style={inputStyle} /></div>
+            <div><div style={labelStyle}>เวลาเริ่มงาน</div><input type="time" value={form.scheduled_start_time} onChange={f('scheduled_start_time')} style={inputStyle} /></div>
+            <div style={{ gridColumn: 'span 2' }}>
+              <div style={labelStyle}>ทักษะ (คั่นด้วยจุลภาค)</div>
+              <input value={form.skills} onChange={f('skills')} placeholder="บาริสต้า, เบเกอรี่, ..." style={inputStyle} />
+            </div>
+            <div style={{ gridColumn: 'span 2' }}>
+              <div style={labelStyle}>หมายเหตุ</div>
+              <textarea value={form.notes} onChange={f('notes')} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+            </div>
+            <div>
+              <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>PIN {editing ? '(เว้นว่าง = ไม่เปลี่ยน)' : '* (4 หลัก)'}</span>
+                {editing && form.pin === '' && (
+                  <button type="button" onClick={() => setForm(p => ({ ...p, pin: '' }))}
+                    style={{ background: 'none', border: 'none', color: GOLD, fontSize: 11, cursor: 'pointer', padding: 0 }}>
+                    Reset PIN
+                  </button>
+                )}
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPin ? 'text' : 'password'}
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={form.pin}
+                  onChange={e => {
+                    const v = e.target.value.replace(/\D/g, '').slice(0, 4)
+                    setForm(p => ({ ...p, pin: v }))
+                  }}
+                  placeholder={editing ? '••••' : 'กรอก PIN 4 หลัก'}
+                  style={{ ...inputStyle, paddingRight: 36, letterSpacing: showPin ? 2 : 6 }}
+                />
+                <button type="button" onClick={() => setShowPin(v => !v)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 15,
+                    color: 'rgba(255,255,255,0.35)', lineHeight: 1 }}>
+                  {showPin ? '🙈' : '👁'}
+                </button>
+              </div>
+            </div>
+            {editing && (
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button type="button"
+                  onClick={() => { setForm(p => ({ ...p, pin: '' })); setShowPin(true) }}
+                  style={{ padding: '9px 14px', borderRadius: 8, border: `1px solid ${GOLD}44`,
+                    cursor: 'pointer', backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12 }}>
+                  Reset PIN
+                </button>
+              </div>
+            )}
+          </div>
+          {errMsg && <div style={{ color: RED, fontSize: 12, marginTop: 8 }}>{errMsg}</div>}
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <button onClick={save} disabled={saving}
+              style={{ padding: '9px 18px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                backgroundColor: GOLD, color: BLACK, fontWeight: 700, fontSize: 13 }}>
+              {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+            </button>
+            <button onClick={() => setShowForm(false)}
+              style={{ padding: '9px 18px', borderRadius: 8, border: `1px solid ${BORDER}`, cursor: 'pointer',
+                backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
+      <button onClick={openNew}
+        style={{ marginBottom: 16, padding: '9px 18px', borderRadius: 8, border: `1px solid ${GOLD}44`,
+          cursor: 'pointer', backgroundColor: `${GOLD}14`, color: GOLD, fontSize: 13, fontWeight: 600 }}>
+        + เพิ่มพนักงาน
+      </button>
+
+      {loading ? (
+        <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13 }}>กำลังโหลด...</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {staffList.map(s => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px',
+              backgroundColor: CARD, borderRadius: 10, border: `1px solid ${BORDER}`,
+              opacity: s.is_active ? 1 : 0.45 }}>
+              <StaffAvatar name={s.name} avatarUrl={s.avatar_url} size={42} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{s.name_th ?? s.name}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
+                  {s.phone ?? '—'} · {s.salary_type ?? 'monthly'}
+                  {s.salary ? ` · ${new Intl.NumberFormat('lo-LA').format(s.salary)} ₭` : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setEnrollTarget(s)}
+                  style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${GOLD}44`, cursor: 'pointer',
+                    backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 11 }}>
+                  {s.avatar_url ? '🔄 รูปถ่าย' : '📷 รูปถ่าย'}
+                </button>
+                <button onClick={() => openEdit(s)}
+                  style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, cursor: 'pointer',
+                    backgroundColor: 'transparent', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>
+                  แก้ไข
+                </button>
+                <button onClick={() => toggle(s.id)}
+                  style={{ padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                    backgroundColor: s.is_active ? `${RED}18` : `${GREEN}18`,
+                    color: s.is_active ? RED : GREEN, fontSize: 11 }}>
+                  {s.is_active ? 'ปิดใช้' : 'เปิดใช้'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StaffTab() {
+  const [sub, setSub] = useState<'today' | 'perf' | 'manage'>('today')
+  const subs: { id: 'today' | 'perf' | 'manage'; label: string }[] = [
+    { id: 'today',  label: 'วันนี้' },
+    { id: 'perf',   label: 'ประสิทธิภาพ' },
+    { id: 'manage', label: 'จัดการ' },
+  ]
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 28, borderBottom: `1px solid ${BORDER}` }}>
+        {subs.map(s => (
+          <button key={s.id} onClick={() => setSub(s.id)}
+            style={{ padding: '8px 20px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+              color: sub === s.id ? GOLD : 'rgba(255,255,255,0.4)',
+              fontWeight: sub === s.id ? 600 : 400,
+              borderBottom: sub === s.id ? `2px solid ${GOLD}` : '2px solid transparent',
+              marginBottom: -1, transition: 'all .15s' }}>
+            {s.label}
+          </button>
+        ))}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+          <a href="/staff"
+            style={{ fontSize: 11, color: GOLD, textDecoration: 'none', padding: '4px 10px',
+              border: `1px solid ${GOLD}44`, borderRadius: 6 }}>
+            Kiosk →
+          </a>
+        </div>
+      </div>
+      {sub === 'today'  && <StaffTodayView />}
+      {sub === 'perf'   && <StaffPerfView />}
+      {sub === 'manage' && <StaffManageView />}
+    </div>
+  )
+}
+
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
@@ -2444,6 +3133,7 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: 'categories', label: 'หมวดหมู่',    icon: '🗂️' },
   { id: 'stock',      label: 'สต็อก',       icon: '📦' },
   { id: 'settings',   label: 'ตั้งค่า',     icon: '⚙️' },
+  { id: 'staff',      label: 'พนักงาน',     icon: '👥' },
 ]
 
 export default function CafeClient() {
@@ -2483,6 +3173,7 @@ export default function CafeClient() {
         {tab === 'categories' && <CategoriesTab />}
         {tab === 'stock'      && <StockTab />}
         {tab === 'settings'   && <SettingsTab />}
+        {tab === 'staff'      && <StaffTab />}
       </div>
     </div>
   )
