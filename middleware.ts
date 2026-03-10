@@ -10,7 +10,7 @@ async function computeToken(password: string): Promise<string> {
     .join('')
 }
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Only protect /admin routes — let /admin/login through
