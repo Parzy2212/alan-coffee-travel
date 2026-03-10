@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import Navbar from '@/components/Navbar'
 
+export const runtime = 'edge'
+
 const RATINGS = [
   {
     key: 'rating_experience',
@@ -62,18 +64,6 @@ const RATINGS = [
 ]
 
 const BASE_URL = 'https://www.alan-coffee-travel.com'
-
-export async function generateStaticParams() {
-  try {
-    const { data } = await supabase
-      .from('destinations')
-      .select('slug')
-      .eq('status', 'published')
-    return (data ?? []).map((d) => ({ slug: d.slug }))
-  } catch {
-    return []
-  }
-}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params

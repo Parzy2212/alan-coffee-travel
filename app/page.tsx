@@ -2,6 +2,8 @@ import { supabase } from '@/lib/supabase'
 import type { Metadata } from 'next'
 import HomeClient from '@/components/HomeClient'
 
+export const runtime = 'edge'
+
 export const metadata: Metadata = {
   title: 'Alan Coffee & Travel — Discover Laos | ທ່ອງທ່ຽວລາວ | ท่องเที่ยวลาว',
   description:

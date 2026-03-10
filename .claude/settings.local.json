@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(node:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(cd \"C:/Users/Parzy/Desktop/alan-coffee-travel\" && npm install --save-dev @cloudflare/next-on-pages 2>&1 | tail -5)"
     ]
   }
 }
