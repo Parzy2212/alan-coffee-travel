@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+
+export const runtime = 'edge'
 
 // Same derivation as middleware.ts — SHA-256(password + ":alan-admin")
-function computeToken(password: string): string {
-  return crypto
-    .createHash('sha256')
-    .update(`${password}:alan-admin`)
-    .digest('hex')
+async function computeToken(password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(`${password}:alan-admin`)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 export async function POST(request: Request) {
@@ -30,7 +33,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const sessionToken = computeToken(adminPassword)
+    const sessionToken = await computeToken(adminPassword)
 
     const response = NextResponse.json({ success: true })
     response.cookies.set('admin_session', sessionToken, {
