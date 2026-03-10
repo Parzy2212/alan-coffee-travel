@@ -63,6 +63,14 @@ const RATINGS = [
 
 const BASE_URL = 'https://www.alan-coffee-travel.com'
 
+export async function generateStaticParams() {
+  const { data } = await supabase
+    .from('destinations')
+    .select('slug')
+    .eq('status', 'published')
+  return (data ?? []).map((d) => ({ slug: d.slug }))
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const { data } = await supabase

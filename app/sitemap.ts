@@ -1,13 +1,22 @@
 import type { MetadataRoute } from 'next'
-import { supabase } from '@/lib/supabase'
 
 const BASE_URL = 'https://www.alan-coffee-travel.com'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const { data: destinations } = await supabase
-    .from('destinations')
-    .select('slug, updated_at')
-    .eq('status', 'active')
+  const hasEnv =
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  let destinations: { slug: string; updated_at: string | null }[] = []
+
+  if (hasEnv) {
+    const { supabase } = await import('@/lib/supabase')
+    const { data } = await supabase
+      .from('destinations')
+      .select('slug, updated_at')
+      .eq('status', 'active')
+    destinations = data ?? []
+  }
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {
@@ -48,7 +57,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ]
 
-  const destinationRoutes: MetadataRoute.Sitemap = (destinations ?? []).map(d => ({
+  const destinationRoutes: MetadataRoute.Sitemap = destinations.map(d => ({
     url: `${BASE_URL}/destinations/${d.slug}`,
     lastModified: d.updated_at ? new Date(d.updated_at) : new Date(),
     changeFrequency: 'weekly' as const,
