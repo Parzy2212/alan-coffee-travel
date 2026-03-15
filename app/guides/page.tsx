@@ -2,6 +2,8 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
+import { useLang } from '@/contexts/LanguageContext'
+import { tr } from '@/lib/translations'
 
 type Guide = {
   id: string
@@ -20,6 +22,7 @@ type Guide = {
 }
 
 export default function GuidesPage() {
+  const { lang } = useLang()
   const [guides, setGuides] = useState<Guide[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +36,7 @@ export default function GuidesPage() {
       .eq('status', 'active')
       .order('is_verified', { ascending: false })
       .then(({ data, error: err }) => {
-        if (err) { setError('Unable to load guides. Please try again.'); setLoading(false); return }
+        if (err) { setError(tr('guides_no_results', lang)); setLoading(false); return }
         setGuides((data as Guide[]) ?? [])
         setLoading(false)
       })
@@ -69,6 +72,10 @@ export default function GuidesPage() {
     minWidth: '160px',
   }
 
+  const countLabel = loading
+    ? '…'
+    : `${filtered.length} ${filtered.length === 1 ? tr('guides_singular', lang) : tr('guides_plural', lang)}`
+
   return (
     <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-black)' }}>
 
@@ -79,13 +86,13 @@ export default function GuidesPage() {
         <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
             <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-            <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' }}>Local Expertise</span>
+            <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' }}>{tr('guides_eyebrow', lang)}</span>
           </div>
           <h1 className="hero-h1-lg" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, color: 'var(--color-white)', marginBottom: '16px' }}>
-            Find Your Guide
+            {tr('guides_h1', lang)}
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '18px', lineHeight: 1.6, maxWidth: '560px' }}>
-            Trusted local guides who know Laos deeply — its paths, its people, and the places that never appear on maps.
+            {tr('guides_sub', lang)}
           </p>
         </div>
       </section>
@@ -95,16 +102,14 @@ export default function GuidesPage() {
         <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
         <div className="filter-row">
           <select value={province} onChange={e => setProvince(e.target.value)} className="filter-select" style={selectStyle}>
-            <option value="all">All Provinces</option>
+            <option value="all">{tr('guides_all_provinces', lang)}</option>
             {provinces.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
           <select value={language} onChange={e => setLanguage(e.target.value)} className="filter-select" style={selectStyle}>
-            <option value="all">All Languages</option>
+            <option value="all">{tr('guides_all_languages', lang)}</option>
             {languages.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
-          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px', marginLeft: 'auto' }}>
-            {loading ? '…' : `${filtered.length} guide${filtered.length !== 1 ? 's' : ''}`}
-          </span>
+          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px', marginLeft: 'auto' }}>{countLabel}</span>
         </div>
         </div>
       </section>
@@ -136,14 +141,14 @@ export default function GuidesPage() {
             <div style={{ fontSize: '40px', marginBottom: '16px' }}>⚠️</div>
             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '16px', marginBottom: '20px' }}>{error}</p>
             <button onClick={() => window.location.reload()} style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}>
-              Try Again
+              {tr('try_again', lang)}
             </button>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '120px 0' }}>
             <div style={{ fontSize: '40px', marginBottom: '16px' }}>🧭</div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '16px', marginBottom: '8px' }}>No guides found</p>
-            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>Try adjusting your filters.</p>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '16px', marginBottom: '8px' }}>{tr('guides_no_results', lang)}</p>
+            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>{tr('guides_no_results_sub', lang)}</p>
           </div>
         ) : (
           <div className="grid-3">
@@ -152,7 +157,6 @@ export default function GuidesPage() {
 
                 {/* Card header — photo + name + verified */}
                 <div style={{ padding: '28px 24px 20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  {/* Photo */}
                   <div style={{ flexShrink: 0 }}>
                     {g.photo_url ? (
                       <img src={g.photo_url} alt={g.name}
@@ -171,14 +175,14 @@ export default function GuidesPage() {
                       </h2>
                       {g.is_verified && (
                         <span style={{ backgroundColor: 'rgba(201,168,76,0.15)', color: '#c9a84c', padding: '2px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px', border: '1px solid rgba(201,168,76,0.3)' }}>
-                          ✓ VERIFIED
+                          ✓ {tr('guides_verified', lang)}
                         </span>
                       )}
                     </div>
                     {g.province && (
                       <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', margin: 0 }}>
                         {g.province}
-                        {g.experience_years ? ` · ${g.experience_years} yrs exp` : ''}
+                        {g.experience_years ? ` · ${g.experience_years} ${tr('guides_yrs_exp', lang)}` : ''}
                       </p>
                     )}
                   </div>
@@ -190,11 +194,11 @@ export default function GuidesPage() {
                 {/* Languages */}
                 {(g.languages ?? []).length > 0 && (
                   <div style={{ padding: '16px 24px 0' }}>
-                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Languages</p>
+                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>{tr('label_languages', lang)}</p>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {(g.languages ?? []).map(lang => (
-                        <span key={lang} style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: '#c9a84c', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600 }}>
-                          {lang}
+                      {(g.languages ?? []).map(l => (
+                        <span key={l} style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: '#c9a84c', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600 }}>
+                          {l}
                         </span>
                       ))}
                     </div>
@@ -204,7 +208,7 @@ export default function GuidesPage() {
                 {/* Specialties */}
                 {(g.specialties ?? []).length > 0 && (
                   <div style={{ padding: '12px 24px 0' }}>
-                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Specialties</p>
+                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>{tr('label_specialties', lang)}</p>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                       {(g.specialties ?? []).map(sp => (
                         <span key={sp} style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px' }}>
@@ -222,7 +226,6 @@ export default function GuidesPage() {
                   </p>
                 )}
 
-                {/* Spacer */}
                 <div style={{ flex: 1 }}></div>
 
                 {/* Contact buttons */}
@@ -230,7 +233,7 @@ export default function GuidesPage() {
                   {g.phone && (
                     <a href={`tel:${g.phone}`}
                       style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', backgroundColor: '#c9a84c', color: '#000', padding: '10px', borderRadius: '6px', textDecoration: 'none', fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>
-                      📞 Call
+                      📞 {tr('guides_call', lang)}
                     </a>
                   )}
                   {g.facebook && (
@@ -240,7 +243,7 @@ export default function GuidesPage() {
                     </a>
                   )}
                   {!g.phone && !g.facebook && (
-                    <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '12px', alignSelf: 'center' }}>Contact via Alan Café</span>
+                    <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '12px', alignSelf: 'center' }}>{tr('guides_contact_via', lang)}</span>
                   )}
                 </div>
 
@@ -259,13 +262,13 @@ export default function GuidesPage() {
             <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
           </div>
           <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '36px', fontWeight: 800, color: 'white', letterSpacing: '-1px', lineHeight: 1.2, marginBottom: '16px' }}>
-            Not sure which guide is right for you?
+            {tr('guides_cta_h2', lang)}
           </h2>
           <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '16px', lineHeight: 1.7, marginBottom: '32px' }}>
-            Come to Alan Café in Attapeu. We know every guide personally and can match you to the right person for your journey.
+            {tr('guides_cta_p', lang)}
           </p>
           <a href="/contact" style={{ display: 'inline-block', backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '14px 36px', borderRadius: '4px', textDecoration: 'none', fontWeight: 700, fontSize: '13px', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            Get in Touch
+            {tr('guides_cta_btn', lang)}
           </a>
         </div>
       </section>
@@ -280,11 +283,16 @@ export default function GuidesPage() {
                 <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>Coffee & Travel</span>
               </div>
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>© 2025 Alan Coffee & Travel — Attapeu, Laos</p>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
             </div>
             <div className="footer-links">
-              {[{ label: 'Destinations', href: '/destinations' }, { label: 'Guides', href: '/guides' }, { label: 'About', href: '/about' }, { label: 'Contact', href: '/contact' }].map(item => (
-                <a key={item.label} href={item.href} style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
+              {[
+                { label: tr('nav_destinations', lang), href: '/destinations' },
+                { label: tr('nav_guides', lang),       href: '/guides'       },
+                { label: tr('nav_about', lang),        href: '/about'        },
+                { label: tr('nav_contact', lang),      href: '/contact'      },
+              ].map(item => (
+                <a key={item.href} href={item.href} style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
               ))}
             </div>
           </div>

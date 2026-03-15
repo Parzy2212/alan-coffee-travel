@@ -3,6 +3,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { matchesSearch } from '@/lib/search'
 import Navbar from '@/components/Navbar'
+import { useLang } from '@/contexts/LanguageContext'
+import { tr } from '@/lib/translations'
 
 type Destination = {
   id: string
@@ -37,6 +39,7 @@ function avgRating(d: Destination): number | null {
 }
 
 export default function DestinationsPage() {
+  const { lang } = useLang()
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +54,7 @@ export default function DestinationsPage() {
       .eq('status', 'active')
       .order('featured', { ascending: false })
       .then(({ data, error: err }) => {
-        if (err) { setError('Unable to load destinations. Please try again.'); setLoading(false); return }
+        if (err) { setError(tr('dest_no_results', lang)); setLoading(false); return }
         setDestinations((data as Destination[]) ?? [])
         setLoading(false)
       })
@@ -85,6 +88,10 @@ export default function DestinationsPage() {
     minWidth: '160px',
   }
 
+  const countLabel = loading
+    ? '…'
+    : `${filtered.length} ${filtered.length === 1 ? tr('dest_singular', lang) : tr('dest_plural', lang)}`
+
   return (
     <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-black)' }}>
 
@@ -95,13 +102,13 @@ export default function DestinationsPage() {
         <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
             <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)', flexShrink: 0 }}></div>
-            <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' }}>Laos</span>
+            <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' }}>{tr('dest_eyebrow', lang)}</span>
           </div>
           <h1 className="hero-h1-lg" style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-white)', marginBottom: '16px' }}>
-            All Destinations
+            {tr('dest_h1', lang)}
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '17px', lineHeight: 1.6, maxWidth: '560px' }}>
-            Curated places across Laos — assessed for experience, authenticity, and tranquility.
+            {tr('dest_sub', lang)}
           </p>
         </div>
       </section>
@@ -112,25 +119,23 @@ export default function DestinationsPage() {
           <div className="filter-row">
             <input
               type="text"
-              placeholder="Search destinations..."
+              placeholder={tr('dest_search_ph', lang)}
               value={search}
               onChange={e => setSearch(e.target.value)}
               style={{ ...selectStyle, minHeight: '44px', flex: 1 }}
             />
             <select value={province} onChange={e => setProvince(e.target.value)} className="filter-select" style={selectStyle}>
-              <option value="all">All Provinces</option>
+              <option value="all">{tr('dest_all_provinces', lang)}</option>
               {provinces.map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
             <select value={assessment} onChange={e => setAssessment(e.target.value)} className="filter-select" style={selectStyle}>
-              <option value="all">All Status</option>
-              <option value="assessed">Assessed</option>
-              <option value="not_assessed">Not Yet Assessed</option>
+              <option value="all">{tr('dest_all_status', lang)}</option>
+              <option value="assessed">{tr('dest_filter_assessed', lang)}</option>
+              <option value="not_assessed">{tr('dest_filter_not_assessed', lang)}</option>
             </select>
-            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>
-              {loading ? '…' : `${filtered.length} destination${filtered.length !== 1 ? 's' : ''}`}
-            </span>
+            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>{countLabel}</span>
           </div>
         </div>
       </section>
@@ -160,14 +165,14 @@ export default function DestinationsPage() {
             <div style={{ fontSize: '40px', marginBottom: '16px' }}>⚠️</div>
             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '16px', marginBottom: '20px' }}>{error}</p>
             <button onClick={() => window.location.reload()} style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}>
-              Try Again
+              {tr('try_again', lang)}
             </button>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '120px 0' }}>
             <div style={{ fontSize: '40px', marginBottom: '16px' }}>🏔️</div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '16px', marginBottom: '8px' }}>No destinations found</p>
-            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>Try adjusting your filters or search term.</p>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '16px', marginBottom: '8px' }}>{tr('dest_no_results', lang)}</p>
+            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>{tr('dest_no_results_sub', lang)}</p>
           </div>
         ) : (
           <div className="grid-3">
@@ -196,17 +201,15 @@ export default function DestinationsPage() {
                         <span style={{ fontSize: '32px', opacity: 0.3 }}>🏔️</span>
                       </div>
                     )}
-                    {/* Assessment badge overlay */}
                     {isAssessed && (
                       <div style={{ position: 'absolute', top: '12px', right: '12px', backgroundColor: 'rgba(201,168,76,0.9)', color: '#000', padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
-                        ★ Assessed
+                        {tr('dest_badge_assessed', lang)}
                       </div>
                     )}
                   </div>
 
                   {/* Content */}
                   <div style={{ padding: '20px' }}>
-                    {/* Province + district badges */}
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const, marginBottom: '12px' }}>
                       {d.region && (
                         <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: '#c9a84c', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' as const }}>
@@ -220,19 +223,16 @@ export default function DestinationsPage() {
                       )}
                     </div>
 
-                    {/* Title */}
                     <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: 800, color: 'var(--color-white)', letterSpacing: '-0.5px', marginBottom: '8px', lineHeight: 1.2 }}>
                       {d.title_en}
                     </h2>
 
-                    {/* Excerpt */}
                     {d.excerpt_en && (
                       <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', lineHeight: 1.6, marginBottom: '16px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
                         {d.excerpt_en}
                       </p>
                     )}
 
-                    {/* Footer: stars + discover link */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div>
                         {stars != null ? (
@@ -242,11 +242,11 @@ export default function DestinationsPage() {
                             ))}
                           </div>
                         ) : (
-                          <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>Not assessed</span>
+                          <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>{tr('dest_not_assessed_label', lang)}</span>
                         )}
                       </div>
                       <span style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' as const }}>
-                        Discover →
+                        {tr('dest_discover_link', lang)}
                       </span>
                     </div>
                   </div>
@@ -267,11 +267,16 @@ export default function DestinationsPage() {
                 <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
               </div>
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>© 2025 Alan Coffee & Travel — Attapeu, Laos</p>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
             </div>
             <div className="footer-links">
-              {[{ label: 'Destinations', href: '/destinations' }, { label: 'Guides', href: '/guides' }, { label: 'About', href: '/about' }, { label: 'Contact', href: '/contact' }].map(item => (
-                <a key={item.label} href={item.href} style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
+              {[
+                { label: tr('nav_destinations', lang), href: '/destinations' },
+                { label: tr('nav_guides', lang),       href: '/guides'       },
+                { label: tr('nav_about', lang),        href: '/about'        },
+                { label: tr('nav_contact', lang),      href: '/contact'      },
+              ].map(item => (
+                <a key={item.href} href={item.href} style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
               ))}
             </div>
           </div>
