@@ -1,6 +1,7 @@
 'use client'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Navbar from '@/components/Navbar'
+import { getSupabase } from '@/lib/supabase'
 
 type Destination = {
   id: string
@@ -64,15 +65,38 @@ const FOOTER_LINKS = [
   { label: 'Contact', href: '/contact' },
 ]
 
-export default function HomeClient({
-  destinations,
-  guides,
-  heroImageUrl,
-}: {
-  destinations: Destination[]
-  guides: Guide[]
-  heroImageUrl: string | null
-}) {
+export default function HomeClient() {
+  const [destinations, setDestinations] = useState<Destination[]>([])
+  const [guides, setGuides] = useState<Guide[]>([])
+  const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = getSupabase()
+    Promise.all([
+      supabase
+        .from('destinations')
+        .select('id,slug,title_en,excerpt_en,region,image_urls,assessment_status,rating_experience,rating_accessibility,rating_authenticity,rating_tranquility,rating_traveler_value,featured')
+        .eq('status', 'active')
+        .order('featured', { ascending: false })
+        .limit(6),
+      supabase
+        .from('guides')
+        .select('id,name,photo_url,province,languages,specialties,is_verified,experience_years')
+        .eq('status', 'active')
+        .eq('is_verified', true)
+        .limit(3),
+      supabase
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'hero_image_url')
+        .maybeSingle(),
+    ]).then(([{ data: destData }, { data: guideData }, { data: heroSetting }]) => {
+      if (destData) setDestinations(destData)
+      if (guideData) setGuides(guideData)
+      if (heroSetting?.value) setHeroImageUrl(heroSetting.value)
+    }).catch(() => { /* render with empty data */ })
+  }, [])
+
   // Scroll-triggered fade-up animation
   useEffect(() => {
     const els = document.querySelectorAll('.fade-up')
