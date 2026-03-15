@@ -9,7 +9,9 @@ export function getSupabase(): SupabaseClient {
   if (!url || !key) {
     throw new Error('[Supabase] Missing env vars: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY')
   }
-  _client = createClient(url, key)
+  _client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  })
   return _client
 }
 

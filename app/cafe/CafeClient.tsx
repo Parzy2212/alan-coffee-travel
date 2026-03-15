@@ -3431,7 +3431,7 @@ function loadBudgets(): Record<BudgetKey, number> {
   return { cogs: 0, labor: 0, fixed: 0, marketing: 0, growth: 0 }
 }
 function saveBudgets(b: Record<BudgetKey, number>) {
-  localStorage.setItem('alan_budgets', JSON.stringify(b))
+  try { localStorage.setItem('alan_budgets', JSON.stringify(b)) } catch { /* ignore */ }
 }
 
 function FinanceTab() {
