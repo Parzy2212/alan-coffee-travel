@@ -163,6 +163,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        {/* Synchronously set data-lang before first paint to avoid font FOUC */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            var l = localStorage.getItem('alan_lang');
+            document.documentElement.setAttribute('data-lang', (l === 'lo' || l === 'th') ? l : 'en');
+          } catch(e) {
+            document.documentElement.setAttribute('data-lang', 'en');
+          }
+        `}} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

@@ -42,15 +42,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ─── Language font overrides ─────────────────────────────── */
-/* Use !important to override inline fontFamily styles in JSX components */
+/* Target body and its descendants so var() resolves from body's scope,
+   where next/font classes have set --font-lao and --font-thai.
+   !important is required to override inline fontFamily in JSX components. */
 
-html[data-lang="lo"],
-html[data-lang="lo"] * {
+html[data-lang="lo"] body,
+html[data-lang="lo"] body * {
   font-family: var(--font-lao) !important;
 }
 
-html[data-lang="th"],
-html[data-lang="th"] * {
+html[data-lang="th"] body,
+html[data-lang="th"] body * {
   font-family: var(--font-thai) !important;
 }
 
