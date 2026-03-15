@@ -19,12 +19,18 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const saved = localStorage.getItem('alan_lang') as Lang | null
-      if (saved && ['en', 'lo', 'th'].includes(saved)) setLangState(saved)
+      if (saved && ['en', 'lo', 'th'].includes(saved)) {
+        setLangState(saved)
+        document.documentElement.setAttribute('data-lang', saved)
+      } else {
+        document.documentElement.setAttribute('data-lang', 'en')
+      }
     } catch { /* iOS Safari private mode */ }
   }, [])
 
   function setLang(l: Lang) {
     setLangState(l)
+    document.documentElement.setAttribute('data-lang', l)
     try { localStorage.setItem('alan_lang', l) } catch { /* iOS Safari private mode */ }
   }
 

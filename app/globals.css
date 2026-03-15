@@ -3,11 +3,10 @@
 /* ─── Design tokens ───────────────────────────────────────── */
 
 :root {
-  /* Per-script font stacks — browser applies the correct font per Unicode character automatically */
-  --font-heading: 'Playfair Display', 'Sarabun', 'Noto Sans Lao', serif;
-  --font-body:    'Inter',            'Sarabun', 'Noto Sans Lao', sans-serif;
-  --font-lao:     'Noto Sans Lao', sans-serif;
-  --font-thai:    'Sarabun', sans-serif;
+  /* --font-heading, --font-body are injected by next/font class on <body> */
+  /* These are fallback definitions for use in html[data-lang] rules */
+  --font-lao:  'Noto Sans Lao', sans-serif;
+  --font-thai: 'Sarabun', sans-serif;
 
   --color-black:        #0f0f0f;
   --color-black-soft:   #1a1a1a;
@@ -35,11 +34,24 @@
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: var(--font-body);
+  font-family: var(--font-body), var(--font-thai), var(--font-lao), sans-serif;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
+  font-family: var(--font-heading), var(--font-thai), var(--font-lao), serif;
+}
+
+/* ─── Language font overrides ─────────────────────────────── */
+/* Use !important to override inline fontFamily styles in JSX components */
+
+html[data-lang="lo"],
+html[data-lang="lo"] * {
+  font-family: var(--font-lao) !important;
+}
+
+html[data-lang="th"],
+html[data-lang="th"] * {
+  font-family: var(--font-thai) !important;
 }
 
 * {
