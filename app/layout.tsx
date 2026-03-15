@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Plus_Jakarta_Sans, Inter } from 'next/font/google'
+import { Plus_Jakarta_Sans, Inter, Noto_Sans_Lao } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
 
@@ -13,6 +13,13 @@ const inter = Inter({
   subsets: ['latin'],
   variable: '--font-body',
   display: 'swap',
+})
+
+const notoSansLao = Noto_Sans_Lao({
+  subsets: ['lao'],
+  variable: '--font-lao',
+  display: 'swap',
+  weight: ['400', '700'],
 })
 
 const BASE_URL = 'https://www.alan-coffee-travel.com'
@@ -152,7 +159,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${plusJakarta.variable} ${inter.variable}`}>
+      <body className={`${plusJakarta.variable} ${inter.variable} ${notoSansLao.variable}`}>
         {children}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-CM6TTHL7CZ"
