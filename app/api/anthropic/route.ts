@@ -47,20 +47,31 @@ ${context}`
     temperature: 0.7,
   }
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(requestBody),
-  })
+  let res: Response
+  let rawBody: string
+  try {
+    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    })
+    rawBody = await res.text()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[groq] fetch failed:', msg)
+    return NextResponse.json({ error: `Network error calling Groq: ${msg}` }, { status: 502 })
+  }
 
-  const rawBody = await res.text()
+  console.log('[groq] status:', res.status, 'body:', rawBody.slice(0, 300))
 
   if (!res.ok) {
+    let parsed: unknown
+    try { parsed = JSON.parse(rawBody) } catch { parsed = rawBody }
     return NextResponse.json(
-      { error: rawBody, status: res.status },
+      { error: parsed, status: res.status },
       { status: res.status }
     )
   }
