@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans, Inter, Noto_Sans_Lao } from 'next/font/google'
 import Script from 'next/script'
+import { LanguageProvider } from '@/contexts/LanguageContext'
 import './globals.css'
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -160,7 +161,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className={`${plusJakarta.variable} ${inter.variable} ${notoSansLao.variable}`}>
-        {children}
+        <LanguageProvider>
+          {children}
+        </LanguageProvider>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-CM6TTHL7CZ"
           strategy="afterInteractive"

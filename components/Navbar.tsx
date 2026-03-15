@@ -1,19 +1,28 @@
 'use client'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
+import { useLang, type Lang } from '@/contexts/LanguageContext'
+import { tr } from '@/lib/translations'
+
+const LANG_OPTIONS: { code: Lang; label: string }[] = [
+  { code: 'en', label: 'EN' },
+  { code: 'lo', label: 'ລາວ' },
+  { code: 'th', label: 'ไทย' },
+]
 
 export default function Navbar() {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
+  const { lang, setLang } = useLang()
 
   const links = [
-    { href: '/', label: 'Home' },
-    { href: '/destinations', label: 'Destinations' },
-    { href: '/guides', label: 'Guides' },
-    { href: '/map', label: 'Map' },
-    { href: '/about', label: 'About' },
-    { href: '/contact', label: 'Contact' },
-  ]
+    { href: '/',             labelKey: 'nav_home'         },
+    { href: '/destinations', labelKey: 'nav_destinations' },
+    { href: '/guides',       labelKey: 'nav_guides'       },
+    { href: '/map',          labelKey: 'nav_map'          },
+    { href: '/about',        labelKey: 'nav_about'        },
+    { href: '/contact',      labelKey: 'nav_contact'      },
+  ] as const
 
   const isActive = (href: string) => pathname === href
 
@@ -25,7 +34,7 @@ export default function Navbar() {
           {/* Logo */}
           <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', flexShrink: 0 }}>
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '20px', color: 'var(--color-black)' }}>ALAN</span>
-            <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)', flexShrink: 0 }}></span>
+            <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)', flexShrink: 0 }} />
             <span style={{ fontSize: '13px', color: 'var(--color-gray-600)', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
           </a>
 
@@ -41,20 +50,48 @@ export default function Navbar() {
                 paddingBottom: '2px',
                 whiteSpace: 'nowrap' as const,
               }}>
-                {link.label}
+                {tr(link.labelKey, lang)}
               </a>
             ))}
           </div>
 
           {/* Right side */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+            {/* Language switcher */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: '4px' }}>
+              {LANG_OPTIONS.map((opt, i) => (
+                <button
+                  key={opt.code}
+                  onClick={() => setLang(opt.code)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px 6px',
+                    fontSize: '11px',
+                    fontWeight: lang === opt.code ? 700 : 400,
+                    color: lang === opt.code ? 'var(--color-gold)' : 'var(--color-gray-400)',
+                    borderRight: i < LANG_OPTIONS.length - 1 ? '1px solid var(--color-cream-border)' : 'none',
+                    lineHeight: 1,
+                    letterSpacing: '0.5px',
+                    transition: 'color 0.15s',
+                    fontFamily: 'var(--font-lao)',
+                  }}
+                  aria-label={`Switch to ${opt.label}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
             <a href="/contact" className="nav-contact-btn" style={{
               backgroundColor: 'var(--color-black)', color: 'var(--color-gold)',
               padding: '10px 24px', borderRadius: '4px', textDecoration: 'none',
               fontWeight: 600, fontSize: '13px', letterSpacing: '1px', textTransform: 'uppercase' as const,
               whiteSpace: 'nowrap' as const,
             }}>
-              Contact
+              {tr('nav_contact', lang)}
             </a>
 
             {/* Hamburger button */}
@@ -90,16 +127,40 @@ export default function Navbar() {
               display: 'block',
             }}
           >
-            {link.label}
+            {tr(link.labelKey, lang)}
           </a>
         ))}
-        <div style={{ paddingTop: '16px' }}>
+
+        {/* Mobile language switcher */}
+        <div style={{ display: 'flex', gap: '8px', padding: '16px 0 8px' }}>
+          {LANG_OPTIONS.map(opt => (
+            <button
+              key={opt.code}
+              onClick={() => { setLang(opt.code); setMenuOpen(false) }}
+              style={{
+                background: lang === opt.code ? 'var(--color-gold)' : 'var(--color-cream-dark)',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '6px 14px',
+                borderRadius: '4px',
+                fontSize: '12px',
+                fontWeight: 700,
+                color: lang === opt.code ? '#0a0a0a' : 'var(--color-gray-600)',
+                fontFamily: 'var(--font-lao)',
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ paddingTop: '8px' }}>
           <a
             href="/contact"
             onClick={() => setMenuOpen(false)}
             style={{ display: 'inline-block', backgroundColor: 'var(--color-black)', color: 'var(--color-gold)', padding: '12px 28px', borderRadius: '4px', textDecoration: 'none', fontWeight: 600, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const }}
           >
-            Contact
+            {tr('nav_contact', lang)}
           </a>
         </div>
       </div>

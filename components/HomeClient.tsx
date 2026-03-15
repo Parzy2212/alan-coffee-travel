@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import Navbar from '@/components/Navbar'
 import { getSupabase } from '@/lib/supabase'
+import { useLang } from '@/contexts/LanguageContext'
+import { tr } from '@/lib/translations'
 
 type Destination = {
   id: string
@@ -39,33 +41,16 @@ function avgRating(d: Destination): number | null {
   return vals.reduce((a, b) => a + b, 0) / vals.length
 }
 
-const STEPS = [
-  {
-    num: '01',
-    title: 'We visit every destination personally.',
-    desc: 'Our team travels to each location before it appears on this platform. No second-hand reports. No guesswork. If we haven\'t been there, it isn\'t here.',
-  },
-  {
-    num: '02',
-    title: 'We rate across five dimensions.',
-    desc: 'Experience, Accessibility, Authenticity, Tranquility, and Traveler Value — each scored on a strict 1–5 standard developed in Attapeu.',
-  },
-  {
-    num: '03',
-    title: 'We publish only what earns its place.',
-    desc: 'No sponsored listings. No inflated scores. If a destination does not meet the Alan Travel Standard, it does not appear here.',
-  },
-]
-
-const FOOTER_LINKS = [
-  { label: 'Destinations', href: '/destinations' },
-  { label: 'Guides', href: '/guides' },
-  { label: 'Interactive Map', href: '/map' },
-  { label: 'About', href: '/about' },
-  { label: 'Contact', href: '/contact' },
+const FOOTER_LINK_KEYS = [
+  { key: 'nav_destinations' as const, href: '/destinations' },
+  { key: 'nav_guides'       as const, href: '/guides'       },
+  { key: 'map_eyebrow'      as const, href: '/map'          },
+  { key: 'nav_about'        as const, href: '/about'        },
+  { key: 'nav_contact'      as const, href: '/contact'      },
 ]
 
 export default function HomeClient() {
+  const { lang } = useLang()
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [guides, setGuides] = useState<Guide[]>([])
   const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
@@ -116,10 +101,16 @@ export default function HomeClient() {
   }, [])
 
   const stats = [
-    { value: '18',                          label: 'Provinces' },
-    { value: '148',                         label: 'Districts' },
-    { value: destinations.length ? `${destinations.length}+` : '—', label: 'Destinations' },
-    { value: 'Attapeu',                     label: 'Home Base' },
+    { value: '18',                          label: tr('stat_provinces',    lang) },
+    { value: '148',                         label: tr('stat_districts',    lang) },
+    { value: destinations.length ? `${destinations.length}+` : '—', label: tr('stat_destinations', lang) },
+    { value: 'Attapeu',                     label: tr('stat_homebase',     lang) },
+  ]
+
+  const STEPS = [
+    { num: '01', title: tr('step1_title', lang), desc: tr('step1_desc', lang) },
+    { num: '02', title: tr('step2_title', lang), desc: tr('step2_desc', lang) },
+    { num: '03', title: tr('step3_title', lang), desc: tr('step3_desc', lang) },
   ]
 
   return (
@@ -181,7 +172,7 @@ export default function HomeClient() {
               color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700,
               letterSpacing: '3.5px', textTransform: 'uppercase' as const,
             }}>
-              ທ່ອງທ່ຽວລາວ &nbsp;·&nbsp; Laos Travel &nbsp;·&nbsp; ท่องเที่ยวลาว
+              {tr('hero_eyebrow', lang)}
             </span>
           </div>
 
@@ -195,8 +186,8 @@ export default function HomeClient() {
             color: 'var(--color-white)',
             marginBottom: '32px',
           }}>
-            Discover Laos.<br />
-            <span style={{ color: 'var(--color-gold)' }}>Travel Deeply.</span>
+            {tr('hero_h1_line1', lang)}<br />
+            <span style={{ color: 'var(--color-gold)' }}>{tr('hero_h1_line2', lang)}</span>
           </h1>
 
           {/* Subheadline */}
@@ -207,9 +198,7 @@ export default function HomeClient() {
             maxWidth: '520px',
             marginBottom: '52px',
           }}>
-            From a quiet café in Attapeu — the only travel-focused coffeehouse in Southern Laos —
-            we curate authentic destinations, connect you with verified local guides,
-            and map the roads less traveled.
+            {tr('hero_sub', lang)}
           </p>
 
           {/* CTAs */}
@@ -221,7 +210,7 @@ export default function HomeClient() {
               fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px',
               textTransform: 'uppercase' as const, textDecoration: 'none', minHeight: '52px',
             }}>
-              Explore Destinations
+              {tr('hero_cta_explore', lang)}
             </a>
             <a href="/map" style={{
               display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -230,13 +219,13 @@ export default function HomeClient() {
               border: '1px solid rgba(255,255,255,0.14)',
               fontWeight: 500, fontSize: '13px', textDecoration: 'none', minHeight: '52px',
             }}>
-              View Interactive Map →
+              {tr('hero_cta_map', lang)}
             </a>
           </div>
 
           {/* Trust line */}
           <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: '12px', marginTop: '52px', letterSpacing: '0.5px' }}>
-            Alan Coffee & Travel · Based in Attapeu · Southern Laos
+            {tr('hero_trust', lang)}
           </p>
         </div>
 
@@ -246,7 +235,7 @@ export default function HomeClient() {
           display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '8px',
           animation: 'scrollBounce 2.4s ease-in-out infinite',
         }}>
-          <span style={{ color: 'rgba(255,255,255,0.14)', fontSize: '9px', letterSpacing: '3px', textTransform: 'uppercase' as const }}>Scroll</span>
+          <span style={{ color: 'rgba(255,255,255,0.14)', fontSize: '9px', letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('scroll', lang)}</span>
           <div style={{ width: '1px', height: '44px', background: 'linear-gradient(to bottom, rgba(201,168,76,0.45), transparent)' }} />
         </div>
       </section>
@@ -303,7 +292,7 @@ export default function HomeClient() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
                 <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
-                <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>Curated Places</span>
+                <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('section_curated', lang)}</span>
               </div>
               <h2 style={{
                 fontFamily: 'var(--font-heading)',
@@ -311,7 +300,7 @@ export default function HomeClient() {
                 fontWeight: 800, color: 'var(--color-black)',
                 letterSpacing: '-1.5px', lineHeight: 1.08, margin: 0,
               }}>
-                Featured Destinations
+                {tr('section_featured', lang)}
               </h2>
             </div>
             <a href="/destinations" style={{
@@ -319,14 +308,14 @@ export default function HomeClient() {
               borderBottom: '1px solid var(--color-cream-border)', paddingBottom: '2px',
               alignSelf: 'flex-end', whiteSpace: 'nowrap' as const,
             }}>
-              View all destinations →
+              {tr('view_all_dest', lang)}
             </a>
           </div>
 
           {/* Cards */}
           {destinations.length === 0 ? (
             <div style={{ textAlign: 'center' as const, padding: '80px 0' }}>
-              <p style={{ color: 'var(--color-gray-400)', fontSize: '15px' }}>Destinations coming soon.</p>
+              <p style={{ color: 'var(--color-gray-400)', fontSize: '15px' }}>{tr('dest_coming_soon', lang)}</p>
             </div>
           ) : (
             <div className="grid-3">
@@ -414,10 +403,10 @@ export default function HomeClient() {
                             ))}
                           </div>
                         ) : (
-                          <span style={{ fontSize: '11px', color: 'var(--color-gray-400)', letterSpacing: '0.5px' }}>Not yet assessed</span>
+                          <span style={{ fontSize: '11px', color: 'var(--color-gray-400)', letterSpacing: '0.5px' }}>{tr('not_assessed', lang)}</span>
                         )}
                         <span style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' as const }}>
-                          Discover →
+                          {tr('discover_arrow', lang)}
                         </span>
                       </div>
                     </div>
@@ -438,7 +427,7 @@ export default function HomeClient() {
           <div className="fade-up" style={{ marginBottom: '72px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
-              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>The Alan Travel Standard</span>
+              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('standard_eyebrow', lang)}</span>
             </div>
             <h2 style={{
               fontFamily: 'var(--font-heading)',
@@ -446,8 +435,8 @@ export default function HomeClient() {
               fontWeight: 800, color: 'var(--color-white)',
               letterSpacing: '-1.5px', lineHeight: 1.08, margin: 0, maxWidth: '640px',
             }}>
-              Every destination earns<br />
-              <span style={{ color: 'var(--color-gold)' }}>its place here.</span>
+              {tr('standard_h2_line1', lang)}<br />
+              <span style={{ color: 'var(--color-gold)' }}>{tr('standard_h2_line2', lang)}</span>
             </h2>
           </div>
 
@@ -503,10 +492,10 @@ export default function HomeClient() {
               fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px',
               textTransform: 'uppercase' as const, textDecoration: 'none',
             }}>
-              See Assessed Destinations
+              {tr('standard_cta', lang)}
             </a>
             <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>
-              All ratings are independent — no sponsorship, ever.
+              {tr('standard_note', lang)}
             </span>
           </div>
         </div>
@@ -523,7 +512,7 @@ export default function HomeClient() {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
                   <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
-                  <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>Local Expertise</span>
+                  <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('section_local', lang)}</span>
                 </div>
                 <h2 style={{
                   fontFamily: 'var(--font-heading)',
@@ -531,7 +520,7 @@ export default function HomeClient() {
                   fontWeight: 800, color: 'var(--color-black)',
                   letterSpacing: '-1.5px', lineHeight: 1.08, margin: 0,
                 }}>
-                  Verified Local Guides
+                  {tr('section_guides', lang)}
                 </h2>
               </div>
               <a href="/guides" style={{
@@ -539,7 +528,7 @@ export default function HomeClient() {
                 borderBottom: '1px solid var(--color-cream-border)', paddingBottom: '2px',
                 alignSelf: 'flex-end', whiteSpace: 'nowrap' as const,
               }}>
-                View all guides →
+                {tr('view_all_guides', lang)}
               </a>
             </div>
 
@@ -602,7 +591,7 @@ export default function HomeClient() {
                   {/* Languages */}
                   {(g.languages ?? []).length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
-                      <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>Languages</p>
+                      <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_languages', lang)}</p>
                       <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
                         {(g.languages ?? []).map(l => (
                           <span key={l} style={{ backgroundColor: 'rgba(201,168,76,0.08)', color: 'var(--color-gold)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(201,168,76,0.18)' }}>
@@ -616,7 +605,7 @@ export default function HomeClient() {
                   {/* Specialties */}
                   {(g.specialties ?? []).slice(0, 3).length > 0 && (
                     <div>
-                      <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>Specialties</p>
+                      <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_specialties', lang)}</p>
                       <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
                         {(g.specialties ?? []).slice(0, 3).map(s => (
                           <span key={s} style={{ backgroundColor: 'var(--color-cream-dark)', color: 'var(--color-gray-600)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px' }}>
@@ -639,7 +628,7 @@ export default function HomeClient() {
                 fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px',
                 textTransform: 'uppercase' as const, textDecoration: 'none',
               }}>
-                Meet All Guides
+                {tr('meet_all_guides', lang)}
               </a>
             </div>
           </div>
@@ -663,7 +652,7 @@ export default function HomeClient() {
           <div className="fade-up">
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', marginBottom: '28px' }}>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
-              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>Interactive Map</span>
+              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('map_eyebrow', lang)}</span>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
             </div>
 
@@ -673,13 +662,12 @@ export default function HomeClient() {
               fontWeight: 800, color: 'var(--color-white)',
               letterSpacing: '-1.5px', lineHeight: 1.06, marginBottom: '24px',
             }}>
-              Explore all 18 provinces<br />
-              <span style={{ color: 'var(--color-gold)' }}>on one map.</span>
+              {tr('map_h2_line1', lang)}<br />
+              <span style={{ color: 'var(--color-gold)' }}>{tr('map_h2_line2', lang)}</span>
             </h2>
 
             <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '16px', lineHeight: 1.78, marginBottom: '44px', maxWidth: '580px', margin: '0 auto 44px' }}>
-              Click any province to explore its districts. Click any district to reveal pinned destinations with GPS coordinates.
-              From Phongsali in the north to Champasack in the south — all of Laos, in one view.
+              {tr('map_desc', lang)}
             </p>
 
             <a href="/map" style={{
@@ -689,7 +677,7 @@ export default function HomeClient() {
               fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px',
               textTransform: 'uppercase' as const, textDecoration: 'none',
             }}>
-              Open the Map
+              {tr('map_cta', lang)}
             </a>
           </div>
         </div>
@@ -709,35 +697,35 @@ export default function HomeClient() {
                 <span style={{ color: 'var(--color-gray-400)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
               </div>
               <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: '14px', lineHeight: 1.75, maxWidth: '300px', marginBottom: '24px' }}>
-                The only travel-focused café in Attapeu — a calm meeting place for those who travel with intention.
+                {tr('footer_tagline', lang)}
               </p>
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
-                <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: '12px', letterSpacing: '0.5px' }}>Attapeu Province · Southern Laos</span>
-                <span style={{ color: 'rgba(255,255,255,0.1)', fontSize: '12px' }}>Mon–Fri 8:00–18:00 · Sat–Sun 9:00–17:00</span>
+                <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: '12px', letterSpacing: '0.5px' }}>{tr('footer_location', lang)}</span>
+                <span style={{ color: 'rgba(255,255,255,0.1)', fontSize: '12px' }}>{tr('footer_hours', lang)}</span>
               </div>
             </div>
 
             {/* Links columns */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '32px', alignContent: 'start' }}>
               <div>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>Navigate</p>
-                {FOOTER_LINKS.slice(0, 3).map(l => (
-                  <a key={l.label} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_nav', lang)}</p>
+                {FOOTER_LINK_KEYS.slice(0, 3).map(l => (
+                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--color-gold)' }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)' }}
                   >
-                    {l.label}
+                    {tr(l.key, lang)}
                   </a>
                 ))}
               </div>
               <div>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>Company</p>
-                {FOOTER_LINKS.slice(3).map(l => (
-                  <a key={l.label} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_company', lang)}</p>
+                {FOOTER_LINK_KEYS.slice(3).map(l => (
+                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--color-gold)' }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)' }}
                   >
-                    {l.label}
+                    {tr(l.key, lang)}
                   </a>
                 ))}
               </div>
@@ -746,7 +734,7 @@ export default function HomeClient() {
 
           {/* Bottom bar */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '28px', display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
-            <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: '12px' }}>© 2025 Alan Coffee & Travel — Attapeu, Laos</p>
+            <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
             <p style={{ color: 'rgba(255,255,255,0.09)', fontSize: '11px', letterSpacing: '0.5px' }}>ທ່ອງທ່ຽວລາວ &nbsp;·&nbsp; ท่องเที่ยวลาว &nbsp;·&nbsp; Discover Laos Authentically</p>
           </div>
         </div>
