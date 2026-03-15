@@ -558,11 +558,11 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const overlayRef = useRef<HTMLDivElement>(null)
 
   function save() {
-    if (typeof window !== 'undefined') {
+    try {
       localStorage.setItem('pos_printer_ip',   printerIp)
       localStorage.setItem('pos_printer_port', printerPort)
       localStorage.setItem('pos_currency',     currency)
-    }
+    } catch { /* ignore */ }
     onClose()
   }
 
