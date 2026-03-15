@@ -20,6 +20,7 @@ type Recipe = {
   category: string | null
   category_id: string | null
   price_lak: number
+  image_url: string | null
 }
 
 type CartItem = {
@@ -859,7 +860,7 @@ export default function POSClient() {
 
   // Fetch menu
   useEffect(() => {
-    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak')
+    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak, image_url')
       .eq('is_active', true).order('category')
       .then(({ data }) => { setRecipes((data as Recipe[]) ?? []); setLoading(false) })
   }, [])
@@ -1289,10 +1290,16 @@ function MenuCard({ recipe, onAdd }: { recipe: Recipe; onAdd: () => void }) {
     <button onClick={onAdd} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
       backgroundColor: hovered ? '#1e1b13' : '#1a1a1a',
       border: `1px solid ${hovered ? GOLD : 'rgba(255,255,255,0.08)'}`,
-      borderRadius: 8, padding: '14px 12px', textAlign: 'left',
-      cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 7,
-      transition: 'all 0.15s', width: '100%',
+      borderRadius: 8, padding: recipe.image_url ? '0' : '14px 12px', textAlign: 'left',
+      cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 0,
+      transition: 'all 0.15s', width: '100%', overflow: 'hidden',
     }}>
+      {recipe.image_url && (
+        <div style={{ width: '100%', height: 80, overflow: 'hidden', flexShrink: 0 }}>
+          <img src={recipe.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        </div>
+      )}
+      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
       {recipe.category && (
         <span style={{ fontSize: 10, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600 }}>{recipe.category}</span>
       )}
@@ -1304,6 +1311,7 @@ function MenuCard({ recipe, onAdd }: { recipe: Recipe; onAdd: () => void }) {
         {recipe.price_lak.toLocaleString('en-US')}
         <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 3, opacity: 0.75 }}>LAK</span>
       </span>
+      </div>
     </button>
   )
 }

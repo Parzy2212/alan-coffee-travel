@@ -898,6 +898,7 @@ function RecipeFullForm({ data, onChange, categories, saving, onSave, onCancel, 
   data: RecipeFullEdit; onChange: (d: RecipeFullEdit) => void; categories: Category[]
   saving: boolean; onSave: () => void; onCancel: () => void; title: string
 }) {
+  const [uploading, setUploading] = useState(false)
   const set = (k: keyof RecipeFullEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     onChange({ ...data, [k]: e.target.value })
   const taStyle: React.CSSProperties = { ...inputStyle, height: 60, resize: 'vertical' as const }
@@ -940,10 +941,35 @@ function RecipeFullForm({ data, onChange, categories, saving, onSave, onCancel, 
         </Field>
       </div>
 
-      {/* Image URL */}
+      {/* Image upload */}
       <div style={{ marginBottom: 12 }}>
-        <Field label="URL รูปภาพ">
-          <input value={data.image_url} onChange={set('image_url')} style={inputStyle} placeholder="https://..." />
+        <Field label="รูปภาพ">
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ padding: '8px 14px', borderRadius: 6, border: `1px solid ${GOLD}44`, color: GOLD, fontSize: 13, cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1, userSelect: 'none' }}>
+              {uploading ? 'กำลังอัปโหลด...' : '+ เลือกรูป'}
+              <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploading}
+                onChange={async e => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  setUploading(true)
+                  const ext = file.name.split('.').pop() ?? 'jpg'
+                  const path = `recipes/${Date.now()}.${ext}`
+                  const { data: up, error } = await supabase.storage.from('menu-images').upload(path, file, { upsert: true })
+                  if (!error && up) {
+                    const { data: url } = supabase.storage.from('menu-images').getPublicUrl(up.path)
+                    onChange({ ...data, image_url: url.publicUrl })
+                  }
+                  setUploading(false)
+                  e.target.value = ''
+                }} />
+            </label>
+            {data.image_url && (
+              <img src={data.image_url} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: `1px solid ${BORDER}` }} />
+            )}
+            {data.image_url && (
+              <button type="button" onClick={() => onChange({ ...data, image_url: '' })} style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
+            )}
+          </div>
         </Field>
       </div>
 
@@ -1038,6 +1064,11 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
             width: 34, height: 19, borderRadius: 10, border: 'none', cursor: 'pointer', flexShrink: 0, marginTop: 2,
             backgroundColor: r.is_active ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s',
           }} />
+
+          {/* Thumbnail */}
+          {r.image_url && (
+            <img src={r.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, flexShrink: 0, border: `1px solid ${BORDER}` }} />
+          )}
 
           {/* Names */}
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1814,7 +1845,8 @@ function StockItemRow({ item, onReload, showMsg }: {
     <div style={{ marginBottom: 6 }}>
       {/* ── Main row ── */}
       <div style={{
-        backgroundColor: CARD, border: `1px solid ${borderColor}`,
+        backgroundColor: isEmpty ? RED + '10' : isLow ? ORANGE + '0a' : CARD,
+        border: `1px solid ${borderColor}`,
         borderRadius: panel ? '10px 10px 0 0' : 10, padding: '14px 16px',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>

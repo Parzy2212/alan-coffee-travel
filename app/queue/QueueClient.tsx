@@ -81,11 +81,29 @@ function EmptySlot() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+function playBeep() {
+  try {
+    const ctx = new AudioContext()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    gain.gain.setValueAtTime(0.35, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.6)
+  } catch { /* Web Audio unavailable */ }
+}
+
 export default function QueueClient() {
   const [orders, setOrders] = useState<QueueOrder[]>([])
   const [now, setNow]       = useState<Date | null>(null)
   const makingEndRef        = useRef<HTMLDivElement>(null)
   const readyEndRef         = useRef<HTMLDivElement>(null)
+  const fetchCountRef       = useRef(0)
+  const prevReadyIdsRef     = useRef<Set<string>>(new Set())
 
   // Live clock — starts after mount to avoid hydration mismatch
   useEffect(() => {
@@ -111,6 +129,7 @@ export default function QueueClient() {
     console.log('[Queue TV] data:', data, '| error:', error)
     if (error) return
     setOrders((data as QueueOrder[]) ?? [])
+    fetchCountRef.current += 1
   }, [])
 
   useEffect(() => { fetchQueues() }, [fetchQueues])
@@ -139,6 +158,17 @@ export default function QueueClient() {
   useEffect(() => {
     readyEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [ready.length])
+
+  // Beep when a new order enters 'ready' — skip the initial page-load fetch
+  useEffect(() => {
+    const currentIds = new Set(ready.map(o => o.id))
+    if (fetchCountRef.current > 1) {
+      for (const id of currentIds) {
+        if (!prevReadyIdsRef.current.has(id)) { playBeep(); break }
+      }
+    }
+    prevReadyIdsRef.current = currentIds
+  }, [ready])
 
   const timeStr = now
     ? now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Vientiane' })

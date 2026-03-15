@@ -26,7 +26,7 @@ type StaffEntry = {
 type TodayRecord = { clock_in: string | null; clock_out: string | null; status: string | null }
 type SuccessInfo = { action: 'in' | 'out'; name: string; time: string; hours_worked?: number }
 type InventorySimple = { id: string; name: string; unit: string; cost_per_unit: number | null }
-type AuditItem = { audit_id: string; inventory_id: string; inventory_name: string; unit: string; counted: string }
+type AuditItem = { audit_id: string; inventory_id: string; inventory_name: string; unit: string; system_qty: number | null; counted: string }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -827,7 +827,7 @@ export default function StaffClient() {
     setAuditLoading(false)
     if (error || !data) { setAuditMsg(error?.message ?? 'เกิดข้อผิดพลาด'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setAuditItems((data as any[]).map((d: any) => ({ audit_id: d.audit_id, inventory_id: d.inventory_id, inventory_name: d.inventory_name, unit: d.unit, counted: '' })))
+    setAuditItems((data as any[]).map((d: any) => ({ audit_id: d.audit_id, inventory_id: d.inventory_id, inventory_name: d.inventory_name, unit: d.unit, system_qty: d.system_qty ?? null, counted: '' })))
   }
 
   async function submitAudit() {
@@ -1312,7 +1312,12 @@ export default function StaffClient() {
                 <div key={item.audit_id} style={{ padding: '14px 16px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 14 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{item.inventory_name}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>หน่วย: {item.unit}</div>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
+                      หน่วย: {item.unit}
+                      {item.system_qty != null && (
+                        <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.22)' }}>ระบบ: <span style={{ color: '#c9a84c', fontWeight: 600 }}>{item.system_qty}</span></span>
+                      )}
+                    </div>
                   </div>
                   <input type="number" value={item.counted} onChange={e => setAuditItems(prev => prev.map((a, i) => i === idx ? { ...a, counted: e.target.value } : a))}
                     placeholder="0" style={{ width: 90, padding: '10px 10px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 15, textAlign: 'right', fontWeight: 700 }} />
