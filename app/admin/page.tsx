@@ -2,6 +2,31 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
+// ─── Secure admin DB helper ───────────────────────────────────────────────────
+// All write operations go through /api/admin/db which uses the service-role key.
+// SELECT operations still use the anon supabase client (public read is fine).
+
+type AdminDbPayload = {
+  table: string
+  action: 'insert' | 'update' | 'delete' | 'delete_match' | 'insert_many' | 'upsert'
+  data?: Record<string, unknown>
+  id?: string
+  column?: string
+  value?: string
+  rows?: Record<string, unknown>[]
+}
+
+async function adminDb(payload: AdminDbPayload): Promise<{ ok: boolean; data?: unknown }> {
+  const res = await fetch('/api/admin/db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Database operation failed.')
+  return json
+}
+
 // Province → district mapping extracted from lao_admin2.geojson
 // Attapeu entries use corrected display names and DB slugs for backward compat
 const PROVINCE_DISTRICTS: Record<string, { name: string; slug: string }[]> = {
@@ -355,15 +380,14 @@ export default function AdminPage() {
     try {
       const ext = heroImageFile.name.split('.').pop() ?? 'jpg'
       const path = `hero.${ext}`
+      // Storage upload still uses anon client (bucket policy allows it)
       const { error: uploadError } = await supabase.storage
         .from('site-assets')
         .upload(path, heroImageFile, { upsert: true })
       if (uploadError) throw uploadError
       const { data: { publicUrl } } = supabase.storage.from('site-assets').getPublicUrl(path)
-      const { error: dbError } = await supabase
-        .from('site_settings')
-        .upsert({ key: 'hero_image_url', value: publicUrl })
-      if (dbError) throw dbError
+      // DB write goes through secure API route
+      await adminDb({ table: 'site_settings', action: 'upsert', data: { key: 'hero_image_url', value: publicUrl } })
       setHeroImageUrl(publicUrl)
       setHeroImageFile(null)
       setHeroImagePreview('')
@@ -379,7 +403,7 @@ export default function AdminPage() {
     setSettingsUploading(true)
     setSettingsMsg('')
     try {
-      await supabase.from('site_settings').upsert({ key: 'hero_image_url', value: '' })
+      await adminDb({ table: 'site_settings', action: 'upsert', data: { key: 'hero_image_url', value: '' } })
       setHeroImageUrl('')
       setSettingsMsg('Hero image removed. Homepage will use gradient background.')
     } catch (err: any) {
@@ -478,30 +502,40 @@ export default function AdminPage() {
   async function handleAdd() {
     if (!form.title_en || !form.slug) return setMsg('❌ Title and slug are required')
     setUploading(true); setMsg('')
-    const newUrls = await uploadImages(imageFiles)
-    if (newUrls === null) { setUploading(false); return }
-    const { error } = await supabase.from('destinations').insert([buildPayload(newUrls)])
-    setUploading(false)
-    if (error) return setMsg('❌ ' + error.message)
-    setMsg('✅ Added successfully!')
-    setForm({ ...emptyForm }); setImageFiles([]); setImagePreviews([])
-    fetchAll()
+    try {
+      const newUrls = await uploadImages(imageFiles)
+      if (newUrls === null) return
+      await adminDb({ table: 'destinations', action: 'insert', data: buildPayload(newUrls) })
+      setMsg('✅ Added successfully!')
+      setForm({ ...emptyForm }); setImageFiles([]); setImagePreviews([])
+      fetchAll()
+    } catch (err: any) {
+      setMsg('❌ ' + err.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
   async function handleSave() {
     if (!form.title_en || !form.slug) return setMsg('❌ Title and slug are required')
     setUploading(true); setMsg('')
-    const newUrls = await uploadImages(imageFiles)
-    if (newUrls === null) { setUploading(false); return }
-    const { error } = await supabase.from('destinations').update(buildPayload([...existingImageUrls, ...newUrls])).eq('id', editingId)
-    setUploading(false)
-    if (error) return setMsg('❌ ' + error.message)
-    setMsg('✅ Saved successfully!')
-    cancelEdit(); fetchAll()
+    try {
+      const newUrls = await uploadImages(imageFiles)
+      if (newUrls === null) return
+      await adminDb({ table: 'destinations', action: 'update', data: buildPayload([...existingImageUrls, ...newUrls]), id: editingId! })
+      setMsg('✅ Saved successfully!')
+      cancelEdit(); fetchAll()
+    } catch (err: any) {
+      setMsg('❌ ' + err.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
   async function handleDelete(id: string) {
-    await supabase.from('destinations').delete().eq('id', id)
+    try {
+      await adminDb({ table: 'destinations', action: 'delete', id })
+    } catch { /* silent — refetch regardless */ }
     setDeleteId(null); fetchAll()
   }
 
@@ -523,9 +557,13 @@ export default function AdminPage() {
   }
 
   async function saveGuideDestinations(guideId: string, destIds: string[]) {
-    await supabase.from('guide_destinations').delete().eq('guide_id', guideId)
+    await adminDb({ table: 'guide_destinations', action: 'delete_match', column: 'guide_id', value: guideId })
     if (destIds.length > 0) {
-      await supabase.from('guide_destinations').insert(destIds.map(did => ({ guide_id: guideId, destination_id: did })))
+      await adminDb({
+        table: 'guide_destinations',
+        action: 'insert_many',
+        rows: destIds.map(did => ({ guide_id: guideId, destination_id: did })),
+      })
     }
   }
 
@@ -549,34 +587,43 @@ export default function AdminPage() {
   async function handleAddGuide() {
     if (!guideForm.name) return setGuideMsg('❌ Name is required')
     setGuideUploading(true); setGuideMsg('')
-    let photo_url: string | null = null
-    if (guidePhotoFile) {
-      photo_url = await uploadGuidePhoto(guidePhotoFile, guideForm.name)
-      if (!photo_url) { setGuideUploading(false); return }
+    try {
+      let photo_url: string | null = null
+      if (guidePhotoFile) {
+        photo_url = await uploadGuidePhoto(guidePhotoFile, guideForm.name)
+        if (!photo_url) return
+      }
+      const result = await adminDb({ table: 'guides', action: 'insert', data: buildGuidePayload(photo_url) })
+      const newGuide = result.data as { id: string }
+      await saveGuideDestinations(newGuide.id, guideForm.linked_destination_ids)
+      setGuideMsg('✅ Guide added!')
+      setGuideForm({ ...emptyGuideForm }); setGuidePhotoFile(null); setGuidePhotoPreview('')
+      fetchGuides()
+    } catch (err: any) {
+      setGuideMsg('❌ ' + err.message)
+    } finally {
+      setGuideUploading(false)
     }
-    const { data, error } = await supabase.from('guides').insert([buildGuidePayload(photo_url)]).select().single()
-    if (error || !data) { setGuideUploading(false); return setGuideMsg('❌ ' + (error?.message || 'Failed')) }
-    await saveGuideDestinations(data.id, guideForm.linked_destination_ids)
-    setGuideUploading(false)
-    setGuideMsg('✅ Guide added!')
-    setGuideForm({ ...emptyGuideForm }); setGuidePhotoFile(null); setGuidePhotoPreview('')
-    fetchGuides()
   }
 
   async function handleSaveGuide() {
     if (!guideForm.name) return setGuideMsg('❌ Name is required')
     setGuideUploading(true); setGuideMsg('')
-    let photo_url: string | null = existingGuidePhotoUrl || null
-    if (guidePhotoFile) {
-      photo_url = await uploadGuidePhoto(guidePhotoFile, guideForm.name)
-      if (!photo_url) { setGuideUploading(false); return }
+    try {
+      let photo_url: string | null = existingGuidePhotoUrl || null
+      if (guidePhotoFile) {
+        photo_url = await uploadGuidePhoto(guidePhotoFile, guideForm.name)
+        if (!photo_url) return
+      }
+      await adminDb({ table: 'guides', action: 'update', data: buildGuidePayload(photo_url), id: editingGuideId! })
+      await saveGuideDestinations(editingGuideId!, guideForm.linked_destination_ids)
+      setGuideMsg('✅ Saved!')
+      cancelEditGuide(); fetchGuides()
+    } catch (err: any) {
+      setGuideMsg('❌ ' + err.message)
+    } finally {
+      setGuideUploading(false)
     }
-    const { error } = await supabase.from('guides').update(buildGuidePayload(photo_url)).eq('id', editingGuideId)
-    if (error) { setGuideUploading(false); return setGuideMsg('❌ ' + error.message) }
-    await saveGuideDestinations(editingGuideId!, guideForm.linked_destination_ids)
-    setGuideUploading(false)
-    setGuideMsg('✅ Saved!')
-    cancelEditGuide(); fetchGuides()
   }
 
   function startEditGuide(g: any) {
@@ -608,7 +655,9 @@ export default function AdminPage() {
   }
 
   async function handleDeleteGuide(id: string) {
-    await supabase.from('guides').delete().eq('id', id)
+    try {
+      await adminDb({ table: 'guides', action: 'delete', id })
+    } catch { /* silent — refetch regardless */ }
     setDeleteGuideId(null); fetchGuides()
   }
 
