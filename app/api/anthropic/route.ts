@@ -52,7 +52,7 @@ ${context}`
     },
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${apiKey}`
 
   const res = await fetch(url, {
     method: 'POST',
@@ -77,7 +77,7 @@ ${context}`
 
   return NextResponse.json({
     content: [{ type: 'text', text }],
-    model: 'gemini-1.5-pro',
+    model: 'gemini-3.1-pro-preview',
     role: 'assistant',
   })
 }
