@@ -25,28 +25,34 @@ export const metadata: Metadata = {
   },
 }
 
+async function fetchHomeData() {
+  try {
+    const [{ data: destinations }, { data: guides }, { data: heroSetting }] = await Promise.all([
+      supabase
+        .from('destinations')
+        .select('id,slug,title_en,excerpt_en,region,image_urls,assessment_status,rating_experience,rating_accessibility,rating_authenticity,rating_tranquility,rating_traveler_value,featured')
+        .eq('status', 'active')
+        .order('featured', { ascending: false })
+        .limit(6),
+      supabase
+        .from('guides')
+        .select('id,name,photo_url,province,languages,specialties,is_verified,experience_years')
+        .eq('status', 'active')
+        .eq('is_verified', true)
+        .limit(3),
+      supabase
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'hero_image_url')
+        .maybeSingle(),
+    ])
+    return { destinations: destinations ?? [], guides: guides ?? [], heroImageUrl: heroSetting?.value ?? null }
+  } catch {
+    return { destinations: [], guides: [], heroImageUrl: null }
+  }
+}
+
 export default async function Home() {
-  const [{ data: destinations }, { data: guides }, { data: heroSetting }] = await Promise.all([
-    supabase
-      .from('destinations')
-      .select('id,slug,title_en,excerpt_en,region,image_urls,assessment_status,rating_experience,rating_accessibility,rating_authenticity,rating_tranquility,rating_traveler_value,featured')
-      .eq('status', 'active')
-      .order('featured', { ascending: false })
-      .limit(6),
-    supabase
-      .from('guides')
-      .select('id,name,photo_url,province,languages,specialties,is_verified,experience_years')
-      .eq('status', 'active')
-      .eq('is_verified', true)
-      .limit(3),
-    supabase
-      .from('site_settings')
-      .select('value')
-      .eq('key', 'hero_image_url')
-      .maybeSingle(),
-  ])
-
-  const heroImageUrl = heroSetting?.value || null
-
-  return <HomeClient destinations={destinations ?? []} guides={guides ?? []} heroImageUrl={heroImageUrl} />
+  const { destinations, guides, heroImageUrl } = await fetchHomeData()
+  return <HomeClient destinations={destinations} guides={guides} heroImageUrl={heroImageUrl} />
 }
