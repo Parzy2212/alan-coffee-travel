@@ -1,13 +1,21 @@
 import type { Metadata } from 'next'
-import { Plus_Jakarta_Sans, Inter, Noto_Sans_Lao } from 'next/font/google'
+import { Playfair_Display, Inter, Noto_Sans_Lao, Sarabun } from 'next/font/google'
 import Script from 'next/script'
 import { LanguageProvider } from '@/contexts/LanguageContext'
 import './globals.css'
 
-const plusJakarta = Plus_Jakarta_Sans({
+const playfair = Playfair_Display({
   subsets: ['latin'],
   variable: '--font-heading',
   display: 'swap',
+  weight: ['400', '700', '800'],
+})
+
+const sarabun = Sarabun({
+  subsets: ['thai', 'latin'],
+  variable: '--font-thai',
+  display: 'swap',
+  weight: ['400', '600', '700', '800'],
 })
 
 const inter = Inter({
@@ -160,7 +168,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${plusJakarta.variable} ${inter.variable} ${notoSansLao.variable}`}>
+      <body className={`${playfair.variable} ${inter.variable} ${notoSansLao.variable} ${sarabun.variable}`}>
         <LanguageProvider>
           {children}
         </LanguageProvider>
