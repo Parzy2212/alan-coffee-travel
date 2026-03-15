@@ -181,6 +181,15 @@ export async function POST(request: Request) {
       }
     }
 
+    // Non-blocking audit log (best-effort — ignored if table doesn't exist)
+    void supabase.from('audit_logs').insert({
+      action:     safeAction,
+      table_name: safeTable,
+      record_id:  typeof id === 'string' ? id : null,
+      payload:    (data ?? rows ?? (column ? { column, value } : {})) as Record<string, unknown>,
+      created_at: new Date().toISOString(),
+    })
+
     return NextResponse.json({ ok: true, data: result })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error.'

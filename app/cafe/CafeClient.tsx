@@ -23,7 +23,7 @@ const ORANGE  = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'purchase' | 'finance'
+type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'purchase' | 'finance' | 'ai' | 'audit'
 
 type ExtDashStats = {
   today_sales:     number
@@ -95,6 +95,18 @@ type PurchaseEntry = {
   supplier: string | null; status: string; flag_reason: string | null
   receipt_url: string | null; weigh_image_url: string | null; created_at: string
   inventory_id?: string; staff_id?: string
+}
+
+type AuditLog = {
+  id: string; created_at: string; action: string; table_name: string
+  record_id: string | null; payload: Record<string, unknown>
+}
+
+type LeaveRequest = {
+  id: string; staff_id: string; leave_type: string
+  start_date: string; end_date: string; reason: string | null
+  status: string; created_at: string
+  staff?: { name: string | null } | null
 }
 
 type CashflowRow = {
@@ -3177,11 +3189,12 @@ function StaffManageView() {
 }
 
 function StaffTab() {
-  const [sub, setSub] = useState<'today' | 'perf' | 'manage'>('today')
-  const subs: { id: 'today' | 'perf' | 'manage'; label: string }[] = [
+  const [sub, setSub] = useState<'today' | 'perf' | 'manage' | 'leaves'>('today')
+  const subs: { id: 'today' | 'perf' | 'manage' | 'leaves'; label: string }[] = [
     { id: 'today',  label: 'วันนี้' },
     { id: 'perf',   label: 'ประสิทธิภาพ' },
     { id: 'manage', label: 'จัดการ' },
+    { id: 'leaves', label: 'คำขอลา' },
   ]
   return (
     <div>
@@ -3207,6 +3220,7 @@ function StaffTab() {
       {sub === 'today'  && <StaffTodayView />}
       {sub === 'perf'   && <StaffPerfView />}
       {sub === 'manage' && <StaffManageView />}
+      {sub === 'leaves' && <LeavesView />}
     </div>
   )
 }
@@ -3922,6 +3936,329 @@ function FinanceTab() {
 
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 
+// ─── AI Tab ───────────────────────────────────────────────────────────────────
+
+function AITab() {
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [input,      setInput]      = useState('')
+  const [loading,    setLoading]    = useState(false)
+  const [context,    setContext]    = useState('')
+  const [ctxLoading, setCtxLoading] = useState(true)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  const PRESETS = [
+    'วิเคราะห์ยอดขายวันนี้',
+    'เมนูไหนควรโปรโมท',
+    'สต็อกไหนใกล้หมด',
+    'พนักงานคนไหน perform ดีสุด',
+  ]
+
+  useEffect(() => {
+    async function loadCtx() {
+      const today = todayVientiane()
+      const [sRes, mRes, svRes] = await Promise.all([
+        supabase.rpc('get_dashboard_stats'),
+        supabase.rpc('get_menu_performance', { p_days: 7 }),
+        supabase.rpc('get_stock_value'),
+      ])
+      const stats = sRes.data as ExtDashStats | null
+      const menu  = (mRes.data as MenuPerf[]) ?? []
+      const sv    = svRes.data as StockVal | null
+      const topMenu = menu.slice(0, 5).map(m => `${m.product_name}(${m.total_qty}แก้ว)`).join(', ')
+      setContext(
+        `วันที่: ${today}\n` +
+        `ยอดขายวันนี้: ${(stats?.today_sales ?? 0).toLocaleString()} LAK\n` +
+        `Orders วันนี้: ${stats?.today_orders ?? 0} รายการ\n` +
+        `กำไรขั้นต้นวันนี้: ${(stats?.today_profit ?? 0).toLocaleString()} LAK\n` +
+        `เมนูขายดี 7 วัน: ${topMenu || 'ไม่มีข้อมูล'}\n` +
+        `สต็อกใกล้หมด: ${sv?.low_count ?? 0} รายการ`
+      )
+      setCtxLoading(false)
+    }
+    void loadCtx()
+  }, [])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  async function ask(question: string) {
+    if (!question.trim() || loading || ctxLoading) return
+    const history = messages
+    setMessages(m => [...m, { role: 'user', content: question }])
+    setInput('')
+    setLoading(true)
+    try {
+      const res = await fetch('/api/anthropic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, context, history }),
+      })
+      const json = await res.json()
+      const answer = json.content?.[0]?.text ?? json.error ?? 'เกิดข้อผิดพลาด'
+      setMessages(m => [...m, { role: 'assistant', content: answer }])
+    } catch {
+      setMessages(m => [...m, { role: 'assistant', content: 'ไม่สามารถเชื่อมต่อ API ได้' }])
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)', gap: 14 }}>
+      {/* Context status bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 9, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+        <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: ctxLoading ? ORANGE : GREEN, flexShrink: 0, boxShadow: `0 0 5px ${ctxLoading ? ORANGE : GREEN}` }} />
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
+          {ctxLoading ? 'กำลังโหลดข้อมูลธุรกิจ...' : 'ข้อมูลธุรกิจพร้อม — AI พร้อมวิเคราะห์'}
+        </span>
+      </div>
+
+      {/* Preset buttons */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {PRESETS.map(p => (
+          <button key={p} onClick={() => void ask(p)} disabled={loading || ctxLoading} style={{
+            padding: '7px 14px', borderRadius: 99, border: `1px solid ${GOLD}44`,
+            backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, fontWeight: 600,
+            cursor: loading || ctxLoading ? 'not-allowed' : 'pointer',
+            opacity: ctxLoading ? 0.5 : 1, transition: 'opacity .15s',
+          }}>{p}</button>
+        ))}
+      </div>
+
+      {/* Chat area */}
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0' }}>
+        {messages.length === 0 ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'rgba(255,255,255,0.18)' }}>
+            <div style={{ fontSize: 48 }}>✨</div>
+            <div style={{ fontSize: 14 }}>เลือกคำถามด้านบน หรือพิมพ์คำถามของคุณ</div>
+          </div>
+        ) : (
+          messages.map((m, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, flexDirection: m.role === 'user' ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, backgroundColor: m.role === 'user' ? `${GOLD}22` : '#1e1e1e', border: `1px solid ${m.role === 'user' ? GOLD + '66' : BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: m.role === 'user' ? GOLD : 'rgba(255,255,255,0.5)' }}>
+                {m.role === 'user' ? 'A' : 'AI'}
+              </div>
+              <div style={{ maxWidth: '76%', padding: '11px 15px', borderRadius: m.role === 'user' ? '14px 4px 14px 14px' : '4px 14px 14px 14px', backgroundColor: m.role === 'user' ? `${GOLD}14` : CARD, border: `1px solid ${m.role === 'user' ? GOLD + '33' : BORDER}`, fontSize: 13, lineHeight: 1.75, color: m.role === 'user' ? GOLD : 'rgba(255,255,255,0.85)', whiteSpace: 'pre-wrap' }}>
+                {m.content}
+              </div>
+            </div>
+          ))
+        )}
+        {loading && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: '#1e1e1e', border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>AI</div>
+            <div style={{ padding: '12px 16px', borderRadius: '4px 14px 14px 14px', backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'flex', gap: 5, alignItems: 'center' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: GOLD, animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input row */}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(input) } }}
+          placeholder={ctxLoading ? 'กำลังโหลดข้อมูล...' : 'ถามอะไรก็ได้เกี่ยวกับธุรกิจ...'}
+          disabled={loading || ctxLoading}
+          style={{ flex: 1, padding: '12px 16px', borderRadius: 10, border: `1px solid ${GOLD}44`, backgroundColor: CARD, color: '#fff', fontSize: 14, outline: 'none' }}
+        />
+        <button onClick={() => void ask(input)} disabled={loading || !input.trim() || ctxLoading}
+          style={{ padding: '12px 22px', borderRadius: 10, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, fontSize: 14, cursor: loading || !input.trim() || ctxLoading ? 'not-allowed' : 'pointer', opacity: loading || !input.trim() || ctxLoading ? 0.6 : 1 }}>
+          ถาม
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Audit Tab ─────────────────────────────────────────────────────────────────
+
+function AuditTab() {
+  const [logs,         setLogs]         = useState<AuditLog[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [dateFilter,   setDateFilter]   = useState('')
+  const [actionFilter, setActionFilter] = useState('all')
+  const [noTable,      setNoTable]      = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(300)
+      if ((error as { code?: string } | null)?.code === '42P01') { setNoTable(true); setLoading(false); return }
+      setLogs((data as AuditLog[]) ?? [])
+      setLoading(false)
+    }
+    void load()
+  }, [])
+
+  const filtered = logs.filter(l => {
+    if (actionFilter !== 'all' && l.action !== actionFilter) return false
+    if (dateFilter && !l.created_at.startsWith(dateFilter)) return false
+    return true
+  })
+
+  const actionColor = (a: string) =>
+    a === 'insert' || a === 'insert_many' ? GREEN
+    : a === 'update' || a === 'upsert'    ? GOLD
+    : a === 'delete' || a === 'delete_match' ? RED
+    : 'rgba(255,255,255,0.4)'
+
+  if (noTable) return (
+    <div style={{ padding: '60px 0', textAlign: 'center', color: 'rgba(255,255,255,0.35)' }}>
+      <div style={{ fontSize: 36, marginBottom: 14 }}>🔍</div>
+      <div style={{ fontSize: 15, marginBottom: 8 }}>ยังไม่มีตาราง audit_logs</div>
+      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
+        CREATE TABLE audit_logs (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, created_at timestamptz DEFAULT now(), action text, table_name text, record_id text, payload jsonb);
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 13 }} />
+        <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 13, cursor: 'pointer' }}>
+          <option value="all">ทุก Action</option>
+          {['insert', 'update', 'delete', 'upsert', 'insert_many', 'delete_match'].map(a => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+        {(dateFilter || actionFilter !== 'all') && (
+          <button onClick={() => { setDateFilter(''); setActionFilter('all') }}
+            style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>
+            ล้าง
+          </button>
+        )}
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>{filtered.length} รายการ</span>
+      </div>
+
+      {loading ? <LoadingSpinner /> : filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>ไม่พบรายการ</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                {['เวลา', 'Action', 'ตาราง', 'Record ID', 'Payload'].map(h => (
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(log => (
+                <tr key={log.id} style={{ borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {new Date(log.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Vientiane', dateStyle: 'short', timeStyle: 'short' })}
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: actionColor(log.action), backgroundColor: actionColor(log.action) + '18' }}>
+                      {log.action}
+                    </span>
+                  </td>
+                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.65)' }}>{log.table_name}</td>
+                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', fontSize: 11 }}>{log.record_id ? log.record_id.slice(0, 8) + '…' : '—'}</td>
+                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.28)', fontFamily: 'monospace', fontSize: 11, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {JSON.stringify(log.payload)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Leaves View (inside Staff tab) ───────────────────────────────────────────
+
+function LeavesView() {
+  const [leaves,   setLeaves]   = useState<LeaveRequest[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [actingId, setActingId] = useState<string | null>(null)
+  const [noTable,  setNoTable]  = useState(false)
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .select('*, staff:staff_id(name)')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if ((error as { code?: string } | null)?.code === '42P01') { setNoTable(true); setLoading(false); return }
+    setLeaves((data as LeaveRequest[]) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function updateStatus(id: string, status: 'approved' | 'rejected') {
+    setActingId(id)
+    await supabase.from('leave_requests').update({ status }).eq('id', id)
+    await load()
+    setActingId(null)
+  }
+
+  const leaveLabel = (t: string) => t === 'sick' ? 'ลาป่วย' : t === 'personal' ? 'ลากิจ' : t === 'vacation' ? 'ลาพักร้อน' : t
+  const statusColor = (s: string) => s === 'approved' ? GREEN : s === 'rejected' ? RED : GOLD
+  const statusLabel = (s: string) => s === 'approved' ? 'อนุมัติแล้ว' : s === 'rejected' ? 'ปฏิเสธแล้ว' : 'รอดำเนินการ'
+
+  if (noTable) return (
+    <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>
+      ยังไม่มีตาราง leave_requests — กรุณา run SQL migration ก่อน
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>คำขอลาทั้งหมด {leaves.length} รายการ · รอดำเนินการ {leaves.filter(l => l.status === 'pending').length} รายการ</span>
+      </div>
+      {loading ? <LoadingSpinner /> : leaves.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>ไม่มีคำขอลา</div>
+      ) : (
+        leaves.map(lv => (
+          <div key={lv.id} style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${lv.status === 'pending' ? GOLD + '33' : BORDER}`, display: 'flex', gap: 16, alignItems: 'center' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 5, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{lv.staff?.name ?? lv.staff_id.slice(0, 8)}</span>
+                <Badge label={leaveLabel(lv.leave_type)} bg={GOLD + '18'} color={GOLD} />
+                <Badge label={statusLabel(lv.status)} bg={statusColor(lv.status) + '18'} color={statusColor(lv.status)} />
+              </div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
+                {lv.start_date} → {lv.end_date}
+                {lv.reason && <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.3)' }}>· {lv.reason}</span>}
+                <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>{new Date(lv.created_at).toLocaleDateString('th-TH')}</span>
+              </div>
+            </div>
+            {lv.status === 'pending' && (
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button onClick={() => void updateStatus(lv.id, 'approved')} disabled={actingId === lv.id}
+                  style={{ padding: '7px 16px', borderRadius: 7, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: actingId === lv.id ? 0.6 : 1 }}>อนุมัติ</button>
+                <button onClick={() => void updateStatus(lv.id, 'rejected')} disabled={actingId === lv.id}
+                  style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${RED}44`, backgroundColor: `${RED}10`, color: RED, fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: actingId === lv.id ? 0.6 : 1 }}>ปฏิเสธ</button>
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
+// ─── Nav + Main Layout ─────────────────────────────────────────────────────────
+
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard',  label: 'Dashboard',   icon: '📊' },
   { id: 'menu',       label: 'เมนู',         icon: '🍽️' },
@@ -3932,6 +4269,8 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: 'customers',  label: 'ลูกค้า',      icon: '🧑‍🤝‍🧑' },
   { id: 'purchase',   label: 'การซื้อ',     icon: '🧾' },
   { id: 'finance',    label: 'การเงิน',     icon: '💰' },
+  { id: 'ai',         label: 'AI Analyst',  icon: '✨' },
+  { id: 'audit',      label: 'Audit Log',   icon: '🔍' },
 ]
 
 export default function CafeClient() {
@@ -3975,6 +4314,8 @@ export default function CafeClient() {
         {tab === 'customers'  && <CustomersTab />}
         {tab === 'purchase'   && <PurchaseTab />}
         {tab === 'finance'    && <FinanceTab />}
+        {tab === 'ai'         && <AITab />}
+        {tab === 'audit'      && <AuditTab />}
       </div>
     </div>
   )

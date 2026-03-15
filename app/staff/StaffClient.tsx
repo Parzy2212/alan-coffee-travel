@@ -16,7 +16,7 @@ const ORANGE = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'dashboard' | 'success' | 'purchase_form' | 'stock_audit'
+type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'dashboard' | 'success' | 'purchase_form' | 'stock_audit' | 'leave_request'
 
 type StaffEntry = {
   id: string; name: string; name_th: string | null
@@ -1024,7 +1024,7 @@ export default function StaffClient() {
           </div>
 
           {/* Action buttons */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
             <button onClick={() => setPhase('purchase_form')}
               style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}08`, color: GOLD, cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 30 }}>🧾</span>
@@ -1034,6 +1034,11 @@ export default function StaffClient() {
               style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 30 }}>📦</span>
               นับสต็อก
+            </button>
+            <button onClick={() => setPhase('leave_request')}
+              style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 30 }}>📅</span>
+              ขอลา
             </button>
           </div>
 
@@ -1339,7 +1344,107 @@ export default function StaffClient() {
         </div>
       )}
 
+      {/* ── PHASE: leave_request ── */}
+      {phase === 'leave_request' && selected && (
+        <LeaveRequestForm selected={selected} onBack={() => setPhase('dashboard')} />
+      )}
+
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}`}</style>
+    </div>
+  )
+}
+
+// ─── Leave Request Form ────────────────────────────────────────────────────────
+
+function LeaveRequestForm({ selected, onBack }: { selected: StaffEntry; onBack: () => void }) {
+  const [leaveType, setLeaveType] = useState<'sick' | 'personal' | 'vacation'>('sick')
+  const [startDate, setStartDate] = useState('')
+  const [endDate,   setEndDate]   = useState('')
+  const [reason,    setReason]    = useState('')
+  const [saving,    setSaving]    = useState(false)
+  const [msg,       setMsg]       = useState('')
+  const [done,      setDone]      = useState(false)
+
+  async function submit() {
+    if (!startDate || !endDate) { setMsg('กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด'); return }
+    if (endDate < startDate) { setMsg('วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น'); return }
+    setSaving(true); setMsg('')
+    const { error } = await supabase.from('leave_requests').insert({
+      staff_id:   selected.id,
+      leave_type: leaveType,
+      start_date: startDate,
+      end_date:   endDate,
+      reason:     reason || null,
+      status:     'pending',
+    })
+    setSaving(false)
+    if (error) { setMsg(error.message); return }
+    setDone(true)
+    setTimeout(onBack, 2200)
+  }
+
+  return (
+    <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <button onClick={onBack} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
+      <div style={{ fontSize: 18, fontWeight: 800 }}>📅 ขอลา</div>
+      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {selected.name_th ?? selected.name}</div>
+
+      {done ? (
+        <div style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: `${GREEN}10`, border: `1px solid ${GREEN}33`, color: GREEN, fontSize: 14, fontWeight: 700 }}>
+          ✓ ส่งคำขอลาสำเร็จ — กำลังกลับ...
+        </div>
+      ) : (
+        <>
+          {/* Leave type */}
+          <div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>ประเภทการลา</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['sick', 'personal', 'vacation'] as const).map(t => {
+                const lbl = t === 'sick' ? 'ลาป่วย' : t === 'personal' ? 'ลากิจ' : 'ลาพักร้อน'
+                const on  = leaveType === t
+                return (
+                  <button key={t} onClick={() => setLeaveType(t)} style={{
+                    flex: 1, padding: '11px 0', borderRadius: 10,
+                    border: `1px solid ${on ? GOLD : BORDER}`,
+                    backgroundColor: on ? `${GOLD}18` : CARD,
+                    color: on ? GOLD : 'rgba(255,255,255,0.55)',
+                    fontSize: 13, fontWeight: on ? 700 : 400, cursor: 'pointer',
+                  }}>{lbl}</button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Date range */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>วันเริ่มต้น</div>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                style={{ width: '100%', padding: '11px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>วันสิ้นสุด</div>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                style={{ width: '100%', padding: '11px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+            </div>
+          </div>
+
+          {/* Reason */}
+          <div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>เหตุผล (ไม่บังคับ)</div>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+              placeholder="ระบุเหตุผล..."
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, resize: 'vertical' as const, boxSizing: 'border-box' as const }} />
+          </div>
+
+          {msg && <div style={{ color: RED, fontSize: 13 }}>{msg}</div>}
+
+          <button onClick={() => void submit()} disabled={saving}
+            style={{ padding: '14px', borderRadius: 12, border: 'none', backgroundColor: GOLD, color: '#000', fontSize: 15, fontWeight: 800, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'กำลังส่ง...' : '✓ ยืนยันการขอลา'}
+          </button>
+        </>
+      )}
     </div>
   )
 }
