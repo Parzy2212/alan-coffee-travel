@@ -2,15 +2,10 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'edge'
 
-// ─── Route handler ─────────────────────────────────────────────────────────────
-// Auth is handled by middleware (admin_session cookie) — /cafe is already gated.
-
 export async function POST(request: Request) {
-  // 1. Anthropic API key
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured.' }, { status: 500 })
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is not configured.' }, { status: 500 })
 
-  // 3. Parse body
   let body: { question?: string; context?: string; history?: { role: string; content: string }[] }
   try { body = await request.json() }
   catch { return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 }) }
@@ -18,57 +13,71 @@ export async function POST(request: Request) {
   const { question, context = '', history = [] } = body
   if (!question) return NextResponse.json({ error: 'question is required.' }, { status: 400 })
 
-  const systemPrompt = `คุณคือ AI ที่ปรึกษาธุรกิจสำหรับร้าน Alan Coffee & Travel ในเวียงจันทน์ สปป.ลาว
-คุณได้รับข้อมูลธุรกิจแบบ real-time และให้คำวิเคราะห์และคำแนะนำที่เป็นประโยชน์
-ตอบเป็นภาษาไทย สั้น กระชับ ตรงประเด็น ใช้ bullet points เมื่อเหมาะสม
-ถ้าข้อมูลมีเลข ให้วิเคราะห์เชิงลึกและเสนอแนวทางปฏิบัติได้เลย
+  const systemInstruction = `You are an expert business analyst AI for Alan Cafe, a specialty coffee shop in Vientiane, Laos.
 
-ข้อมูลธุรกิจปัจจุบัน:
+About Alan Cafe:
+- Specialty coffee shop in Laos serving coffee, drinks, and food
+- Uses a custom Cafe OS system for POS, inventory, staff management, CRM, and finance
+- You have access to real business data: sales figures, menu performance, stock levels, staff attendance, customer loyalty points, purchase logs, and cashflow
+- The cafe operates in the Lao market with local customers and expats
+
+Your role:
+- Analyze the real business data provided and give specific, actionable insights
+- Always reference actual numbers from the data — never be vague or generic
+- Give recommendations tailored to running a cafe in Laos (local suppliers, pricing for Lao market, seasonal patterns, etc.)
+- Respond in the same language the user writes in: Thai if they write Thai, Lao if they write Lao, English if they write English
+- Be concise and direct. Use bullet points when listing multiple items
+- If data shows a problem, name it clearly and suggest a concrete fix
+
+Current business data:
 ${context}`
 
-  const messages = [
+  // Build Gemini contents array from history + current question
+  const contents = [
     ...history
-      .filter((m): m is { role: 'user' | 'assistant'; content: string } =>
-        m.role === 'user' || m.role === 'assistant'),
-    { role: 'user' as const, content: question },
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      })),
+    { role: 'user', parts: [{ text: question }] },
   ]
 
-  // 4. Call Anthropic
   const requestBody = {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages,
+    system_instruction: { parts: [{ text: systemInstruction }] },
+    contents,
+    generationConfig: {
+      maxOutputTokens: 1024,
+      temperature: 0.7,
+    },
   }
 
-  console.log('[anthropic] outgoing request:', {
-    model: requestBody.model,
-    max_tokens: requestBody.max_tokens,
-    messageCount: messages.length,
-    apiKeyPrefix: apiKey.slice(0, 10) + '…',
-  })
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'anthropic-version': '2023-06-01',
-      'x-api-key': apiKey,
-      'content-type': 'application/json',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(requestBody),
   })
 
   const rawBody = await res.text()
-  console.log('[anthropic] response status:', res.status)
-  console.log('[anthropic] response body:', rawBody)
 
   if (!res.ok) {
     return NextResponse.json(
-      { error: rawBody, status: res.status, hint: 'See Cloudflare Workers logs for details' },
+      { error: rawBody, status: res.status },
       { status: res.status }
     )
   }
 
-  const data = JSON.parse(rawBody)
-  return NextResponse.json(data)
+  const geminiData = JSON.parse(rawBody)
+
+  // Extract text from Gemini response and shape it like Anthropic's format
+  // so the frontend (which reads data.content[0].text) works unchanged
+  const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+
+  return NextResponse.json({
+    content: [{ type: 'text', text }],
+    model: 'gemini-2.0-flash',
+    role: 'assistant',
+  })
 }
