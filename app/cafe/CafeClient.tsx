@@ -524,26 +524,30 @@ function DonutChart({ title, data, colors }: { title: string; data: DonutEntry[]
 // ─── Dashboard Tab ────────────────────────────────────────────────────────────
 
 function DashboardTab() {
-  const [stats,   setStats]   = useState<ExtDashStats | null>(null)
-  const [hourly,  setHourly]  = useState<HourlySale[]>([])
-  const [menu,    setMenu]    = useState<MenuPerf[]>([])
-  const [custom,  setCustom]  = useState<CustomStat[]>([])
-  const [qperf,   setQperf]   = useState<QueuePerf | null>(null)
-  const [sval,    setSval]    = useState<StockVal | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [rpcErr,  setRpcErr]  = useState(false)
+  const [stats,        setStats]        = useState<ExtDashStats | null>(null)
+  const [hourly,       setHourly]       = useState<HourlySale[]>([])
+  const [menu,         setMenu]         = useState<MenuPerf[]>([])
+  const [custom,       setCustom]       = useState<CustomStat[]>([])
+  const [qperf,        setQperf]        = useState<QueuePerf | null>(null)
+  const [sval,         setSval]         = useState<StockVal | null>(null)
+  const [loading,      setLoading]      = useState(true)
+  const [rpcErr,       setRpcErr]       = useState(false)
+  const [period,       setPeriod]       = useState<'today' | 'week' | 'month'>('today')
+  const [periodSales,  setPeriodSales]  = useState(0)
+  const [periodOrders, setPeriodOrders] = useState(0)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
       const today = todayVientiane()
+      const pDays = period === 'today' ? 1 : period === 'week' ? 7 : 30
 
       const [sRes, hRes, mRes, cRes, qRes, svRes] = await Promise.all([
         supabase.rpc('get_dashboard_stats'),
         supabase.rpc('get_hourly_sales', { p_date: today }),
-        supabase.rpc('get_menu_performance', { p_days: 30 }),
-        supabase.rpc('get_customization_stats', { p_days: 7 }),
-        supabase.rpc('get_queue_performance', { p_days: 7 }),
+        supabase.rpc('get_menu_performance', { p_days: pDays }),
+        supabase.rpc('get_customization_stats', { p_days: pDays }),
+        supabase.rpc('get_queue_performance', { p_days: pDays }),
         supabase.rpc('get_stock_value'),
       ])
 
@@ -566,10 +570,19 @@ function DashboardTab() {
         const todaySales = (rows ?? []).reduce((a, o) => a + Number(o.total_lak ?? 0), 0)
         setStats({ today_sales: todaySales, today_orders: (rows ?? []).length, today_items: 0, today_profit: 0, yesterday_sales: 0 })
       }
+
+      // For week/month: fetch period revenue directly from orders table
+      if (period !== 'today') {
+        const from = new Date(Date.now() - pDays * 86400000).toISOString()
+        const { data: pRows } = await supabase
+          .from('orders').select('total_lak').eq('status', 'paid').gte('created_at', from)
+        setPeriodSales((pRows ?? []).reduce((a: number, o: { total_lak: unknown }) => a + Number(o.total_lak ?? 0), 0))
+        setPeriodOrders((pRows ?? []).length)
+      }
       setLoading(false)
     }
     load()
-  }, [])
+  }, [period])
 
   if (loading) return <LoadingSpinner />
 
@@ -595,6 +608,10 @@ function DashboardTab() {
     ? hourly.reduce((max, h) => h.order_count > max.order_count ? h : max, hourly[0])
     : null
 
+  const periodLabel = period === 'today' ? 'วันนี้' : period === 'week' ? '7 วัน' : '30 วัน'
+  const dispSales   = period === 'today' ? (stats?.today_sales  ?? 0) : periodSales
+  const dispOrders  = period === 'today' ? (stats?.today_orders ?? 0) : periodOrders
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -605,28 +622,43 @@ function DashboardTab() {
         </div>
       )}
 
+      {/* ── Period selector ── */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {(['today', 'week', 'month'] as const).map(p => (
+          <button key={p} onClick={() => setPeriod(p)} style={{
+            padding: '6px 18px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+            border: `1px solid ${period === p ? GOLD : BORDER}`,
+            backgroundColor: period === p ? `${GOLD}18` : 'transparent',
+            color: period === p ? GOLD : 'rgba(255,255,255,0.4)',
+            transition: 'all 0.15s',
+          }}>
+            {p === 'today' ? 'วันนี้' : p === 'week' ? '7 วัน' : '30 วัน'}
+          </button>
+        ))}
+      </div>
+
       {/* ── Section 1: KPI Cards ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
         <KPICard
-          label="ยอดขายวันนี้"
-          value={fmtLAK(stats?.today_sales ?? 0)}
-          change={pctChange}
+          label={`ยอดขาย (${periodLabel})`}
+          value={fmtLAK(dispSales)}
+          change={period === 'today' ? pctChange : undefined}
           accent
         />
         <KPICard
-          label="กำไรขั้นต้น"
+          label="กำไรขั้นต้น (วันนี้)"
           value={fmtLAK(stats?.today_profit ?? 0)}
           sub={stats && stats.today_sales > 0
             ? `${Math.round((stats.today_profit / stats.today_sales) * 100)}% margin`
             : '—'}
         />
         <KPICard
-          label="Orders วันนี้"
-          value={String(stats?.today_orders ?? 0)}
-          sub={`เฉลี่ย ${fmtLAK(stats && stats.today_orders > 0 ? (stats.today_sales / stats.today_orders) : 0)} / order`}
+          label={`Orders (${periodLabel})`}
+          value={String(dispOrders)}
+          sub={`เฉลี่ย ${fmtLAK(dispOrders > 0 ? Math.round(dispSales / dispOrders) : 0)} / order`}
         />
         <KPICard
-          label="เฉลี่ยต่อออเดอร์"
+          label="เฉลี่ยต่อออเดอร์ (วันนี้)"
           value={`${stats?.today_items ?? 0} รายการ`}
           sub="avg items per order"
         />
@@ -638,8 +670,8 @@ function DashboardTab() {
         />
       </div>
 
-      {/* ── Section 2: Hourly Sales Chart ── */}
-      <SectionCard title={`ยอดขายรายชั่วโมง — วันนี้`}>
+      {/* ── Section 2: Hourly Sales Chart (today only) ── */}
+      {period === 'today' && <SectionCard title="ยอดขายรายชั่วโมง — วันนี้">
         {chartData.length === 0 || chartData.every(d => d.sales === 0) ? (
           <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.18)', padding: '40px 0', fontSize: 14 }}>ยังไม่มียอดวันนี้</div>
         ) : (
@@ -687,10 +719,10 @@ function DashboardTab() {
             <span>ชั่วโมงยอด: <strong style={{ color: GOLD }}>{fmtHour(peakHourData.hour)}</strong> ({peakHourData.order_count} orders)</span>
           )}
         </div>
-      </SectionCard>
+      </SectionCard>}
 
       {/* ── Section 3: Menu Performance Table ── */}
-      <SectionCard title={`menu performance — 30 วัน (${menu.length} รายการ)`}>
+      <SectionCard title={`menu performance — ${periodLabel} (${menu.length} รายการ)`}>
         {menu.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.18)', padding: '30px 0' }}>ยังไม่มีข้อมูล</div>
         ) : (
@@ -3185,6 +3217,9 @@ const ALLERGY_MAP: Record<string, string> = {
   นม: '🥛', กลูเตน: '🌾', ถั่ว: '🥜', ไข่: '🥚', ซีฟู้ด: '🦐',
 }
 
+const POINTS_RATE = 100  // points per redeem unit
+const POINTS_VALUE = 5000 // LAK per redeem unit
+
 function CustomersTab() {
   const [customers, setCustomers]   = useState<Customer[]>([])
   const [search,    setSearch]      = useState('')
@@ -3193,6 +3228,11 @@ function CustomersTab() {
   const [form, setForm] = useState({ name: '', phone: '', nationality: '', language_pref: 'lo', allergies: [] as string[] })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [redeemCustomer, setRedeemCustomer] = useState<Customer | null>(null)
+  const [redeemPts,      setRedeemPts]      = useState('')
+  const [redeemMsg,      setRedeemMsg]      = useState('')
+  const [redeeming,      setRedeeming]      = useState(false)
+  const [redeemHistory,  setRedeemHistory]  = useState<{ name: string; pts: number; lak: number; time: string }[]>([])
 
   const load = useCallback(async (q = '') => {
     setLoading(true)
@@ -3238,6 +3278,23 @@ function CustomersTab() {
       ...f,
       allergies: f.allergies.includes(a) ? f.allergies.filter(x => x !== a) : [...f.allergies, a],
     }))
+  }
+
+  async function redeemSubmit() {
+    if (!redeemCustomer) return
+    const pts = parseInt(redeemPts)
+    if (isNaN(pts) || pts <= 0) { setRedeemMsg('กรอกจำนวนคะแนนที่ถูกต้อง'); return }
+    if (pts % POINTS_RATE !== 0) { setRedeemMsg(`คะแนนต้องเป็นทวีคูณของ ${POINTS_RATE}`); return }
+    if (pts > redeemCustomer.loyalty_points) { setRedeemMsg('คะแนนไม่เพียงพอ'); return }
+    setRedeeming(true); setRedeemMsg('')
+    const newPts = redeemCustomer.loyalty_points - pts
+    const lak    = (pts / POINTS_RATE) * POINTS_VALUE
+    const { error } = await supabase.from('customers').update({ loyalty_points: newPts }).eq('id', redeemCustomer.id)
+    if (error) { setRedeemMsg(error.message); setRedeeming(false); return }
+    setRedeemHistory(h => [{ name: redeemCustomer.name ?? redeemCustomer.phone ?? '?', pts, lak, time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) }, ...h])
+    setRedeemCustomer(null); setRedeemPts('')
+    await load(search)
+    setRedeeming(false)
   }
 
   return (
@@ -3297,6 +3354,58 @@ function CustomersTab() {
         </div>
       )}
 
+      {/* Redemption Modal */}
+      {redeemCustomer && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}
+          onClick={e => { if (e.target === e.currentTarget) { setRedeemCustomer(null); setRedeemPts('') } }}>
+          <div style={{ width: 380, padding: 28, borderRadius: 18, backgroundColor: '#141414', border: `1px solid ${GOLD}44`, display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: GOLD }}>แลกคะแนน</div>
+            <div style={{ padding: '14px 16px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>{redeemCustomer.name ?? redeemCustomer.phone}</div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{redeemCustomer.loyalty_points} <span style={{ fontSize: 14, fontWeight: 500 }}>pts</span></div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
+                อัตราแลก: {POINTS_RATE} pts = {POINTS_VALUE.toLocaleString()} ₭
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>จำนวนคะแนนที่ต้องการแลก (ทวีคูณของ {POINTS_RATE})</div>
+              <input type="number" value={redeemPts} onChange={e => setRedeemPts(e.target.value)}
+                step={POINTS_RATE} min={POINTS_RATE} max={redeemCustomer.loyalty_points}
+                placeholder={String(POINTS_RATE)}
+                style={{ width: '100%', padding: '11px 14px', borderRadius: 9, border: `1px solid ${GOLD}44`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 16, fontWeight: 700, boxSizing: 'border-box' }} />
+              {redeemPts && parseInt(redeemPts) > 0 && parseInt(redeemPts) % POINTS_RATE === 0 && (
+                <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, backgroundColor: `${GREEN}10`, border: `1px solid ${GREEN}33`, fontSize: 13, color: GREEN, fontWeight: 600 }}>
+                  ส่วนลด: {((parseInt(redeemPts) / POINTS_RATE) * POINTS_VALUE).toLocaleString()} ₭
+                  · คงเหลือ: {redeemCustomer.loyalty_points - parseInt(redeemPts)} pts
+                </div>
+              )}
+            </div>
+            {redeemMsg && <div style={{ color: RED, fontSize: 13 }}>{redeemMsg}</div>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => void redeemSubmit()} disabled={redeeming} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: redeeming ? 0.6 : 1 }}>
+                {redeeming ? 'กำลังดำเนินการ...' : 'ยืนยันการแลก'}
+              </button>
+              <button onClick={() => { setRedeemCustomer(null); setRedeemPts('') }} style={{ padding: '11px 20px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session redemption history */}
+      {redeemHistory.length > 0 && (
+        <div style={{ padding: '14px 18px', borderRadius: 12, backgroundColor: `${GREEN}08`, border: `1px solid ${GREEN}22`, marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: GREEN, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 8 }}>ประวัติแลกคะแนน (session นี้)</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {redeemHistory.map((r, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+                <span>{r.time} · {r.name}</span>
+                <span style={{ color: GREEN, fontWeight: 600 }}>-{r.pts} pts → +{r.lak.toLocaleString()} ₭</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* List */}
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3323,8 +3432,11 @@ function CustomersTab() {
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: GOLD }}>{c.loyalty_points} pts</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{c.visit_count} ครั้ง</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{c.visit_count} ครั้ง · {(c.lifetime_spend_lak ?? 0).toLocaleString()} ₭</div>
               </div>
+              <button onClick={() => { setRedeemCustomer(c); setRedeemPts(''); setRedeemMsg('') }}
+                disabled={c.loyalty_points < POINTS_RATE}
+                style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${c.loyalty_points >= POINTS_RATE ? GREEN + '66' : BORDER}`, backgroundColor: c.loyalty_points >= POINTS_RATE ? `${GREEN}12` : 'transparent', color: c.loyalty_points >= POINTS_RATE ? GREEN : 'rgba(255,255,255,0.2)', cursor: c.loyalty_points >= POINTS_RATE ? 'pointer' : 'default', fontSize: 11, fontWeight: 600 }}>แลกคะแนน</button>
               <button onClick={() => openEdit(c)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12 }}>แก้ไข</button>
             </div>
           ))}
@@ -3691,6 +3803,70 @@ function FinanceTab() {
           </div>
         )}
       </div>
+
+      {/* ── P&L Statement (30 days) ── */}
+      {(() => {
+        const rev30      = cashflow30.reduce((s, r) => s + r.system_sales, 0)
+        const cogs30     = totalCogs
+        const grossP     = rev30 - cogs30
+        const grossM     = rev30 > 0 ? Math.round((grossP / rev30) * 100) : 0
+        const laborCost  = budgets.labor
+        const fixedCost  = budgets.fixed
+        const netProfit  = grossP - laborCost - fixedCost
+        const netMargin  = rev30 > 0 ? Math.round((netProfit / rev30) * 100) : 0
+
+        const rows: { label: string; value: number; indent?: boolean; highlight?: boolean; separator?: boolean; dimLabel?: string }[] = [
+          { label: 'รายได้รวม (Revenue)',            value: rev30,     highlight: false },
+          { label: 'ต้นทุนขาย (COGS)',               value: -cogs30,   indent: true, dimLabel: 'จากการซื้อวัตถุดิบ 30 วัน' },
+          { label: 'กำไรขั้นต้น (Gross Profit)',     value: grossP,    highlight: true },
+          { label: `  Gross Margin`,                  value: grossM,    highlight: false, dimLabel: '%', separator: false },
+          { label: 'ค่าแรงพนักงาน (Labor)',           value: -laborCost, indent: true, dimLabel: 'จากงบประมาณ' },
+          { label: 'ต้นทุนคงที่ (Fixed)',             value: -fixedCost, indent: true, dimLabel: 'จากงบประมาณ' },
+          { label: 'กำไรสุทธิ (Net Profit est.)',    value: netProfit, highlight: true },
+          { label: `  Net Margin`,                    value: netMargin, highlight: false, dimLabel: '%' },
+        ]
+
+        return (
+          <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>งบกำไรขาดทุน (P&L) — 30 วัน</div>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px' }}>ESTIMATED</span>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <tbody>
+                {rows.map((row, i) => {
+                  const isMargin = row.dimLabel === '%'
+                  const displayVal = isMargin
+                    ? `${row.value}%`
+                    : (row.value < 0 ? `(${Math.abs(row.value).toLocaleString()})` : row.value.toLocaleString()) + ' ₭'
+                  const valueColor = isMargin
+                    ? (row.value >= 50 ? GREEN : row.value >= 30 ? GOLD : ORANGE)
+                    : row.highlight
+                      ? (row.value >= 0 ? GREEN : RED)
+                      : row.value < 0 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.8)'
+                  return (
+                    <tr key={i} style={{
+                      borderTop: row.highlight ? `1px solid ${BORDER}` : 'none',
+                      borderBottom: row.highlight ? `1px solid ${BORDER}` : 'none',
+                      backgroundColor: row.highlight ? `${GOLD}06` : 'transparent',
+                    }}>
+                      <td style={{ padding: row.highlight ? '10px 12px' : '7px 12px', color: row.indent ? 'rgba(255,255,255,0.45)' : row.highlight ? GOLD : 'rgba(255,255,255,0.75)', paddingLeft: row.indent ? 28 : 12, fontWeight: row.highlight ? 700 : 400 }}>
+                        {row.label}
+                        {row.dimLabel && row.dimLabel !== '%' && (
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginLeft: 8 }}>{row.dimLabel}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: row.highlight ? '10px 12px' : '7px 12px', textAlign: 'right', color: valueColor, fontWeight: row.highlight ? 800 : 500, fontVariantNumeric: 'tabular-nums' }}>
+                        {displayVal}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      })()}
 
       {/* ── 30-day cashflow table ── */}
       <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
