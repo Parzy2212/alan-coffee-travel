@@ -2,37 +2,11 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'edge'
 
-// ─── Cookie / auth helpers (same as admin db route) ───────────────────────────
-
-function getSessionCookie(request: Request): string | undefined {
-  const header = request.headers.get('cookie') ?? ''
-  for (const part of header.split(';')) {
-    const [k, ...v] = part.trim().split('=')
-    if (k === 'admin_session') return v.join('=')
-  }
-  return undefined
-}
-
-async function computeExpectedToken(password: string): Promise<string> {
-  const data = new TextEncoder().encode(`${password}:alan-admin`)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
 // ─── Route handler ─────────────────────────────────────────────────────────────
+// Auth is handled by middleware (admin_session cookie) — /cafe is already gated.
 
 export async function POST(request: Request) {
-  // 1. Auth check
-  const adminPassword = process.env.ADMIN_PASSWORD
-  if (!adminPassword) return NextResponse.json({ error: 'Server misconfigured.' }, { status: 500 })
-  const sessionCookie = getSessionCookie(request)
-  if (!sessionCookie) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-  const expectedToken = await computeExpectedToken(adminPassword)
-  if (sessionCookie !== expectedToken) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-
-  // 2. Anthropic API key
+  // 1. Anthropic API key
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured.' }, { status: 500 })
 
@@ -68,7 +42,7 @@ ${context}`
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: systemPrompt,
       messages,
