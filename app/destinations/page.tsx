@@ -46,6 +46,7 @@ export default function DestinationsPage() {
   const [search, setSearch] = useState('')
   const [province, setProvince] = useState('all')
   const [assessment, setAssessment] = useState('all')
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   useEffect(() => {
     supabase
@@ -182,11 +183,18 @@ export default function DestinationsPage() {
               const avg = avgRating(d)
               const stars = avg != null ? Math.round(avg) : null
 
+              const isHovered = hoveredId === d.id
+              const borderColor = d.featured
+                ? isHovered ? 'rgba(201,168,76,0.5)' : 'rgba(201,168,76,0.22)'
+                : isHovered ? 'rgba(201,168,76,0.35)' : 'rgba(255,255,255,0.07)'
+
               return (
                 <a
                   key={d.id}
                   href={`/destinations/${d.slug}`}
-                  style={{ textDecoration: 'none', display: 'block', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.07)', transition: 'border-color 0.2s' }}
+                  onMouseEnter={() => setHoveredId(d.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  style={{ textDecoration: 'none', display: 'block', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#111', border: `1px solid ${borderColor}`, transform: isHovered ? 'translateY(-4px)' : 'none', boxShadow: isHovered ? '0 16px 48px rgba(0,0,0,0.45)' : 'none', transition: 'border-color 0.2s, transform 0.22s, box-shadow 0.22s' }}
                 >
                   {/* Image */}
                   <div style={{ position: 'relative', height: '220px', backgroundColor: '#0a0a0a', overflow: 'hidden' }}>
@@ -199,6 +207,11 @@ export default function DestinationsPage() {
                     ) : (
                       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span style={{ fontSize: '32px', opacity: 0.3 }}>🏔️</span>
+                      </div>
+                    )}
+                    {d.featured && (
+                      <div style={{ position: 'absolute', top: '12px', left: '12px', backgroundColor: 'rgba(201,168,76,0.92)', color: '#000', padding: '4px 10px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                        ★ Featured
                       </div>
                     )}
                     {isAssessed && (

@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import Navbar from '@/components/Navbar'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
@@ -103,6 +104,7 @@ export default function DestinationDetailClient({
   attractionJsonLd: object
 }) {
   const { lang } = useLang()
+  const [bookHovered, setBookHovered] = useState(false)
 
   const images: string[] = destination.image_urls ?? []
   const heroImage = images[0] ?? null
@@ -263,7 +265,12 @@ export default function DestinationDetailClient({
             )}
 
             {/* Book button */}
-            <a href="/contact" style={{ display: 'block', width: '100%', backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none', textAlign: 'center' as const, boxSizing: 'border-box' as const }}>
+            <a
+              href="/contact"
+              onMouseEnter={() => setBookHovered(true)}
+              onMouseLeave={() => setBookHovered(false)}
+              style={{ display: 'block', width: '100%', backgroundColor: bookHovered ? 'var(--color-gold-light)' : 'var(--color-gold)', color: 'var(--color-black)', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none', textAlign: 'center' as const, boxSizing: 'border-box' as const, transform: bookHovered ? 'translateY(-1px)' : 'none', transition: 'background-color 0.15s, transform 0.15s' }}
+            >
               {tr('detail_book', lang)}
             </a>
           </div>

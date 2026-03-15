@@ -1,6 +1,6 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLang, type Lang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
 
@@ -13,7 +13,14 @@ const LANG_OPTIONS: { code: Lang; label: string }[] = [
 export default function Navbar() {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
   const { lang, setLang } = useLang()
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   const links = [
     { href: '/',             labelKey: 'nav_home'         },
@@ -28,7 +35,7 @@ export default function Navbar() {
 
   return (
     <>
-      <nav style={{ backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50 }}>
+      <nav className={scrolled ? 'nav-scrolled' : ''} style={{ backgroundColor: 'var(--color-white)', borderBottom: '1px solid var(--color-cream-border)', position: 'sticky', top: 0, zIndex: 50, transition: 'box-shadow 0.2s' }}>
         <div className="nav-inner">
 
           {/* Logo */}
@@ -41,7 +48,7 @@ export default function Navbar() {
           {/* Desktop links */}
           <div className="nav-links-desktop">
             {links.map(link => (
-              <a key={link.href} href={link.href} style={{
+              <a key={link.href} href={link.href} className="nav-link" style={{
                 color: isActive(link.href) ? 'var(--color-black)' : 'var(--color-gray-600)',
                 fontSize: '13px',
                 textDecoration: 'none',

@@ -28,6 +28,7 @@ export default function GuidesPage() {
   const [error, setError] = useState<string | null>(null)
   const [province, setProvince] = useState('all')
   const [language, setLanguage] = useState('all')
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   useEffect(() => {
     supabase
@@ -153,7 +154,12 @@ export default function GuidesPage() {
         ) : (
           <div className="grid-3">
             {filtered.map(g => (
-              <div key={g.id} style={{ backgroundColor: '#111', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column' }}>
+              <div
+                key={g.id}
+                onMouseEnter={() => setHoveredId(g.id)}
+                onMouseLeave={() => setHoveredId(null)}
+                style={{ backgroundColor: '#111', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${hoveredId === g.id ? 'rgba(201,168,76,0.35)' : 'rgba(255,255,255,0.07)'}`, display: 'flex', flexDirection: 'column', transform: hoveredId === g.id ? 'translateY(-4px)' : 'none', boxShadow: hoveredId === g.id ? '0 16px 48px rgba(0,0,0,0.45)' : 'none', transition: 'border-color 0.2s, transform 0.22s, box-shadow 0.22s' }}
+              >
 
                 {/* Card header — photo + name + verified */}
                 <div style={{ padding: '28px 24px 20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
