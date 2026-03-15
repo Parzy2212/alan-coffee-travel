@@ -34,6 +34,20 @@ ${context}`
   ]
 
   // 4. Call Anthropic
+  const requestBody = {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    system: systemPrompt,
+    messages,
+  }
+
+  console.log('[anthropic] outgoing request:', {
+    model: requestBody.model,
+    max_tokens: requestBody.max_tokens,
+    messageCount: messages.length,
+    apiKeyPrefix: apiKey.slice(0, 10) + '…',
+  })
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -41,19 +55,20 @@ ${context}`
       'x-api-key': apiKey,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
-    }),
+    body: JSON.stringify(requestBody),
   })
 
+  const rawBody = await res.text()
+  console.log('[anthropic] response status:', res.status)
+  console.log('[anthropic] response body:', rawBody)
+
   if (!res.ok) {
-    const errText = await res.text()
-    return NextResponse.json({ error: errText }, { status: res.status })
+    return NextResponse.json(
+      { error: rawBody, status: res.status, hint: 'See Cloudflare Workers logs for details' },
+      { status: res.status }
+    )
   }
 
-  const data = await res.json()
+  const data = JSON.parse(rawBody)
   return NextResponse.json(data)
 }
