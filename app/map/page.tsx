@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useLang } from '@/contexts/LanguageContext'
+import { tr } from '@/lib/translations'
 
 type Destination = {
   id: string
@@ -17,6 +19,7 @@ type Destination = {
 type ViewLevel = 'laos' | 'province' | 'district'
 
 export default function MapPage() {
+  const { lang } = useLang()
   const [level, setLevel] = useState<ViewLevel>('laos')
   const [selectedProvince, setSelectedProvince] = useState<{ name: string } | null>(null)
   const [selectedDistrict, setSelectedDistrict] = useState<{ name: string; slug: string } | null>(null)
@@ -74,6 +77,24 @@ export default function MapPage() {
     }
   }
 
+  const eyebrowText = level === 'laos'
+    ? `${tr('map_bc_laos', lang)} — 18 ${tr('map_province_suffix', lang)}s`
+    : level === 'province'
+    ? `${selectedProvince?.name} ${tr('map_province_suffix', lang)}`
+    : `${selectedDistrict?.name} ${tr('map_district_suffix', lang)}`
+
+  const h1Text = level === 'laos'
+    ? tr('map_h1_laos', lang)
+    : level === 'province'
+    ? tr('map_h1_province', lang)
+    : tr('map_h1_district', lang)
+
+  // Strings passed into the Leaflet map (captured at mount)
+  const mapStrings = {
+    guideAvail: tr('map_guide_avail', lang),
+    details:    tr('map_details', lang),
+  }
+
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
 
@@ -85,7 +106,7 @@ export default function MapPage() {
           <span style={{ color: 'var(--color-gray-400)', fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
         </a>
         <a href="/destinations" style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          All Destinations →
+          {tr('map_page_all_dest', lang)}
         </a>
       </div>
 
@@ -96,11 +117,11 @@ export default function MapPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
               <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>
-                {level === 'laos' ? 'Laos — 18 Provinces' : level === 'province' ? `${selectedProvince?.name} Province` : `${selectedDistrict?.name} District`}
+                {eyebrowText}
               </span>
             </div>
             <h1 className="hero-h1-md" style={{ fontFamily: 'var(--font-heading)', color: 'white' }}>
-              {level === 'laos' ? 'Explore Laos.' : level === 'province' ? 'Select a District.' : 'Destinations.'}
+              {h1Text}
             </h1>
           </div>
 
@@ -110,7 +131,7 @@ export default function MapPage() {
               <span
                 onClick={() => { if (level !== 'laos') goToLaos() }}
                 style={{ color: level === 'laos' ? 'var(--color-gold)' : 'rgba(255,255,255,0.4)', fontSize: '12px', cursor: level !== 'laos' ? 'pointer' : 'default' }}
-              >Laos</span>
+              >{tr('map_bc_laos', lang)}</span>
               {level !== 'laos' && <>
                 <span style={{ color: 'rgba(255,255,255,0.2)' }}>›</span>
                 <span
@@ -126,7 +147,7 @@ export default function MapPage() {
 
             {level !== 'laos' && (
               <button onClick={handleBack} style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 18px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
-                ← Back
+                {tr('map_back', lang)}
               </button>
             )}
           </div>
@@ -139,6 +160,7 @@ export default function MapPage() {
         {/* MAP */}
         <div className="map-container">
           <InteractiveMap
+            strings={mapStrings}
             onSelectProvince={(province) => {
               setSelectedProvince(province)
               setLevel('province')
@@ -157,11 +179,11 @@ export default function MapPage() {
 
           {level === 'laos' && (
             <div>
-              <p style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>How to Navigate</p>
+              <p style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>{tr('map_how_to', lang)}</p>
               {[
-                { step: '1', text: 'Hover any province to highlight it' },
-                { step: '2', text: 'Click any province to explore its districts' },
-                { step: '3', text: 'Click a district to see destinations & map pins' },
+                { step: '1', text: tr('map_nav_step1', lang) },
+                { step: '2', text: tr('map_nav_step2', lang) },
+                { step: '3', text: tr('map_nav_step3', lang) },
               ].map(item => (
                 <div key={item.step} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
                   <span style={{ backgroundColor: 'var(--color-gold)', color: '#0a0a0a', borderRadius: '999px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800, flexShrink: 0 }}>{item.step}</span>
@@ -169,8 +191,8 @@ export default function MapPage() {
                 </div>
               ))}
               <div style={{ marginTop: '28px', backgroundColor: 'rgba(201,168,76,0.08)', borderRadius: '8px', padding: '16px', border: '1px solid rgba(201,168,76,0.2)' }}>
-                <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>★ Starting Point</p>
-                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', lineHeight: 1.6 }}>Alan Coffee & Travel is based in Attapeu — Southern Laos. Click it to begin.</p>
+                <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>{tr('map_starting_point', lang)}</p>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', lineHeight: 1.6 }}>{tr('map_starting_text', lang)}</p>
               </div>
             </div>
           )}
@@ -178,7 +200,9 @@ export default function MapPage() {
           {level === 'province' && (
             <div>
               <p style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '6px' }}>{selectedProvince?.name}</p>
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px' }}>{provinceDistricts.length} Districts — click one to explore</p>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px' }}>
+                {provinceDistricts.length} {tr('map_districts_label', lang)} — {tr('map_district_explore', lang)}
+              </p>
               {provinceDistricts.map(d => (
                 <div key={d.slug}
                   onClick={() => {
@@ -196,7 +220,7 @@ export default function MapPage() {
           {level === 'district' && (
             <div>
               <p style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '6px' }}>{selectedDistrict?.name}</p>
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px' }}>Click a pin on the map to view details</p>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', marginBottom: '20px' }}>{tr('map_pin_hint', lang)}</p>
 
               {loading ? (
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '10px' }}>
@@ -206,8 +230,10 @@ export default function MapPage() {
                 </div>
               ) : destinations.length === 0 ? (
                 <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '24px', textAlign: 'center' as const, border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '13px', lineHeight: 1.7 }}>No destinations yet.<br />Add via Admin Panel.</p>
-                  <a href="/admin" style={{ display: 'inline-block', marginTop: '12px', color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>Go to Admin →</a>
+                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '13px', lineHeight: 1.7 }}>
+                    {tr('map_no_dest', lang)}<br />{tr('map_no_dest_admin', lang)}
+                  </p>
+                  <a href="/admin" style={{ display: 'inline-block', marginTop: '12px', color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>{tr('map_go_admin', lang)}</a>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '10px' }}>
@@ -216,9 +242,9 @@ export default function MapPage() {
                       <p style={{ color: 'white', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>{dest.title_en}</p>
                       <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', lineHeight: 1.5, marginBottom: '10px' }}>{dest.excerpt_en}</p>
                       {dest.transport_price && <p style={{ color: 'var(--color-gold)', fontSize: '12px', marginBottom: '6px', fontWeight: 600 }}>🚗 {dest.transport_price}</p>}
-                      {dest.has_guide && <p style={{ color: '#4caf50', fontSize: '12px', marginBottom: '10px' }}>✓ Guide Available</p>}
+                      {dest.has_guide && <p style={{ color: '#4caf50', fontSize: '12px', marginBottom: '10px' }}>✓ {tr('map_guide_avail', lang)}</p>}
                       <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                        <a href={`/destinations/${dest.slug}`} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', color: 'white', padding: '8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, textDecoration: 'none', textAlign: 'center' as const }}>Details</a>
+                        <a href={`/destinations/${dest.slug}`} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', color: 'white', padding: '8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, textDecoration: 'none', textAlign: 'center' as const }}>{tr('map_details', lang)}</a>
                         {dest.location_lat && dest.location_lng && (
                           <a href={`https://www.google.com/maps?q=${dest.location_lat},${dest.location_lng}`} target="_blank" style={{ flex: 1, backgroundColor: 'var(--color-gold)', color: '#0a0a0a', padding: '8px', borderRadius: '4px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', textAlign: 'center' as const }}>
                             Google Maps 🗺️
@@ -237,10 +263,11 @@ export default function MapPage() {
   )
 }
 
-function InteractiveMap({ onSelectProvince, onSelectDistrict, onDistrictsLoaded }: {
+function InteractiveMap({ onSelectProvince, onSelectDistrict, onDistrictsLoaded, strings }: {
   onSelectProvince: (p: { name: string }) => void
   onSelectDistrict: (d: { name: string; slug: string }) => void
   onDistrictsLoaded: (districts: { name: string; slug: string }[]) => void
+  strings: { guideAvail: string; details: string }
 }) {
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -396,9 +423,9 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict, onDistrictsLoaded 
                       <p style="color:white;font-weight:700;font-size:15px;margin:0 0 6px">${dest.title_en}</p>
                       <p style="color:rgba(255,255,255,0.45);font-size:12px;line-height:1.5;margin:0 0 10px">${dest.excerpt_en || ''}</p>
                       ${dest.transport_price ? `<p style="color:#c9a84c;font-size:12px;margin:0 0 6px">🚗 ${dest.transport_price}</p>` : ''}
-                      ${dest.has_guide ? `<p style="color:#4caf50;font-size:12px;margin:0 0 10px">✓ Guide Available</p>` : ''}
+                      ${dest.has_guide ? `<p style="color:#4caf50;font-size:12px;margin:0 0 10px">✓ ${strings.guideAvail}</p>` : ''}
                       <div style="display:flex;gap:8px;margin-top:12px">
-                        <a href="/destinations/${dest.slug}" style="flex:1;background:rgba(255,255,255,0.08);color:white;padding:8px;border-radius:4px;font-size:12px;font-weight:600;text-decoration:none;text-align:center">Details</a>
+                        <a href="/destinations/${dest.slug}" style="flex:1;background:rgba(255,255,255,0.08);color:white;padding:8px;border-radius:4px;font-size:12px;font-weight:600;text-decoration:none;text-align:center">${strings.details}</a>
                         <a href="https://www.google.com/maps?q=${dest.location_lat},${dest.location_lng}" target="_blank" style="flex:1;background:#c9a84c;color:#0a0a0a;padding:8px;border-radius:4px;font-size:12px;font-weight:700;text-decoration:none;text-align:center">Google Maps 🗺️</a>
                       </div>
                     </div>
