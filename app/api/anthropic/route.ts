@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server'
 export const runtime = 'edge'
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is not configured.' }, { status: 500 })
+  const apiKey = process.env.GROQ_API_KEY
+  if (!apiKey) return NextResponse.json({ error: 'GROQ_API_KEY is not configured.' }, { status: 500 })
 
   let body: { question?: string; context?: string; history?: { role: string; content: string }[] }
   try { body = await request.json() }
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const { question, context = '', history = [] } = body
   if (!question) return NextResponse.json({ error: 'question is required.' }, { status: 400 })
 
-  const systemInstruction = `You are an expert business analyst AI for Alan Cafe, a specialty coffee shop in Vientiane, Laos.
+  const systemPrompt = `You are an expert business analyst AI for Alan Cafe, a specialty coffee shop in Vientiane, Laos.
 
 About Alan Cafe:
 - Specialty coffee shop in Laos serving coffee, drinks, and food
@@ -32,31 +32,27 @@ Your role:
 Current business data:
 ${context}`
 
-  // Build Gemini contents array from history + current question
-  const contents = [
+  const messages = [
+    { role: 'system', content: systemPrompt },
     ...history
       .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      })),
-    { role: 'user', parts: [{ text: question }] },
+      .map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: question },
   ]
 
   const requestBody = {
-    system_instruction: { parts: [{ text: systemInstruction }] },
-    contents,
-    generationConfig: {
-      maxOutputTokens: 1024,
-      temperature: 0.7,
-    },
+    model: 'llama-3.3-70b-versatile',
+    messages,
+    max_tokens: 1024,
+    temperature: 0.7,
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${apiKey}`
-
-  const res = await fetch(url, {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'authorization': `Bearer ${apiKey}`,
+    },
     body: JSON.stringify(requestBody),
   })
 
@@ -69,15 +65,13 @@ ${context}`
     )
   }
 
-  const geminiData = JSON.parse(rawBody)
+  const groqData = JSON.parse(rawBody)
+  const text = groqData?.choices?.[0]?.message?.content ?? ''
 
-  // Extract text from Gemini response and shape it like Anthropic's format
-  // so the frontend (which reads data.content[0].text) works unchanged
-  const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-
+  // Shape response like Anthropic format so frontend (data.content[0].text) works unchanged
   return NextResponse.json({
     content: [{ type: 'text', text }],
-    model: 'gemini-3.1-pro-preview',
+    model: 'llama-3.3-70b-versatile',
     role: 'assistant',
   })
 }
