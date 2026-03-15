@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'edge'
 
+const ACCOUNT_ID = '197da65d91ae42c6ac792a77ba8e08ba'
+const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const CF_AI_URL = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/ai/run/${MODEL}`
+
 export async function POST(request: Request) {
-  const apiKey = process.env.GROQ_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'GROQ_API_KEY is not configured.' }, { status: 500 })
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN
+  if (!apiToken) return NextResponse.json({ error: 'CLOUDFLARE_API_TOKEN is not configured.' }, { status: 500 })
 
   let body: { question?: string; context?: string; history?: { role: string; content: string }[] }
   try { body = await request.json() }
@@ -40,49 +44,39 @@ ${context}`
     { role: 'user', content: question },
   ]
 
-  const requestBody = {
-    model: 'llama-3.3-70b-versatile',
-    messages,
-    max_tokens: 1024,
-    temperature: 0.7,
-  }
-
   let res: Response
   let rawBody: string
   try {
-    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    res = await fetch(CF_AI_URL, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'authorization': `Bearer ${apiKey}`,
+        'authorization': `Bearer ${apiToken}`,
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({ messages }),
     })
     rawBody = await res.text()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[groq] fetch failed:', msg)
-    return NextResponse.json({ error: `Network error calling Groq: ${msg}` }, { status: 502 })
+    console.error('[cf-ai] fetch failed:', msg)
+    return NextResponse.json({ error: `Network error calling Cloudflare AI: ${msg}` }, { status: 502 })
   }
 
-  console.log('[groq] status:', res.status, 'body:', rawBody.slice(0, 300))
+  console.log('[cf-ai] status:', res.status, 'body:', rawBody.slice(0, 300))
 
   if (!res.ok) {
     let parsed: unknown
     try { parsed = JSON.parse(rawBody) } catch { parsed = rawBody }
-    return NextResponse.json(
-      { error: parsed, status: res.status },
-      { status: res.status }
-    )
+    return NextResponse.json({ error: parsed, status: res.status }, { status: res.status })
   }
 
-  const groqData = JSON.parse(rawBody)
-  const text = groqData?.choices?.[0]?.message?.content ?? ''
+  const cfData = JSON.parse(rawBody)
+  const text = cfData?.result?.response ?? ''
 
   // Shape response like Anthropic format so frontend (data.content[0].text) works unchanged
   return NextResponse.json({
     content: [{ type: 'text', text }],
-    model: 'llama-3.3-70b-versatile',
+    model: MODEL,
     role: 'assistant',
   })
 }
