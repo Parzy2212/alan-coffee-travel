@@ -35,4 +35,6 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 Deployed on Cloudflare Pages via GitHub Actions. Push to `main` triggers auto-deploy.
 
+<!-- Sprint 3: AI Analyst, Leave Request, Audit Log — 2026-03-15 -->
+
 
