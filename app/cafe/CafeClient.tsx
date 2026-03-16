@@ -10,8 +10,9 @@ import { getFaceApi } from '@/lib/faceapi'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GEMINI_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? ''
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`
+const SUPABASE_URL = 'https://fmsdfcsqdpdlppucuptn.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtc2RmY3NxZHBkbHBwdWN1cHRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMTgxNDksImV4cCI6MjA4NzU5NDE0OX0.LQ8kzdNml5HK4m12Mj4fPm2FL8MXc17vDAfrKl6sRS4'
+const AI_ANALYST_URL = `${SUPABASE_URL}/functions/v1/ai-analyst`
 
 const GOLD    = '#c9a84c'
 const GOLD_DIM = '#c9a84c88'
@@ -4148,18 +4149,16 @@ ${context}`
           .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
         { role: 'user', parts: [{ text: question }] },
       ]
-      const res = await fetch(GEMINI_URL, {
+      const res = await fetch(AI_ANALYST_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
-        }),
+        headers: {
+          'content-type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ messages: contents, context: systemInstruction }),
       })
       const json = await res.json()
-      const answer = json?.candidates?.[0]?.content?.parts?.[0]?.text
-        ?? JSON.stringify(json?.error ?? json)
+      const answer = json?.text ?? JSON.stringify(json?.error ?? json)
       setMessages(m => [...m, { role: 'assistant', content: answer, ts: Date.now() }])
     } catch {
       setMessages(m => [...m, { role: 'assistant', content: 'ไม่สามารถเชื่อมต่อ Alan AI ได้ กรุณาลองใหม่', ts: Date.now() }])
