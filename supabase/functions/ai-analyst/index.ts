@@ -13,9 +13,9 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
   }
 
-  const geminiKey = Deno.env.get('GEMINI_API_KEY')
-  if (!geminiKey) {
-    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not set' }), {
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY')
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: 'OPENROUTER_API_KEY not set' }), {
       status: 500,
       headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
     })
@@ -23,20 +23,30 @@ Deno.serve(async (req) => {
 
   const { messages, context } = await req.json()
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`
+  // Convert Gemini-format messages to OpenAI format and prepend system message
+  const openaiMessages = [
+    { role: 'system', content: context },
+    ...messages.map((m: { role: string; parts: { text: string }[] }) => ({
+      role: m.role === 'model' ? 'assistant' : 'user',
+      content: m.parts[0]?.text ?? '',
+    })),
+  ]
 
-  const geminiRes = await fetch(geminiUrl, {
+  const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: context }] },
-      contents: messages,
-      generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+      model: 'meta-llama/llama-3.3-70b-instruct',
+      messages: openaiMessages,
+      max_tokens: 1024,
     }),
   })
 
-  const json = await geminiRes.json()
-  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text
+  const json = await orRes.json()
+  const text = json?.choices?.[0]?.message?.content
     ?? JSON.stringify(json?.error ?? json)
 
   return new Response(JSON.stringify({ text }), {
