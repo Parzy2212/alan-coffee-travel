@@ -5,8 +5,8 @@ export const runtime = 'edge'
 const MODEL = 'gemini-2.0-flash'
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is not configured.' }, { status: 500 })
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  if (!apiKey) return NextResponse.json({ error: 'NEXT_PUBLIC_GEMINI_API_KEY is not configured.' }, { status: 500 })
 
   let body: { question?: string; context?: string; history?: { role: string; content: string }[] }
   try { body = await request.json() }
