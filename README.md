@@ -40,6 +40,6 @@ Deployed on Cloudflare Pages via GitHub Actions. Push to `main` triggers auto-de
 <!-- AI Analyst v2: Alan persona, 7-source context, markdown, proactive briefing — 2026-03-16 -->
 <!-- Redeploy — 2026-03-16 -->
 <!-- Redeploy: NEXT_PUBLIC_GEMINI_API_KEY — 2026-03-16 -->
-<!-- Redeploy — 2026-03-16h -->
+<!-- Redeploy — 2026-03-16i -->
 
 
