@@ -1,22 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getRequestContext } from '@cloudflare/next-on-pages'
 
 export const runtime = 'edge'
 
-const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const MODEL = 'gemini-2.0-flash'
 
 export async function POST(request: Request) {
-  // Access the AI binding from wrangler.toml [ai] binding = "AI"
-  let ai: { run: (model: string, input: unknown) => Promise<unknown> }
-  try {
-    const { env } = getRequestContext()
-    ai = (env as unknown as { AI: typeof ai }).AI
-    if (!ai) throw new Error('AI binding not found in env')
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[cf-ai] binding error:', msg)
-    return NextResponse.json({ error: `Cloudflare AI binding unavailable: ${msg}` }, { status: 500 })
-  }
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is not configured.' }, { status: 500 })
 
   let body: { question?: string; context?: string; history?: { role: string; content: string }[] }
   try { body = await request.json() }
@@ -25,7 +15,7 @@ export async function POST(request: Request) {
   const { question, context = '', history = [] } = body
   if (!question) return NextResponse.json({ error: 'question is required.' }, { status: 400 })
 
-  const systemPrompt = `You are "Alan" — a world-class F&B business consultant with 20 years of hands-on experience in Southeast Asian café markets. You are the embedded AI intelligence inside Alan Cafe's proprietary Cafe OS in Vientiane, Laos.
+  const systemInstruction = `You are "Alan" — a world-class F&B business consultant with 20 years of hands-on experience in Southeast Asian café markets. You are the embedded AI intelligence inside Alan Cafe's proprietary Cafe OS in Vientiane, Laos.
 
 About Alan Cafe:
 - Specialty coffee shop in Vientiane, Laos serving coffee, drinks, and food
@@ -51,24 +41,47 @@ Your communication style:
 Current real-time business data:
 ${context}`
 
-  const messages = [
-    { role: 'system', content: systemPrompt },
+  const contents = [
     ...history
       .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => ({ role: m.role, content: m.content })),
-    { role: 'user', content: question },
+      .map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      })),
+    { role: 'user', parts: [{ text: question }] },
   ]
 
-  let result: unknown
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`
+
+  let res: Response
+  let rawBody: string
   try {
-    result = await ai.run(MODEL, { messages })
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents,
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+      }),
+    })
+    rawBody = await res.text()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[cf-ai] run error:', msg)
-    return NextResponse.json({ error: `AI run failed: ${msg}` }, { status: 502 })
+    console.error('[gemini] fetch failed:', msg)
+    return NextResponse.json({ error: `Network error calling Gemini: ${msg}` }, { status: 502 })
   }
 
-  const text = (result as { response?: string })?.response ?? ''
+  console.log('[gemini] status:', res.status, 'body:', rawBody.slice(0, 300))
+
+  if (!res.ok) {
+    let parsed: unknown
+    try { parsed = JSON.parse(rawBody) } catch { parsed = rawBody }
+    return NextResponse.json({ error: parsed, status: res.status }, { status: res.status })
+  }
+
+  const data = JSON.parse(rawBody)
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
 
   // Shape response like Anthropic format so frontend (data.content[0].text) works unchanged
   return NextResponse.json({
