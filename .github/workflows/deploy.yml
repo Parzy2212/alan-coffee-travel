@@ -29,7 +29,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Deploy
-        run: npx wrangler pages deploy .vercel/output/static --project-name=alan-pages --commit-dirty=true
+        run: npx wrangler pages deploy .vercel/output/static --project-name=alan-pages --commit-dirty=true --keep-vars
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 197da65d91ae42c6ac792a77ba8e08ba
