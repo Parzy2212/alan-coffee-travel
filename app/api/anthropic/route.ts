@@ -1,17 +1,22 @@
 import { NextResponse } from 'next/server'
+import { getRequestContext } from '@cloudflare/next-on-pages'
 
 export const runtime = 'edge'
 
-const ACCOUNT_ID = '197da65d91ae42c6ac792a77ba8e08ba'
 const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
-const CF_AI_URL = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/ai/run/${MODEL}`
 
 export async function POST(request: Request) {
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN
-  if (!apiToken) return NextResponse.json({
-    error: 'CLOUDFLARE_API_TOKEN is not configured.',
-    allEnvKeys: Object.keys(process.env).filter(k => k.includes('CLOUDFLARE')).join(','),
-  }, { status: 500 })
+  // Access the AI binding from wrangler.toml [ai] binding = "AI"
+  let ai: { run: (model: string, input: unknown) => Promise<unknown> }
+  try {
+    const { env } = getRequestContext()
+    ai = (env as unknown as { AI: typeof ai }).AI
+    if (!ai) throw new Error('AI binding not found in env')
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[cf-ai] binding error:', msg)
+    return NextResponse.json({ error: `Cloudflare AI binding unavailable: ${msg}` }, { status: 500 })
+  }
 
   let body: { question?: string; context?: string; history?: { role: string; content: string }[] }
   try { body = await request.json() }
@@ -54,34 +59,16 @@ ${context}`
     { role: 'user', content: question },
   ]
 
-  let res: Response
-  let rawBody: string
+  let result: unknown
   try {
-    res = await fetch(CF_AI_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'authorization': `Bearer ${apiToken}`,
-      },
-      body: JSON.stringify({ messages }),
-    })
-    rawBody = await res.text()
+    result = await ai.run(MODEL, { messages })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[cf-ai] fetch failed:', msg)
-    return NextResponse.json({ error: `Network error calling Cloudflare AI: ${msg}` }, { status: 502 })
+    console.error('[cf-ai] run error:', msg)
+    return NextResponse.json({ error: `AI run failed: ${msg}` }, { status: 502 })
   }
 
-  console.log('[cf-ai] status:', res.status, 'body:', rawBody.slice(0, 300))
-
-  if (!res.ok) {
-    let parsed: unknown
-    try { parsed = JSON.parse(rawBody) } catch { parsed = rawBody }
-    return NextResponse.json({ error: parsed, status: res.status }, { status: res.status })
-  }
-
-  const cfData = JSON.parse(rawBody)
-  const text = cfData?.result?.response ?? ''
+  const text = (result as { response?: string })?.response ?? ''
 
   // Shape response like Anthropic format so frontend (data.content[0].text) works unchanged
   return NextResponse.json({
