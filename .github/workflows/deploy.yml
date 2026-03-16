@@ -27,7 +27,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_GEMINI_API_KEY: "TEST123"
+          NEXT_PUBLIC_GEMINI_API_KEY: AIzaSyDAPY7qhZYATsqCX7QL_3lMi9PPiK5m5zE
 
       - name: Deploy
         run: npx wrangler pages deploy .vercel/output/static --project-name=alan-pages --commit-dirty=true
