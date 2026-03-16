@@ -8,7 +8,10 @@ const CF_AI_URL = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/a
 
 export async function POST(request: Request) {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN
-  if (!apiToken) return NextResponse.json({ error: 'CLOUDFLARE_API_TOKEN is not configured.' }, { status: 500 })
+  if (!apiToken) return NextResponse.json({
+    error: 'CLOUDFLARE_API_TOKEN is not configured.',
+    allEnvKeys: Object.keys(process.env).filter(k => k.includes('CLOUDFLARE')).join(','),
+  }, { status: 500 })
 
   let body: { question?: string; context?: string; history?: { role: string; content: string }[] }
   try { body = await request.json() }
