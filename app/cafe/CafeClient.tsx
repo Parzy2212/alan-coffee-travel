@@ -10,6 +10,9 @@ import { getFaceApi } from '@/lib/faceapi'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const GEMINI_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? ''
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`
+
 const GOLD    = '#c9a84c'
 const GOLD_DIM = '#c9a84c88'
 const BLACK   = '#0a0a0a'
@@ -4118,16 +4121,45 @@ function AITab() {
     setMessages(m => [...m, { role: 'user', content: question, ts: Date.now() }])
     setInput('')
     setLoading(true)
+
+    const systemInstruction = `You are "Alan" — a world-class F&B business consultant with 20 years of hands-on experience in Southeast Asian café markets. You are the embedded AI intelligence inside Alan Cafe's proprietary Cafe OS in Vientiane, Laos.
+
+About Alan Cafe:
+- Specialty coffee shop in Vientiane, Laos serving coffee, drinks, and food
+- Runs a custom Cafe OS with POS, inventory, staff, CRM, and finance modules
+- Customers are a mix of local Lao people and expats
+
+Your communication style:
+- Always structure responses as: 📊 สรุปข้อมูล → 💡 ข้อค้นพบสำคัญ → ✅ แผนปฏิบัติ (numbered, prioritized by urgency)
+- Speak Thai by default. Switch to Lao if user writes Lao. Switch to English if user writes English.
+- ALWAYS reference specific menu item names, real staff names, and actual numbers — never give generic advice
+- Benchmark against F&B industry standards: food cost 20-28%, beverage margin 65-75%, labor 25-30%, net profit 10-15%
+- Think proactively: identify declining trends BEFORE they become problems
+- For low stock: state urgency level (🔴 Critical / 🟡 Warning) and days until stockout
+- Keep responses concise but complete. Use **bold** for key numbers and bullet points for lists.
+
+Current real-time business data:
+${context}`
+
     try {
-      const res = await fetch('/api/anthropic', {
+      const contents = [
+        ...history
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+        { role: 'user', parts: [{ text: question }] },
+      ]
+      const res = await fetch(GEMINI_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, context, history }),
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+        }),
       })
       const json = await res.json()
-      const answer = json.content?.[0]?.text
-        ?? (typeof json.error === 'string' ? json.error : JSON.stringify(json.error))
-        ?? 'เกิดข้อผิดพลาด'
+      const answer = json?.candidates?.[0]?.content?.parts?.[0]?.text
+        ?? JSON.stringify(json?.error ?? json)
       setMessages(m => [...m, { role: 'assistant', content: answer, ts: Date.now() }])
     } catch {
       setMessages(m => [...m, { role: 'assistant', content: 'ไม่สามารถเชื่อมต่อ Alan AI ได้ กรุณาลองใหม่', ts: Date.now() }])
