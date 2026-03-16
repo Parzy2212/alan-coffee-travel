@@ -39,5 +39,6 @@ Deployed on Cloudflare Pages via GitHub Actions. Push to `main` triggers auto-de
 <!-- AI: switched to Cloudflare Workers AI (llama-3.3-70b-instruct-fp8-fast) — 2026-03-16 -->
 <!-- AI Analyst v2: Alan persona, 7-source context, markdown, proactive briefing — 2026-03-16 -->
 <!-- Redeploy — 2026-03-16 -->
+<!-- Redeploy: NEXT_PUBLIC_GEMINI_API_KEY — 2026-03-16 -->
 
 
