@@ -4528,9 +4528,11 @@ function RecipeCostTab() {
   function calcCost(items: FormulaItem[], field: 'qty_normal' | 'qty_less' | 'qty_more', ings: Ingredient[], bases: BaseRecipe[]) {
     return items.reduce((s, item) => {
       if (item.base_id) {
-        const base = bases.find(b => b.id === item.base_id)
-        if (!base || base.yield_qty <= 0) return s
-        return s + item[field] * calcBaseCost(base, ings) / base.yield_qty
+        const base      = bases.find(b => b.id === item.base_id)
+        if (!base) return s
+        const baseYield = base.items.reduce((s2, i) => s2 + i.qty, 0)
+        if (baseYield <= 0) return s
+        return s + item[field] * calcBaseCost(base, ings) / baseYield
       }
       const ing = ings.find(i => i.id === item.ingredient_id)
       return s + (ing ? item[field] * ing.pkg_cost / ing.pkg_size : 0)
@@ -4616,14 +4618,14 @@ function RecipeCostTab() {
 
   // ── Base Recipes Panel ────────────────────────────────────────────────────
   function BaseRecipesPanel() {
-    type BaseForm = { name: string; unit: string; yield_qty: string; items: BaseIngItem[] }
+    type BaseForm = { name: string; unit: string; items: BaseIngItem[] }
     const [editId, setEditId] = useState<string | null>(null)
-    const [form, setForm]     = useState<BaseForm>({ name: '', unit: 'ml', yield_qty: '', items: [] })
+    const [form, setForm]     = useState<BaseForm>({ name: '', unit: 'ml', items: [] })
 
-    function startNew() { setEditId('new'); setForm({ name: '', unit: 'ml', yield_qty: '', items: [] }) }
+    function startNew() { setEditId('new'); setForm({ name: '', unit: 'ml', items: [] }) }
     function startEdit(b: BaseRecipe) {
       setEditId(b.id)
-      setForm({ name: b.name, unit: b.unit, yield_qty: String(b.yield_qty), items: b.items.map(i => ({ ...i })) })
+      setForm({ name: b.name, unit: b.unit, items: b.items.map(i => ({ ...i })) })
     }
     function addItem() {
       if (!ingredients.length) return
@@ -4635,8 +4637,8 @@ function RecipeCostTab() {
     function removeItem(idx: number) { setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) })) }
 
     function save() {
-      const yield_qty = parseFloat(form.yield_qty) || 0
-      if (!form.name || yield_qty <= 0) { setMsg('กรอกชื่อและปริมาณที่ได้'); return }
+      if (!form.name) { setMsg('กรอกชื่อสูตรพื้นฐาน'); return }
+      const yield_qty = form.items.reduce((s, i) => s + i.qty, 0)
       const entry: BaseRecipe = {
         id: editId === 'new' ? Date.now().toString() : editId!,
         name: form.name, unit: form.unit, yield_qty, items: form.items,
@@ -4645,30 +4647,27 @@ function RecipeCostTab() {
       setEditId(null); setMsg('บันทึกแล้ว')
     }
 
-    const previewCost = form.items.reduce((s, item) => {
+    const previewCost  = form.items.reduce((s, item) => {
       const ing = ingredients.find(i => i.id === item.ingredient_id)
       return s + (ing ? item.qty * ing.pkg_cost / ing.pkg_size : 0)
     }, 0)
-    const yieldQty    = parseFloat(form.yield_qty) || 0
-    const costPerUnit = yieldQty > 0 ? previewCost / yieldQty : 0
+    const autoYield    = form.items.reduce((s, item) => s + item.qty, 0)
+    const costPerUnit  = autoYield > 0 ? previewCost / autoYield : 0
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         <SectionCard title="สร้าง / แก้ไข สูตรพื้นฐาน" action={<button style={btnStyle(GOLD)} onClick={startNew}>+ สร้างสูตรพื้นฐาน</button>}>
           {editId !== null ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, alignItems: 'end' }}>
                 <Field label="ชื่อสูตรพื้นฐาน">
                   <input style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="เช่น นมมิกซ์, ไซรัปวนิลา" />
                 </Field>
-                <Field label="หน่วยผลลัพธ์">
+                <Field label="หน่วย">
                   <select style={inputStyle} value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}>
                     <option value="ml">ml</option>
                     <option value="g">g</option>
                   </select>
-                </Field>
-                <Field label={`ปริมาณที่ได้ (${form.unit})`}>
-                  <input style={inputStyle} type="number" min={0} value={form.yield_qty} onChange={e => setForm(f => ({ ...f, yield_qty: e.target.value }))} placeholder="เช่น 1000" />
                 </Field>
               </div>
 
@@ -4708,16 +4707,21 @@ function RecipeCostTab() {
               </div>
 
               {form.items.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div style={{ backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ปริมาณรวม (อัตโนมัติ)</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>{autoYield.toLocaleString()} {form.unit}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>= ผลรวมส่วนผสมทั้งหมด</div>
+                  </div>
                   <div style={{ backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ต้นทุนรวมต่อชุด</div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>{previewCost.toFixed(0)} ₭</div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>ได้ {form.yield_qty || '?'} {form.unit}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>ต้นทุน ÷ {autoYield.toLocaleString()} {form.unit}</div>
                   </div>
                   <div style={{ backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ราคาต่อหน่วย</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>{costPerUnit.toFixed(3)} ₭/{form.unit || '?'}</div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>อัตโนมัติจากราคาวัตถุดิบ</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ราคาต่อ{form.unit}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>{costPerUnit.toFixed(3)} ₭/{form.unit}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>คำนวณอัตโนมัติ</div>
                   </div>
                 </div>
               )}
@@ -4739,12 +4743,13 @@ function RecipeCostTab() {
                 <span>ชื่อ</span><span>ปริมาณที่ได้</span><span>ส่วนผสม</span><span>ราคา/หน่วย</span><span></span>
               </div>
               {baseRecipes.map(b => {
-                const totalCost   = calcBaseCost(b, ingredients)
-                const cpUnit      = b.yield_qty > 0 ? totalCost / b.yield_qty : 0
+                const totalCost = calcBaseCost(b, ingredients)
+                const autoQty   = b.items.reduce((s, i) => s + i.qty, 0)
+                const cpUnit    = autoQty > 0 ? totalCost / autoQty : 0
                 return (
                   <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderRadius: 8, backgroundColor: CARD2, alignItems: 'center', fontSize: 14 }}>
                     <span style={{ fontWeight: 600 }}>{b.name}</span>
-                    <span>{b.yield_qty.toLocaleString()} {b.unit}</span>
+                    <span>{autoQty.toLocaleString()} {b.unit}</span>
                     <span style={{ color: 'rgba(255,255,255,0.5)' }}>{b.items.length} รายการ</span>
                     <span style={{ color: GOLD, fontWeight: 700 }}>{cpUnit.toFixed(3)} ₭/{b.unit}</span>
                     <div style={{ display: 'flex', gap: 6 }}>
@@ -5016,7 +5021,8 @@ function RecipeCostTab() {
                             if (item.base_id) {
                               const base = baseRecipes.find(b => b.id === item.base_id)
                               if (!base) return null
-                              const cpUnit   = base.yield_qty > 0 ? calcBaseCost(base, ingredients) / base.yield_qty : 0
+                              const baseYield = base.items.reduce((s, i) => s + i.qty, 0)
+                              const cpUnit    = baseYield > 0 ? calcBaseCost(base, ingredients) / baseYield : 0
                               const itemCost = cpUnit * item.qty_normal
                               return (
                                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 3 }}>
