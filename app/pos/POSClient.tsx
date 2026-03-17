@@ -22,6 +22,7 @@ type Recipe = {
   category_id: string | null
   price_lak: number
   image_url: string | null
+  requires_customization: boolean | null
 }
 
 type CartItem = {
@@ -891,6 +892,7 @@ export default function POSClient() {
   const [editingCartKey, setEditingCartKey] = useState<string | null>(null)
   const [discount,       setDiscount]       = useState('')
   const [discountReason, setDiscountReason] = useState('')
+  const [searchQuery,    setSearchQuery]    = useState('')
   const [queueEntries,  setQueueEntries] = useState<QueueEntry[]>([])
   const [todayOrders,   setTodayOrders]  = useState<TodayOrder[]>([])
   const [showCharge,     setShowCharge]    = useState(false)
@@ -918,7 +920,7 @@ export default function POSClient() {
 
   // Fetch menu
   useEffect(() => {
-    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak, image_url')
+    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization')
       .eq('is_active', true).order('category')
       .then(({ data }) => { setRecipes((data as Recipe[]) ?? []); setLoading(false) })
   }, [])
@@ -943,6 +945,15 @@ export default function POSClient() {
     const familyIds = getFamilyIds(activeL1)
     return recipes.filter(r => r.category_id && familyIds.includes(r.category_id))
   }, [recipes, activeL1, activeL2, categories])
+
+  const displayRecipes = useMemo(() => {
+    if (!searchQuery.trim()) return filtered
+    const q = searchQuery.trim().toLowerCase()
+    return filtered.filter(r =>
+      r.product_name.toLowerCase().includes(q) ||
+      (r.product_name_lo ?? '').toLowerCase().includes(q)
+    )
+  }, [filtered, searchQuery])
 
   const subtotal    = cart.reduce((s, i) => s + i.recipe.price_lak * i.qty, 0)
   const totalItems  = cart.reduce((s, i) => s + i.qty, 0)
@@ -1121,6 +1132,29 @@ export default function POSClient() {
         {/* ── LEFT: MENU ───────────────────────────────────────────────────── */}
         <div style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
 
+          {/* Search bar */}
+          <div style={{ padding: '8px 14px', backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, position: 'relative' }}>
+            <span style={{ position: 'absolute', left: 26, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'rgba(255,255,255,0.25)', pointerEvents: 'none' }}>🔍</span>
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="ค้นหาเมนู..."
+              style={{
+                width: '100%', padding: '7px 32px 7px 32px', borderRadius: 8,
+                border: `1px solid ${searchQuery ? GOLD + '44' : 'rgba(255,255,255,0.08)'}`,
+                backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff',
+                fontSize: 13, outline: 'none', boxSizing: 'border-box' as const,
+              }}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} style={{
+                position: 'absolute', right: 22, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)',
+                fontSize: 16, cursor: 'pointer', lineHeight: 1, padding: 0,
+              }}>×</button>
+            )}
+          </div>
+
           {/* L1 filter */}
           <div style={{
             display: 'flex', gap: 6, padding: '10px 16px', backgroundColor: '#111',
@@ -1167,11 +1201,21 @@ export default function POSClient() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: 12 }}>
                 {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton" style={{ height: 108, borderRadius: 8 }} />)}
               </div>
-            ) : filtered.length === 0 ? (
-              <div style={{ textAlign: 'center', paddingTop: 80, color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>No items in this category</div>
+            ) : displayRecipes.length === 0 ? (
+              <div style={{ textAlign: 'center', paddingTop: 80, color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>
+                {searchQuery ? `ไม่พบ "${searchQuery}"` : 'No items in this category'}
+              </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: 12 }}>
-                {filtered.map(recipe => <MenuCard key={recipe.id} recipe={recipe} onAdd={() => setPendingRecipe(recipe)} />)}
+                {displayRecipes.map(recipe => (
+                  <MenuCard key={recipe.id} recipe={recipe} onAdd={() => {
+                    if (recipe.requires_customization === false) {
+                      addToCartWithCustomization(recipe, '')
+                    } else {
+                      setPendingRecipe(recipe)
+                    }
+                  }} />
+                ))}
               </div>
             )}
           </div>
@@ -1309,7 +1353,7 @@ export default function POSClient() {
           </div>
 
           {/* ── BOTTOM TABS ─────────────────────────────────────────────── */}
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', borderTop: '2px solid rgba(255,255,255,0.07)', maxHeight: 260, backgroundColor: '#0e0e0e' }}>
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', borderTop: '2px solid rgba(255,255,255,0.07)', maxHeight: '40vh', backgroundColor: '#0e0e0e' }}>
 
             {/* Tab bar */}
             <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
