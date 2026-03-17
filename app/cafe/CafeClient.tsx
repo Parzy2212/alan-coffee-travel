@@ -4704,17 +4704,44 @@ function RecipeCostTab() {
   // ── Pricing Advisor Panel ─────────────────────────────────────────────────
   function PricingPanel() {
     const [globalMargin, setGlobalMargin] = useState(60)
+    const [vatEnabled,   setVatEnabled]   = useState(false)
+    const [vatRate,      setVatRate]      = useState(10)
+    const [expanded,     setExpanded]     = useState<string | null>(null)
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <SectionCard title="ตั้งค่า Margin เป้าหมาย">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{ width: 260 }}>
-              <Field label="Gross Margin เป้าหมาย (%)">
-                <input style={inputStyle} type="number" min={0} max={99} value={globalMargin} onChange={e => setGlobalMargin(parseFloat(e.target.value) || 0)} />
-              </Field>
-            </div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 18 }}>แถวที่ Margin ต่ำกว่าเป้าจะแสดงเป็นสีแดง</div>
+        <SectionCard title="ตั้งค่า Margin และ VAT">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, alignItems: 'end' }}>
+            <Field label="Gross Margin เป้าหมาย (%)">
+              <input style={inputStyle} type="number" min={0} max={99} value={globalMargin}
+                onChange={e => setGlobalMargin(parseFloat(e.target.value) || 0)} />
+            </Field>
+            <Field label="คิด VAT หรือไม่">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 38 }}>
+                <button onClick={() => setVatEnabled(v => !v)} style={{
+                  width: 48, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', position: 'relative',
+                  backgroundColor: vatEnabled ? GOLD : 'rgba(255,255,255,0.12)', transition: 'background .2s',
+                }}>
+                  <span style={{
+                    position: 'absolute', top: 3, left: vatEnabled ? 25 : 3,
+                    width: 20, height: 20, borderRadius: '50%',
+                    backgroundColor: vatEnabled ? BLACK : 'rgba(255,255,255,0.5)',
+                    transition: 'left .2s',
+                  }} />
+                </button>
+                <span style={{ fontSize: 13, color: vatEnabled ? GOLD : 'rgba(255,255,255,0.4)' }}>
+                  {vatEnabled ? 'มี VAT' : 'ไม่มี VAT'}
+                </span>
+              </div>
+            </Field>
+            <Field label="อัตรา VAT (%)">
+              <input style={{ ...inputStyle, opacity: vatEnabled ? 1 : 0.35 }} type="number"
+                min={0} max={50} value={vatRate} disabled={!vatEnabled}
+                onChange={e => setVatRate(parseFloat(e.target.value) || 0)} />
+            </Field>
+          </div>
+          <div style={{ marginTop: 12, fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
+            แถวที่ Margin ต่ำกว่าเป้าจะแสดงเป็นสีแดง · คลิกแถวเพื่อดูรายละเอียดราคา
           </div>
         </SectionCard>
 
@@ -4725,25 +4752,63 @@ function RecipeCostTab() {
         ) : (
           <SectionCard title="ราคาแนะนำ vs ราคาจริง">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '8px 12px', fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                <span>เมนู</span><span>ต้นทุน/แก้ว</span><span>ราคาแนะนำ</span><span>ราคาจริง</span><span>Margin จริง</span>
+              <div style={{ display: 'grid', gridTemplateColumns: vatEnabled ? '2fr 1fr 1fr 1fr 1fr 1fr' : '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '8px 12px', fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                <span>เมนู</span>
+                <span>ต้นทุน/แก้ว</span>
+                <span>แนะนำ (ไม่รวม VAT)</span>
+                {vatEnabled && <span>แนะนำ (รวม VAT)</span>}
+                <span>ราคาจริง</span>
+                <span>Margin จริง</span>
               </div>
               {formulas.map(f => {
-                const cost          = calcCost(f.items, 'qty_normal', ingredients)
-                const target        = f.target_margin > 0 ? f.target_margin : globalMargin
-                const suggested     = target < 100 ? cost / (1 - target / 100) : 0
-                const actualMargin  = f.price_lak > 0 ? ((f.price_lak - cost) / f.price_lak) * 100 : 0
-                const isBad         = actualMargin < target
+                const cost         = calcCost(f.items, 'qty_normal', ingredients)
+                const target       = f.target_margin > 0 ? f.target_margin : globalMargin
+                const suggestedEx  = target < 100 ? cost / (1 - target / 100) : 0
+                const suggestedInc = suggestedEx * (1 + vatRate / 100)
+                const actualMargin = f.price_lak > 0 ? ((f.price_lak - cost) / f.price_lak) * 100 : 0
+                const isBad        = actualMargin < target
+                const isOpen       = expanded === f.id
+                // Breakdown values
+                const profit       = suggestedEx - cost
+                const vatAmt       = suggestedEx * (vatRate / 100)
+
                 return (
-                  <div key={f.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '14px 12px', borderRadius: 8, backgroundColor: isBad ? `${RED}0d` : CARD2, border: `1px solid ${isBad ? RED + '33' : 'transparent'}`, alignItems: 'center', fontSize: 14, marginBottom: 2 }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{f.recipe_name}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>เป้า {target}%</div>
+                  <div key={f.id} style={{ marginBottom: 2 }}>
+                    <div
+                      onClick={() => setExpanded(isOpen ? null : f.id)}
+                      style={{ display: 'grid', gridTemplateColumns: vatEnabled ? '2fr 1fr 1fr 1fr 1fr 1fr' : '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '14px 12px', borderRadius: isOpen ? '8px 8px 0 0' : 8, backgroundColor: isBad ? `${RED}0d` : CARD2, border: `1px solid ${isBad ? RED + '33' : isOpen ? BORDER : 'transparent'}`, borderBottom: isOpen ? 'none' : undefined, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{f.recipe_name}</div>
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>เป้า {target}%{vatEnabled ? ` · VAT ${vatRate}%` : ''}</div>
+                      </div>
+                      <span style={{ color: GOLD }}>{cost.toFixed(0)} ₭</span>
+                      <span style={{ color: GREEN }}>{suggestedEx.toFixed(0)} ₭</span>
+                      {vatEnabled && <span style={{ color: GREEN, fontWeight: 700 }}>{suggestedInc.toFixed(0)} ₭</span>}
+                      <span>{f.price_lak.toLocaleString()} ₭</span>
+                      <span style={{ color: isBad ? RED : GREEN, fontWeight: 700 }}>{actualMargin.toFixed(1)}%</span>
                     </div>
-                    <span style={{ color: GOLD }}>{cost.toFixed(0)} ₭</span>
-                    <span style={{ color: GREEN }}>{suggested.toFixed(0)} ₭</span>
-                    <span>{f.price_lak.toLocaleString()} ₭</span>
-                    <span style={{ color: isBad ? RED : GREEN, fontWeight: 700 }}>{actualMargin.toFixed(1)}%</span>
+
+                    {isOpen && (
+                      <div style={{ backgroundColor: isBad ? `${RED}08` : '#1e1e1e', border: `1px solid ${isBad ? RED + '22' : BORDER}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '16px 18px' }}>
+                        <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>รายละเอียดราคา (หวานกลาง)</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {[
+                            { label: 'ต้นทุน',           value: cost,         color: RED   },
+                            { label: 'กำไร (Margin)',     value: profit,       color: GREEN },
+                            { label: 'ราคาก่อน VAT',     value: suggestedEx,  color: '#fff' },
+                            ...(vatEnabled ? [
+                              { label: `VAT ${vatRate}%`, value: vatAmt,       color: ORANGE },
+                              { label: 'ราคาสุดท้าย',    value: suggestedInc, color: GOLD   },
+                            ] : []),
+                          ].map((row, i, arr) => (
+                            <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderRadius: 6, backgroundColor: i === arr.length - 1 ? `${GOLD}12` : 'transparent', borderTop: i === arr.length - 1 && vatEnabled ? `1px solid ${BORDER}` : 'none' }}>
+                              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>{row.label}</span>
+                              <span style={{ fontSize: 14, fontWeight: i === arr.length - 1 ? 700 : 500, color: row.color }}>{row.value.toFixed(0)} ₭</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}
