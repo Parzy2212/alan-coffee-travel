@@ -46,7 +46,19 @@ Deno.serve(async (req) => {
       }),
     })
 
-    const json = await orRes.json()
+    const rawText = await orRes.text()
+    console.log('OpenRouter status:', orRes.status)
+    console.log('OpenRouter raw response:', rawText)
+
+    let json: unknown
+    try {
+      json = JSON.parse(rawText)
+    } catch {
+      return new Response(JSON.stringify({ text: `[Raw response] ${rawText}` }), {
+        status: 200,
+        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+      })
+    }
 
     if (!orRes.ok) {
       return new Response(JSON.stringify({ error: `OpenRouter error ${orRes.status}`, detail: json }), {
@@ -55,8 +67,9 @@ Deno.serve(async (req) => {
       })
     }
 
-    const text = json?.choices?.[0]?.message?.content
-      ?? JSON.stringify(json?.error ?? json)
+    const parsed = json as Record<string, unknown>
+    const choices = parsed?.choices as { message?: { content?: string } }[] | undefined
+    const text = choices?.[0]?.message?.content ?? `[Unexpected format] ${rawText}`
 
     return new Response(JSON.stringify({ text }), {
       status: 200,
