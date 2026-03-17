@@ -4504,19 +4504,40 @@ function RecipeCostTab() {
   const [msg, setMsg]                 = useState<string | null>(null)
 
   useEffect(() => {
-    const a = localStorage.getItem('cafe_ingredients')
-    if (a) setIngredients(JSON.parse(a) as Ingredient[])
-    const b = localStorage.getItem('cafe_formulas')
-    if (b) setFormulas(JSON.parse(b) as RecipeFormula[])
-    const c = localStorage.getItem('cafe_base_recipes')
-    if (c) setBaseRecipes(JSON.parse(c) as BaseRecipe[])
+    supabase.from('recipe_ingredients').select('*').order('name')
+      .then(({ data }) => { if (data) setIngredients(data.map(r => ({ id: r.id as string, name: r.name as string, unit: r.unit as string, pkg_size: r.package_size as number, pkg_cost: r.package_cost as number }))) })
+    supabase.from('recipe_base').select('*').order('name')
+      .then(({ data }) => { if (data) setBaseRecipes(data.map(r => ({ id: r.id as string, name: r.name as string, unit: r.unit as string, yield_qty: r.total_yield as number, items: (r.ingredients ?? []) as BaseIngItem[] }))) })
+    supabase.from('recipe_menus').select('*').order('recipe_name')
+      .then(({ data }) => { if (data) setFormulas(data.map(r => ({ id: r.id as string, recipe_id: r.menu_item_id as string, recipe_name: r.recipe_name as string, price_lak: r.price_lak as number, target_margin: r.target_margin as number, items: (r.components ?? []) as FormulaItem[] }))) })
     supabase.from('recipes').select('id, product_name, price_lak').eq('is_active', true).order('product_name')
       .then(({ data }) => setMenuItems((data ?? []) as { id: string; product_name: string; price_lak: number }[]))
   }, [])
 
-  function saveIngredients(next: Ingredient[]) { setIngredients(next); localStorage.setItem('cafe_ingredients', JSON.stringify(next)) }
-  function saveFormulas(next: RecipeFormula[])  { setFormulas(next);    localStorage.setItem('cafe_formulas',    JSON.stringify(next)) }
-  function saveBaseRecipes(next: BaseRecipe[])  { setBaseRecipes(next); localStorage.setItem('cafe_base_recipes', JSON.stringify(next)) }
+  async function upsertIngredient(ing: Ingredient): Promise<Ingredient> {
+    const row = { name: ing.name, unit: ing.unit, package_size: ing.pkg_size, package_cost: ing.pkg_cost }
+    if (ing.id) { await supabase.from('recipe_ingredients').upsert({ id: ing.id, ...row }); return ing }
+    const { data } = await supabase.from('recipe_ingredients').insert(row).select('id').single()
+    return { ...ing, id: (data as { id: string }).id }
+  }
+  async function removeIngredient(id: string) { await supabase.from('recipe_ingredients').delete().eq('id', id) }
+
+  async function upsertBaseRecipe(b: BaseRecipe): Promise<BaseRecipe> {
+    const yield_qty = b.items.reduce((s, i) => s + i.qty, 0)
+    const row = { name: b.name, unit: b.unit, ingredients: b.items, total_yield: yield_qty }
+    if (b.id) { await supabase.from('recipe_base').upsert({ id: b.id, ...row }); return { ...b, yield_qty } }
+    const { data } = await supabase.from('recipe_base').insert(row).select('id').single()
+    return { ...b, id: (data as { id: string }).id, yield_qty }
+  }
+  async function removeBaseRecipe(id: string) { await supabase.from('recipe_base').delete().eq('id', id) }
+
+  async function upsertFormula(f: RecipeFormula): Promise<RecipeFormula> {
+    const row = { menu_item_id: f.recipe_id, recipe_name: f.recipe_name, price_lak: f.price_lak, target_margin: f.target_margin, components: f.items }
+    if (f.id) { await supabase.from('recipe_menus').upsert({ id: f.id, ...row }); return f }
+    const { data } = await supabase.from('recipe_menus').insert(row).select('id').single()
+    return { ...f, id: (data as { id: string }).id }
+  }
+  async function removeFormula(id: string) { await supabase.from('recipe_menus').delete().eq('id', id) }
 
   function calcBaseCost(base: BaseRecipe, ings: Ingredient[]): number {
     return base.items.reduce((s, item) => {
@@ -4547,14 +4568,14 @@ function RecipeCostTab() {
     function startNew() { setEditing({ id: '', name: '', unit: 'g', pkg_size: 0, pkg_cost: 0 }); setForm({ name: '', unit: 'g', pkg_size: '', pkg_cost: '' }) }
     function startEdit(ing: Ingredient) { setEditing(ing); setForm({ name: ing.name, unit: ing.unit, pkg_size: String(ing.pkg_size), pkg_cost: String(ing.pkg_cost) }) }
 
-    function save() {
+    async function save() {
       const pkg_size = parseFloat(form.pkg_size) || 0
       const pkg_cost = parseFloat(form.pkg_cost) || 0
       if (!form.name || pkg_size <= 0 || pkg_cost <= 0) { setMsg('เกิดข้อผิดพลาด: กรอกข้อมูลให้ครบ'); return }
-      const next = editing?.id
-        ? ingredients.map(i => i.id === editing.id ? { ...editing!, name: form.name, unit: form.unit, pkg_size, pkg_cost } : i)
-        : [...ingredients, { id: Date.now().toString(), name: form.name, unit: form.unit, pkg_size, pkg_cost }]
-      saveIngredients(next); setEditing(null); setMsg('บันทึกแล้ว')
+      const draft: Ingredient = { id: editing?.id ?? '', name: form.name, unit: form.unit, pkg_size, pkg_cost }
+      const saved = await upsertIngredient(draft)
+      setIngredients(prev => editing?.id ? prev.map(i => i.id === editing!.id ? saved : i) : [...prev, saved])
+      setEditing(null); setMsg('บันทึกแล้ว')
     }
 
     return (
@@ -4605,7 +4626,7 @@ function RecipeCostTab() {
                   <span style={{ color: GOLD, fontWeight: 700 }}>{(ing.pkg_cost / ing.pkg_size).toFixed(2)} ₭/{ing.unit}</span>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button style={btnStyleSm(GOLD)} onClick={() => startEdit(ing)}>แก้ไข</button>
-                    <button style={btnStyleSm(RED + '22', RED)} onClick={() => { saveIngredients(ingredients.filter(i => i.id !== ing.id)); setMsg('ลบแล้ว') }}>ลบ</button>
+                    <button style={btnStyleSm(RED + '22', RED)} onClick={async () => { await removeIngredient(ing.id); setIngredients(prev => prev.filter(i => i.id !== ing.id)); setMsg('ลบแล้ว') }}>ลบ</button>
                   </div>
                 </div>
               ))}
@@ -4636,14 +4657,11 @@ function RecipeCostTab() {
     }
     function removeItem(idx: number) { setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) })) }
 
-    function save() {
+    async function save() {
       if (!form.name) { setMsg('กรอกชื่อสูตรพื้นฐาน'); return }
-      const yield_qty = form.items.reduce((s, i) => s + i.qty, 0)
-      const entry: BaseRecipe = {
-        id: editId === 'new' ? Date.now().toString() : editId!,
-        name: form.name, unit: form.unit, yield_qty, items: form.items,
-      }
-      saveBaseRecipes(editId === 'new' ? [...baseRecipes, entry] : baseRecipes.map(b => b.id === editId ? entry : b))
+      const draft: BaseRecipe = { id: editId === 'new' ? '' : editId!, name: form.name, unit: form.unit, yield_qty: 0, items: form.items }
+      const saved = await upsertBaseRecipe(draft)
+      setBaseRecipes(prev => editId === 'new' ? [...prev, saved] : prev.map(b => b.id === editId ? saved : b))
       setEditId(null); setMsg('บันทึกแล้ว')
     }
 
@@ -4754,7 +4772,7 @@ function RecipeCostTab() {
                     <span style={{ color: GOLD, fontWeight: 700 }}>{cpUnit.toFixed(3)} ₭/{b.unit}</span>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button style={btnStyleSm(GOLD)} onClick={() => startEdit(b)}>แก้ไข</button>
-                      <button style={btnStyleSm(RED + '22', RED)} onClick={() => { saveBaseRecipes(baseRecipes.filter(x => x.id !== b.id)); setMsg('ลบแล้ว') }}>ลบ</button>
+                      <button style={btnStyleSm(RED + '22', RED)} onClick={async () => { await removeBaseRecipe(b.id); setBaseRecipes(prev => prev.filter(x => x.id !== b.id)); setMsg('ลบแล้ว') }}>ลบ</button>
                     </div>
                   </div>
                 )
@@ -4786,11 +4804,12 @@ function RecipeCostTab() {
     }
     function removeItem(idx: number) { setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) })) }
 
-    function save() {
+    async function save() {
       const menu = menuItems.find(m => m.id === form.recipe_id)
       if (!menu) { setMsg('เกิดข้อผิดพลาด: เลือกเมนูก่อน'); return }
-      const entry: RecipeFormula = { id: editId === 'new' ? Date.now().toString() : editId!, recipe_id: form.recipe_id, recipe_name: menu.product_name, price_lak: menu.price_lak, items: form.items, target_margin: form.target_margin }
-      saveFormulas(editId === 'new' ? [...formulas, entry] : formulas.map(f => f.id === editId ? entry : f))
+      const draft: RecipeFormula = { id: editId === 'new' ? '' : editId!, recipe_id: form.recipe_id, recipe_name: menu.product_name, price_lak: menu.price_lak, items: form.items, target_margin: form.target_margin }
+      const saved = await upsertFormula(draft)
+      setFormulas(prev => editId === 'new' ? [...prev, saved] : prev.map(f => f.id === editId ? saved : f))
       setEditId(null); setMsg('บันทึกแล้ว')
     }
 
@@ -4912,7 +4931,7 @@ function RecipeCostTab() {
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button style={btnStyleSm(GOLD)} onClick={() => startEdit(f)}>แก้ไข</button>
-                      <button style={btnStyleSm(RED + '22', RED)} onClick={() => { saveFormulas(formulas.filter(x => x.id !== f.id)); setMsg('ลบแล้ว') }}>ลบ</button>
+                      <button style={btnStyleSm(RED + '22', RED)} onClick={async () => { await removeFormula(f.id); setFormulas(prev => prev.filter(x => x.id !== f.id)); setMsg('ลบแล้ว') }}>ลบ</button>
                     </div>
                   </div>
                 )
