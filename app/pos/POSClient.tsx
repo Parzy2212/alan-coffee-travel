@@ -873,15 +873,11 @@ function VoidRow({ order, onVoided }: { order: TodayOrder; onVoided: () => void 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function POSClient() {
+  const [mounted,      setMounted]      = useState(false)
   const [recipes,      setRecipes]      = useState<Recipe[]>([])
   const [categories,   setCategories]   = useState<Category[]>([])
   const [loading,      setLoading]      = useState(true)
-  const [cart,         setCart]         = useState<CartItem[]>(() => {
-    try {
-      const saved = typeof window !== 'undefined' ? localStorage.getItem('pos_cart') : null
-      return saved ? (JSON.parse(saved) as CartItem[]) : []
-    } catch { return [] }
-  })
+  const [cart,         setCart]         = useState<CartItem[]>([])
   const [confirmClear,  setConfirmClear]  = useState(false)
   const [activeL1,     setActiveL1]     = useState<string>('All')
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
@@ -900,10 +896,20 @@ export default function POSClient() {
   const [showShiftClose, setShowShiftClose] = useState(false)
   const [bottomTab,      setBottomTab]     = useState<'queue' | 'orders'>('queue')
 
+  // Load cart from localStorage after mount (avoids SSR hydration mismatch)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pos_cart')
+      if (saved) setCart(JSON.parse(saved) as CartItem[])
+    } catch { /* ignore */ }
+    setMounted(true)
+  }, [])
+
   // Persist cart to localStorage
   useEffect(() => {
+    if (!mounted) return
     try { localStorage.setItem('pos_cart', JSON.stringify(cart)) } catch { /* ignore */ }
-  }, [cart])
+  }, [cart, mounted])
 
   // Live clock
   useEffect(() => {
@@ -1262,9 +1268,9 @@ export default function POSClient() {
           {/* Cart header */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
-              Order{totalItems > 0 && <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>}
+              Order{mounted && totalItems > 0 && <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>}
             </span>
-            {cart.length > 0 && chargeStatus === 'idle' && (
+            {mounted && cart.length > 0 && chargeStatus === 'idle' && (
               confirmClear ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>ล้างทั้งหมด?</span>
@@ -1281,7 +1287,7 @@ export default function POSClient() {
 
           {/* Cart items */}
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {cart.length === 0 ? (
+            {!mounted || cart.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'rgba(255,255,255,0.18)' }}>
                 <span style={{ fontSize: 36 }}>☕</span>
                 <span style={{ fontSize: 13 }}>Tap an item to add</span>
@@ -1316,9 +1322,9 @@ export default function POSClient() {
 
           {/* Cart footer */}
           <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: discountAmt > 0 ? 4 : 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: mounted && discountAmt > 0 ? 4 : 10 }}>
               <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase' }}>Total</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: discountAmt > 0 ? 'rgba(255,255,255,0.35)' : '#fff', fontVariantNumeric: 'tabular-nums', textDecoration: discountAmt > 0 ? 'line-through' : 'none' }}>{fmtLak(subtotal)}</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: mounted && discountAmt > 0 ? 'rgba(255,255,255,0.35)' : '#fff', fontVariantNumeric: 'tabular-nums', textDecoration: mounted && discountAmt > 0 ? 'line-through' : 'none' }}>{mounted ? fmtLak(subtotal) : '0 LAK'}</span>
             </div>
             {/* Discount row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -1330,25 +1336,25 @@ export default function POSClient() {
                 style={{ flex: 2, padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }}
                 placeholder="เหตุผล (ไม่บังคับ)" />
             </div>
-            {discountAmt > 0 && (
+            {mounted && discountAmt > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase' }}>ยอดสุทธิ</span>
                 <span style={{ fontSize: 22, fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</span>
               </div>
             )}
             <button
-              onClick={() => cart.length > 0 && setShowCharge(true)}
-              disabled={cart.length === 0}
+              onClick={() => mounted && cart.length > 0 && setShowCharge(true)}
+              disabled={!mounted || cart.length === 0}
               style={{
                 width: '100%', padding: '13px 0', borderRadius: 6, border: 'none',
-                backgroundColor: cart.length > 0 ? GOLD : 'rgba(255,255,255,0.06)',
-                color: cart.length > 0 ? BLACK : 'rgba(255,255,255,0.18)',
+                backgroundColor: mounted && cart.length > 0 ? GOLD : 'rgba(255,255,255,0.06)',
+                color: mounted && cart.length > 0 ? BLACK : 'rgba(255,255,255,0.18)',
                 fontWeight: 800, fontSize: 14, letterSpacing: '1.5px', textTransform: 'uppercase',
-                cursor: cart.length > 0 ? 'pointer' : 'not-allowed',
+                cursor: mounted && cart.length > 0 ? 'pointer' : 'not-allowed',
                 fontFamily: 'var(--font-heading)', transition: 'all 0.2s',
               }}
             >
-              {cart.length > 0 ? `Charge ${fmtLak(finalTotal)}` : 'No Items'}
+              {mounted && cart.length > 0 ? `Charge ${fmtLak(finalTotal)}` : 'No Items'}
             </button>
           </div>
 
