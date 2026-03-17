@@ -13,44 +13,60 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
   }
 
-  const apiKey = Deno.env.get('OPENROUTER_API_KEY')
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'OPENROUTER_API_KEY not set' }), {
+  try {
+    const apiKey = Deno.env.get('OPENROUTER_API_KEY')
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: 'OPENROUTER_API_KEY not set' }), {
+        status: 500,
+        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+      })
+    }
+
+    const { messages, context } = await req.json()
+
+    // Convert Gemini-format messages to OpenAI format and prepend system message
+    const openaiMessages = [
+      { role: 'system', content: context },
+      ...messages.map((m: { role: string; parts: { text: string }[] }) => ({
+        role: m.role === 'model' ? 'assistant' : 'user',
+        content: m.parts[0]?.text ?? '',
+      })),
+    ]
+
+    const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/llama-3.3-70b-instruct',
+        messages: openaiMessages,
+        max_tokens: 1024,
+      }),
+    })
+
+    const json = await orRes.json()
+
+    if (!orRes.ok) {
+      return new Response(JSON.stringify({ error: `OpenRouter error ${orRes.status}`, detail: json }), {
+        status: orRes.status,
+        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+      })
+    }
+
+    const text = json?.choices?.[0]?.message?.content
+      ?? JSON.stringify(json?.error ?? json)
+
+    return new Response(JSON.stringify({ text }), {
+      status: 200,
+      headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
     })
   }
-
-  const { messages, context } = await req.json()
-
-  // Convert Gemini-format messages to OpenAI format and prepend system message
-  const openaiMessages = [
-    { role: 'system', content: context },
-    ...messages.map((m: { role: string; parts: { text: string }[] }) => ({
-      role: m.role === 'model' ? 'assistant' : 'user',
-      content: m.parts[0]?.text ?? '',
-    })),
-  ]
-
-  const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'meta-llama/llama-3.3-70b-instruct',
-      messages: openaiMessages,
-      max_tokens: 1024,
-    }),
-  })
-
-  const json = await orRes.json()
-  const text = json?.choices?.[0]?.message?.content
-    ?? JSON.stringify(json?.error ?? json)
-
-  return new Response(JSON.stringify({ text }), {
-    status: 200,
-    headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-  })
 })
