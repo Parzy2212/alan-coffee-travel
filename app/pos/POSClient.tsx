@@ -258,6 +258,8 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
   const [selectedBank,   setSelectedBank]   = useState<string | null>(null)
   const [banks,          setBanks]          = useState<PaymentBank[]>([])
   const [banksLoaded,    setBanksLoaded]    = useState(false)
+  const [qrNumber,       setQrNumber]       = useState('')
+  const [qrName,         setQrName]         = useState('')
   const [showExtra,      setShowExtra]      = useState(false)
   const [customer,       setCustomer]       = useState('')
   const [table,          setTable]          = useState('')
@@ -272,15 +274,20 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
   const finalTotal  = Math.max(subtotal - discountAmt, 0)
   const receivedNum = received ? (parseInt(received, 10) || 0) : 0
   const changeAmt   = method === 'cash' ? receivedNum - finalTotal : 0
-  const cashOk      = method !== 'cash' || (received !== '' && receivedNum >= finalTotal)
+  const cashOk =
+    (method === 'cash' && received !== '' && receivedNum >= finalTotal) ||
+    (method === 'qr') ||
+    (method === 'transfer' && selectedBank !== null)
 
-  // Load banks when transfer tab is first opened
+  // Load settings when QR or transfer tab is first opened
   useEffect(() => {
-    if (method !== 'transfer' || banksLoaded) return
+    if ((method !== 'transfer' && method !== 'qr') || banksLoaded) return
     supabase.rpc('get_site_settings').then(({ data }) => {
       if (data?.payment_banks) {
         try { setBanks(JSON.parse(data.payment_banks)) } catch { setBanks([]) }
       }
+      setQrNumber((data?.qr_payment_number as string) ?? '')
+      setQrName((data?.qr_payment_name as string) ?? '')
       setBanksLoaded(true)
     })
   }, [method, banksLoaded])
@@ -324,9 +331,12 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
   const btnBg = loading ? `${GOLD}55`
     : method === 'cash' && received !== '' && receivedNum < finalTotal ? `${RED}22`
     : method === 'cash' && received === '' ? 'rgba(255,255,255,0.06)'
+    : method === 'transfer' && !selectedBank ? 'rgba(255,255,255,0.06)'
     : GOLD
   const btnColor = method === 'cash' && received !== '' && receivedNum < finalTotal ? RED
-    : method === 'cash' && received === '' ? 'rgba(255,255,255,0.2)' : BLACK
+    : method === 'cash' && received === '' ? 'rgba(255,255,255,0.2)'
+    : method === 'transfer' && !selectedBank ? 'rgba(255,255,255,0.2)'
+    : BLACK
 
   return (
     <div ref={overlayRef}
@@ -440,11 +450,29 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
 
           {/* ── QR ── */}
           {method === 'qr' && (
-            <div style={{ padding: '28px 16px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 56 }}>📱</div>
-              <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>แสดง QR Code ให้ลูกค้าสแกน</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</div>
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>กดยืนยันเมื่อรับเงินแล้ว</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '16px 0' }}>
+              {!banksLoaded ? (
+                <div style={{ padding: 28, color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>กำลังโหลด...</div>
+              ) : qrNumber ? (
+                <>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrNumber)}&bgcolor=181818&color=c9a84c&margin=8`}
+                    alt="QR Code"
+                    width={220} height={220}
+                    style={{ borderRadius: 12, border: `1px solid rgba(201,168,76,0.25)` }}
+                  />
+                  {qrName && <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>{qrName}</div>}
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>{qrNumber}</div>
+                  <div style={{ fontSize: 26, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>กดยืนยันเมื่อรับเงินแล้ว</div>
+                </>
+              ) : (
+                <div style={{ padding: '24px 16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontSize: 36 }}>📱</div>
+                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>ยังไม่ได้ตั้งค่า QR Payment</div>
+                  <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปตั้งค่า →</a>
+                </div>
+              )}
             </div>
           )}
 
@@ -542,6 +570,7 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
             }}>
             {loading ? 'กำลังบันทึก...'
               : method === 'cash' && received === '' ? 'กรอกจำนวนเงิน'
+              : method === 'transfer' && !selectedBank ? 'เลือกธนาคารก่อน'
               : `ยืนยันชำระ ${fmtLak(finalTotal)}`}
           </button>
         </div>
@@ -657,14 +686,25 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 // ─── ShiftClosePopup ─────────────────────────────────────────────────────────
 
 function ShiftClosePopup({ todayTotal, todayCount, onClose }: { todayTotal: number; todayCount: number; onClose: () => void }) {
-  const [shift,       setShift]       = useState('morning')
+  type StaffBasic = { id: string; name: string }
+  const [shift,        setShift]       = useState(() => {
+    const h = new Date().getHours()
+    return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'
+  })
   const [openingCash, setOpeningCash] = useState('')
   const [actualCash,  setActualCash]  = useState('')
   const [activeField, setActiveField] = useState<'opening' | 'actual'>('actual')
   const [saving,      setSaving]      = useState(false)
   const [done,        setDone]        = useState(false)
   const [errMsg,      setErrMsg]      = useState('')
+  const [staffList,   setStaffList]   = useState<StaffBasic[]>([])
+  const [staffId,     setStaffId]     = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_staff_id') ?? '' : '')
   const overlayRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    supabase.from('staff').select('id, name').eq('status', 'active').order('name')
+      .then(({ data }) => setStaffList((data ?? []) as StaffBasic[]))
+  }, [])
 
   const variance = actualCash !== '' && openingCash !== ''
     ? parseFloat(actualCash) - (parseFloat(openingCash) + todayTotal)
@@ -681,9 +721,10 @@ function ShiftClosePopup({ todayTotal, todayCount, onClose }: { todayTotal: numb
 
   async function confirm() {
     if (!openingCash || !actualCash) { setErrMsg('กรอกยอดเงินให้ครบ'); return }
+    if (staffId) localStorage.setItem('pos_staff_id', staffId)
     setSaving(true); setErrMsg('')
     const { error } = await supabase.rpc('close_shift', {
-      p_staff_id:     null,
+      p_staff_id:     staffId || null,
       p_shift:        shift,
       p_opening_cash: parseFloat(openingCash),
       p_actual_cash:  parseFloat(actualCash),
@@ -728,6 +769,16 @@ function ShiftClosePopup({ todayTotal, todayCount, onClose }: { todayTotal: numb
                 <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 4 }}>{todayCount}</div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>รายการ</div>
               </div>
+            </div>
+
+            {/* Staff selector */}
+            <div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '1px' }}>พนักงาน</div>
+              <select value={staffId} onChange={e => setStaffId(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1px solid rgba(255,255,255,0.12)`, backgroundColor: '#1a1a1a', color: staffId ? '#fff' : 'rgba(255,255,255,0.3)', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const }}>
+                <option value="">— ไม่ระบุ —</option>
+                {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
 
             {/* Shift selector */}
@@ -832,7 +883,13 @@ export default function POSClient() {
   const [recipes,      setRecipes]      = useState<Recipe[]>([])
   const [categories,   setCategories]   = useState<Category[]>([])
   const [loading,      setLoading]      = useState(true)
-  const [cart,         setCart]         = useState<CartItem[]>([])
+  const [cart,         setCart]         = useState<CartItem[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('pos_cart') : null
+      return saved ? (JSON.parse(saved) as CartItem[]) : []
+    } catch { return [] }
+  })
+  const [confirmClear,  setConfirmClear]  = useState(false)
   const [activeL1,     setActiveL1]     = useState<string>('All')
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
   const [now,          setNow]          = useState(new Date())
@@ -845,6 +902,11 @@ export default function POSClient() {
   const [showSettings,   setShowSettings]  = useState(false)
   const [showShiftClose, setShowShiftClose] = useState(false)
   const [bottomTab,      setBottomTab]     = useState<'queue' | 'orders'>('queue')
+
+  // Persist cart to localStorage
+  useEffect(() => {
+    try { localStorage.setItem('pos_cart', JSON.stringify(cart)) } catch { /* ignore */ }
+  }, [cart])
 
   // Live clock
   useEffect(() => {
@@ -914,6 +976,7 @@ export default function POSClient() {
   function handleChargeSuccess(queueNum: number, receipt: string, change: number, method: PaymentMethod) {
     setSuccessData({ queue: queueNum, receipt, change, method })
     setCart([])
+    try { localStorage.removeItem('pos_cart') } catch { /* ignore */ }
     setChargeStatus('success')
     setShowCharge(false)
     loadTodayOrders()
@@ -1124,7 +1187,17 @@ export default function POSClient() {
               Order{totalItems > 0 && <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>}
             </span>
             {cart.length > 0 && chargeStatus === 'idle' && (
-              <button onClick={() => setCart([])} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', padding: '2px 6px' }}>Clear all</button>
+              confirmClear ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>ล้างทั้งหมด?</span>
+                  <button onClick={() => { setCart([]); setConfirmClear(false) }}
+                    style={{ padding: '2px 8px', borderRadius: 4, border: 'none', backgroundColor: RED, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>ยืนยัน</button>
+                  <button onClick={() => setConfirmClear(false)}
+                    style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.12)', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}>ยกเลิก</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmClear(true)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', padding: '2px 6px' }}>Clear all</button>
+              )
             )}
           </div>
 

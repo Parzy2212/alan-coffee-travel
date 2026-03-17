@@ -133,6 +133,8 @@ type FullSettings = {
   low_stock_alert_enabled: string; daily_report_enabled: string
   ai_analyst_enabled: string
   payment_banks: string
+  qr_payment_number: string
+  qr_payment_name: string
   shop_lat: string
   shop_lng: string
 }
@@ -149,6 +151,8 @@ const DEFAULT_SETTINGS: FullSettings = {
   low_stock_alert_enabled: 'false', daily_report_enabled: 'false',
   ai_analyst_enabled: 'false',
   payment_banks: '[]',
+  qr_payment_number: '',
+  qr_payment_name: '',
   shop_lat: '',
   shop_lng: '',
 }
@@ -2590,6 +2594,16 @@ function SettingsTab() {
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
             พิกัดนี้จะใช้คำนวณระยะห่างเมื่อพนักงาน clock-in ถ้าห่างเกิน 200 เมตรจะแจ้งเตือน
           </div>
+        </div>
+      </SettingSection>
+
+      <SettingSection icon="📱" title="QR Code ชำระเงิน (PromptPay / BCEL OnePay)">
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 12, lineHeight: 1.6 }}>
+          เลขที่จะเข้ารหัสเป็น QR Code ให้ลูกค้าสแกนในหน้า POS — ใส่เบอร์โทร PromptPay หรือ BCEL Account Number
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <Field label="หมายเลขบัญชี / เบอร์ PromptPay"><input value={settings.qr_payment_number} onChange={set('qr_payment_number')} style={inputStyle} placeholder="0812345678 หรือ 0860123456789" /></Field>
+          <Field label="ชื่อบัญชี"><input value={settings.qr_payment_name} onChange={set('qr_payment_name')} style={inputStyle} placeholder="ALAN COFFEE" /></Field>
         </div>
       </SettingSection>
 
