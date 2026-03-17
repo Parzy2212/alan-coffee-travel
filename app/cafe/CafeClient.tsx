@@ -4489,31 +4489,49 @@ function LeavesView() {
 // ─── Recipe Cost Tab ──────────────────────────────────────────────────────────
 
 function RecipeCostTab() {
-  type SubTab = 'ingredients' | 'recipes' | 'pricing'
-  type Ingredient = { id: string; name: string; unit: string; pkg_size: number; pkg_cost: number }
-  type FormulaItem = { ingredient_id: string; qty_normal: number; qty_less: number; qty_more: number }
+  type SubTab = 'ingredients' | 'bases' | 'recipes' | 'pricing'
+  type Ingredient  = { id: string; name: string; unit: string; pkg_size: number; pkg_cost: number }
+  type BaseIngItem = { ingredient_id: string; qty: number }
+  type BaseRecipe  = { id: string; name: string; unit: string; yield_qty: number; items: BaseIngItem[] }
+  type FormulaItem = { ingredient_id?: string; base_id?: string; qty_normal: number; qty_less: number; qty_more: number }
   type RecipeFormula = { id: string; recipe_id: string; recipe_name: string; price_lak: number; items: FormulaItem[]; target_margin: number }
 
-  const [sub, setSub]               = useState<SubTab>('ingredients')
+  const [sub, setSub]                 = useState<SubTab>('ingredients')
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
-  const [formulas, setFormulas]     = useState<RecipeFormula[]>([])
-  const [menuItems, setMenuItems]   = useState<{ id: string; product_name: string; price_lak: number }[]>([])
-  const [msg, setMsg]               = useState<string | null>(null)
+  const [baseRecipes, setBaseRecipes] = useState<BaseRecipe[]>([])
+  const [formulas, setFormulas]       = useState<RecipeFormula[]>([])
+  const [menuItems, setMenuItems]     = useState<{ id: string; product_name: string; price_lak: number }[]>([])
+  const [msg, setMsg]                 = useState<string | null>(null)
 
   useEffect(() => {
     const a = localStorage.getItem('cafe_ingredients')
     if (a) setIngredients(JSON.parse(a) as Ingredient[])
     const b = localStorage.getItem('cafe_formulas')
     if (b) setFormulas(JSON.parse(b) as RecipeFormula[])
+    const c = localStorage.getItem('cafe_base_recipes')
+    if (c) setBaseRecipes(JSON.parse(c) as BaseRecipe[])
     supabase.from('recipes').select('id, product_name, price_lak').eq('is_active', true).order('product_name')
       .then(({ data }) => setMenuItems((data ?? []) as { id: string; product_name: string; price_lak: number }[]))
   }, [])
 
   function saveIngredients(next: Ingredient[]) { setIngredients(next); localStorage.setItem('cafe_ingredients', JSON.stringify(next)) }
   function saveFormulas(next: RecipeFormula[])  { setFormulas(next);    localStorage.setItem('cafe_formulas',    JSON.stringify(next)) }
+  function saveBaseRecipes(next: BaseRecipe[])  { setBaseRecipes(next); localStorage.setItem('cafe_base_recipes', JSON.stringify(next)) }
 
-  function calcCost(items: FormulaItem[], field: 'qty_normal' | 'qty_less' | 'qty_more', ings: Ingredient[]) {
+  function calcBaseCost(base: BaseRecipe, ings: Ingredient[]): number {
+    return base.items.reduce((s, item) => {
+      const ing = ings.find(i => i.id === item.ingredient_id)
+      return s + (ing ? item.qty * ing.pkg_cost / ing.pkg_size : 0)
+    }, 0)
+  }
+
+  function calcCost(items: FormulaItem[], field: 'qty_normal' | 'qty_less' | 'qty_more', ings: Ingredient[], bases: BaseRecipe[]) {
     return items.reduce((s, item) => {
+      if (item.base_id) {
+        const base = bases.find(b => b.id === item.base_id)
+        if (!base || base.yield_qty <= 0) return s
+        return s + item[field] * calcBaseCost(base, ings) / base.yield_qty
+      }
       const ing = ings.find(i => i.id === item.ingredient_id)
       return s + (ing ? item[field] * ing.pkg_cost / ing.pkg_size : 0)
     }, 0)
@@ -4596,6 +4614,153 @@ function RecipeCostTab() {
     )
   }
 
+  // ── Base Recipes Panel ────────────────────────────────────────────────────
+  function BaseRecipesPanel() {
+    type BaseForm = { name: string; unit: string; yield_qty: string; items: BaseIngItem[] }
+    const [editId, setEditId] = useState<string | null>(null)
+    const [form, setForm]     = useState<BaseForm>({ name: '', unit: 'ml', yield_qty: '', items: [] })
+
+    function startNew() { setEditId('new'); setForm({ name: '', unit: 'ml', yield_qty: '', items: [] }) }
+    function startEdit(b: BaseRecipe) {
+      setEditId(b.id)
+      setForm({ name: b.name, unit: b.unit, yield_qty: String(b.yield_qty), items: b.items.map(i => ({ ...i })) })
+    }
+    function addItem() {
+      if (!ingredients.length) return
+      setForm(f => ({ ...f, items: [...f.items, { ingredient_id: ingredients[0].id, qty: 0 }] }))
+    }
+    function updateItem(idx: number, patch: Partial<BaseIngItem>) {
+      setForm(f => { const items = [...f.items]; items[idx] = { ...items[idx], ...patch }; return { ...f, items } })
+    }
+    function removeItem(idx: number) { setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) })) }
+
+    function save() {
+      const yield_qty = parseFloat(form.yield_qty) || 0
+      if (!form.name || yield_qty <= 0) { setMsg('กรอกชื่อและปริมาณที่ได้'); return }
+      const entry: BaseRecipe = {
+        id: editId === 'new' ? Date.now().toString() : editId!,
+        name: form.name, unit: form.unit, yield_qty, items: form.items,
+      }
+      saveBaseRecipes(editId === 'new' ? [...baseRecipes, entry] : baseRecipes.map(b => b.id === editId ? entry : b))
+      setEditId(null); setMsg('บันทึกแล้ว')
+    }
+
+    const previewCost = form.items.reduce((s, item) => {
+      const ing = ingredients.find(i => i.id === item.ingredient_id)
+      return s + (ing ? item.qty * ing.pkg_cost / ing.pkg_size : 0)
+    }, 0)
+    const yieldQty    = parseFloat(form.yield_qty) || 0
+    const costPerUnit = yieldQty > 0 ? previewCost / yieldQty : 0
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <SectionCard title="สร้าง / แก้ไข สูตรพื้นฐาน" action={<button style={btnStyle(GOLD)} onClick={startNew}>+ สร้างสูตรพื้นฐาน</button>}>
+          {editId !== null ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+                <Field label="ชื่อสูตรพื้นฐาน">
+                  <input style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="เช่น นมมิกซ์, ไซรัปวนิลา" />
+                </Field>
+                <Field label="หน่วยผลลัพธ์">
+                  <select style={inputStyle} value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}>
+                    <option value="ml">ml</option>
+                    <option value="g">g</option>
+                  </select>
+                </Field>
+                <Field label={`ปริมาณที่ได้ (${form.unit})`}>
+                  <input style={inputStyle} type="number" min={0} value={form.yield_qty} onChange={e => setForm(f => ({ ...f, yield_qty: e.target.value }))} placeholder="เช่น 1000" />
+                </Field>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>ส่วนผสม</span>
+                  <button style={btnStyleSm('#333')} onClick={addItem} disabled={ingredients.length === 0}>+ เพิ่มวัตถุดิบ</button>
+                </div>
+                {form.items.length === 0 ? (
+                  <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>
+                    {ingredients.length === 0 ? 'เพิ่มวัตถุดิบในแท็บ "วัตถุดิบ" ก่อน' : 'กด "+ เพิ่มวัตถุดิบ" เพื่อใส่ส่วนผสม'}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', padding: '0 4px' }}>
+                      <span>วัตถุดิบ</span><span>ปริมาณ</span><span>ต้นทุน</span><span></span>
+                    </div>
+                    {form.items.map((item, idx) => {
+                      const ing      = ingredients.find(i => i.id === item.ingredient_id)
+                      const itemCost = ing ? item.qty * ing.pkg_cost / ing.pkg_size : 0
+                      return (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
+                          <select style={inputStyle} value={item.ingredient_id} onChange={e => updateItem(idx, { ingredient_id: e.target.value })}>
+                            {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
+                          </select>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input style={{ ...inputStyle, flex: 1 }} type="number" min={0} value={item.qty} onChange={e => updateItem(idx, { qty: parseFloat(e.target.value) || 0 })} />
+                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{ing?.unit ?? ''}</span>
+                          </div>
+                          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>{itemCost.toFixed(0)} ₭</span>
+                          <button style={btnStyleSm(RED + '22', RED)} onClick={() => removeItem(idx)}>✕</button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {form.items.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={{ backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ต้นทุนรวมต่อชุด</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>{previewCost.toFixed(0)} ₭</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>ได้ {form.yield_qty || '?'} {form.unit}</div>
+                  </div>
+                  <div style={{ backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ราคาต่อหน่วย</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>{costPerUnit.toFixed(3)} ₭/{form.unit || '?'}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>อัตโนมัติจากราคาวัตถุดิบ</div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={btnStyle(GOLD)} onClick={save}>บันทึกสูตร</button>
+                <button style={btnStyle('#333')} onClick={() => setEditId(null)}>ยกเลิก</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>เช่น &ldquo;นมมิกซ์&rdquo; (นมสด + นมข้น), &ldquo;ไซรัปวนิลา&rdquo; — ใช้ซ้ำในหลายสูตรได้</div>
+          )}
+        </SectionCard>
+
+        {baseRecipes.length > 0 && (
+          <SectionCard title={`สูตรพื้นฐานทั้งหมด (${baseRecipes.length})`}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                <span>ชื่อ</span><span>ปริมาณที่ได้</span><span>ส่วนผสม</span><span>ราคา/หน่วย</span><span></span>
+              </div>
+              {baseRecipes.map(b => {
+                const totalCost   = calcBaseCost(b, ingredients)
+                const cpUnit      = b.yield_qty > 0 ? totalCost / b.yield_qty : 0
+                return (
+                  <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderRadius: 8, backgroundColor: CARD2, alignItems: 'center', fontSize: 14 }}>
+                    <span style={{ fontWeight: 600 }}>{b.name}</span>
+                    <span>{b.yield_qty.toLocaleString()} {b.unit}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}>{b.items.length} รายการ</span>
+                    <span style={{ color: GOLD, fontWeight: 700 }}>{cpUnit.toFixed(3)} ₭/{b.unit}</span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button style={btnStyleSm(GOLD)} onClick={() => startEdit(b)}>แก้ไข</button>
+                      <button style={btnStyleSm(RED + '22', RED)} onClick={() => { saveBaseRecipes(baseRecipes.filter(x => x.id !== b.id)); setMsg('ลบแล้ว') }}>ลบ</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </SectionCard>
+        )}
+      </div>
+    )
+  }
+
   // ── Recipe Builder Panel ──────────────────────────────────────────────────
   function RecipesPanel() {
     const [editId, setEditId] = useState<string | null>(null)
@@ -4603,8 +4768,17 @@ function RecipeCostTab() {
 
     function startNew() { setEditId('new'); setForm({ recipe_id: menuItems[0]?.id ?? '', target_margin: 60, items: [] }) }
     function startEdit(f: RecipeFormula) { setEditId(f.id); setForm({ recipe_id: f.recipe_id, target_margin: f.target_margin, items: f.items.map(i => ({ ...i })) }) }
-    function addItem() { if (!ingredients.length) return; setForm(f => ({ ...f, items: [...f.items, { ingredient_id: ingredients[0].id, qty_normal: 0, qty_less: 0, qty_more: 0 }] })) }
-    function updateItem(idx: number, patch: Partial<FormulaItem>) { setForm(f => { const items = [...f.items]; items[idx] = { ...items[idx], ...patch }; return { ...f, items } }) }
+    function addRawItem() {
+      if (!ingredients.length) return
+      setForm(f => ({ ...f, items: [...f.items, { ingredient_id: ingredients[0].id, qty_normal: 0, qty_less: 0, qty_more: 0 }] }))
+    }
+    function addBaseItem() {
+      if (!baseRecipes.length) return
+      setForm(f => ({ ...f, items: [...f.items, { base_id: baseRecipes[0].id, qty_normal: 0, qty_less: 0, qty_more: 0 }] }))
+    }
+    function updateItem(idx: number, patch: Partial<FormulaItem>) {
+      setForm(f => { const items = [...f.items]; items[idx] = { ...items[idx], ...patch }; return { ...f, items } })
+    }
     function removeItem(idx: number) { setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) })) }
 
     function save() {
@@ -4640,29 +4814,53 @@ function RecipeCostTab() {
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>วัตถุดิบในสูตร</span>
-                  <button style={btnStyleSm('#333')} onClick={addItem} disabled={ingredients.length === 0}>+ เพิ่มวัตถุดิบ</button>
+                  <span style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>ส่วนผสมในสูตร</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button style={btnStyleSm('#333')} onClick={addRawItem} disabled={ingredients.length === 0}>+ วัตถุดิบ</button>
+                    <button style={btnStyleSm(GOLD + '22', GOLD)} onClick={addBaseItem} disabled={baseRecipes.length === 0}
+                      title={baseRecipes.length === 0 ? 'สร้างสูตรพื้นฐานก่อน' : ''}>+ สูตรพื้นฐาน</button>
+                  </div>
                 </div>
                 {form.items.length === 0 ? (
                   <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>
-                    {ingredients.length === 0 ? 'เพิ่มวัตถุดิบในแท็บ "วัตถุดิบ" ก่อน' : 'กด "+ เพิ่มวัตถุดิบ" เพื่อใส่วัตถุดิบในสูตร'}
+                    {ingredients.length === 0 ? 'เพิ่มวัตถุดิบในแท็บ "วัตถุดิบ" ก่อน' : 'กด "+ วัตถุดิบ" หรือ "+ สูตรพื้นฐาน" เพื่อใส่ส่วนผสม'}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 10, fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', padding: '0 4px' }}>
-                      <span>วัตถุดิบ</span><span>หวานน้อย</span><span>หวานกลาง</span><span>หวานมาก</span><span></span>
+                      <span>ส่วนผสม</span><span>หวานน้อย</span><span>หวานกลาง</span><span>หวานมาก</span><span></span>
                     </div>
-                    {form.items.map((item, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
-                        <select style={inputStyle} value={item.ingredient_id} onChange={e => updateItem(idx, { ingredient_id: e.target.value })}>
-                          {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-                        </select>
-                        <input style={inputStyle} type="number" min={0} value={item.qty_less}   onChange={e => updateItem(idx, { qty_less:   parseFloat(e.target.value) || 0 })} />
-                        <input style={inputStyle} type="number" min={0} value={item.qty_normal} onChange={e => updateItem(idx, { qty_normal: parseFloat(e.target.value) || 0 })} />
-                        <input style={inputStyle} type="number" min={0} value={item.qty_more}   onChange={e => updateItem(idx, { qty_more:   parseFloat(e.target.value) || 0 })} />
-                        <button style={btnStyleSm(RED + '22', RED)} onClick={() => removeItem(idx)}>✕</button>
-                      </div>
-                    ))}
+                    {form.items.map((item, idx) => {
+                      const isBase   = !!item.base_id
+                      const unitLabel = isBase
+                        ? (baseRecipes.find(b => b.id === item.base_id)?.unit ?? '')
+                        : (ingredients.find(i => i.id === item.ingredient_id)?.unit ?? '')
+                      return (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {isBase && (
+                              <span style={{ fontSize: 10, backgroundColor: GOLD + '22', color: GOLD, padding: '2px 6px', borderRadius: 4, flexShrink: 0, fontWeight: 600 }}>สูตร</span>
+                            )}
+                            <select style={{ ...inputStyle, flex: 1 }}
+                              value={isBase ? item.base_id : item.ingredient_id}
+                              onChange={e => updateItem(idx, isBase ? { base_id: e.target.value } : { ingredient_id: e.target.value })}>
+                              {isBase
+                                ? baseRecipes.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)
+                                : ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)
+                              }
+                            </select>
+                          </div>
+                          {(['qty_less', 'qty_normal', 'qty_more'] as const).map(field => (
+                            <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                              <input style={{ ...inputStyle, flex: 1 }} type="number" min={0} value={item[field]}
+                                onChange={e => updateItem(idx, { [field]: parseFloat(e.target.value) || 0 })} />
+                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{unitLabel}</span>
+                            </div>
+                          ))}
+                          <button style={btnStyleSm(RED + '22', RED)} onClick={() => removeItem(idx)}>✕</button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -4670,7 +4868,7 @@ function RecipeCostTab() {
               {form.items.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                   {sweetnessFields.map(({ field, label }) => {
-                    const cost = calcCost(form.items, field, ingredients)
+                    const cost = calcCost(form.items, field, ingredients, baseRecipes)
                     return (
                       <div key={field} style={{ backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
                         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>{label}</div>
@@ -4696,13 +4894,15 @@ function RecipeCostTab() {
           <SectionCard title={`สูตรทั้งหมด (${formulas.length})`}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {formulas.map(f => {
-                const cost = calcCost(f.items, 'qty_normal', ingredients)
+                const cost    = calcCost(f.items, 'qty_normal', ingredients, baseRecipes)
+                const hasBase = f.items.some(i => i.base_id)
                 return (
                   <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px' }}>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 15 }}>{f.recipe_name}</div>
                       <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
-                        {f.items.length} วัตถุดิบ · ต้นทุนหวานกลาง: <span style={{ color: GOLD }}>{cost.toFixed(0)} ₭</span>
+                        {f.items.length} ส่วนผสม · ต้นทุนหวานกลาง: <span style={{ color: GOLD }}>{cost.toFixed(0)} ₭</span>
+                        {hasBase && <span style={{ color: GOLD + 'aa', marginLeft: 8 }}>· มีสูตรพื้นฐาน</span>}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -4779,14 +4979,13 @@ function RecipeCostTab() {
                 <span>Margin จริง</span>
               </div>
               {formulas.map(f => {
-                const cost         = calcCost(f.items, 'qty_normal', ingredients)
+                const cost         = calcCost(f.items, 'qty_normal', ingredients, baseRecipes)
                 const target       = f.target_margin > 0 ? f.target_margin : globalMargin
                 const suggestedEx  = target < 100 ? cost / (1 - target / 100) : 0
                 const suggestedInc = suggestedEx * (1 + vatRate / 100)
                 const actualMargin = f.price_lak > 0 ? ((f.price_lak - cost) / f.price_lak) * 100 : 0
                 const isBad        = actualMargin < target
                 const isOpen       = expanded === f.id
-                // Breakdown values
                 const profit       = suggestedEx - cost
                 const vatAmt       = suggestedEx * (vatRate / 100)
 
@@ -4809,6 +5008,35 @@ function RecipeCostTab() {
                     {isOpen && (
                       <div style={{ backgroundColor: isBad ? `${RED}08` : '#1e1e1e', border: `1px solid ${isBad ? RED + '22' : BORDER}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '16px 18px' }}>
                         <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>รายละเอียดราคา (หวานกลาง)</div>
+
+                        {/* Per-component breakdown */}
+                        <div style={{ marginBottom: 12, padding: '10px 12px', backgroundColor: `${GOLD}08`, borderRadius: 6, border: `1px solid ${GOLD}22` }}>
+                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>ส่วนผสม</div>
+                          {f.items.map((item, idx) => {
+                            if (item.base_id) {
+                              const base = baseRecipes.find(b => b.id === item.base_id)
+                              if (!base) return null
+                              const cpUnit   = base.yield_qty > 0 ? calcBaseCost(base, ingredients) / base.yield_qty : 0
+                              const itemCost = cpUnit * item.qty_normal
+                              return (
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 3 }}>
+                                  <span style={{ color: GOLD }}>🧪 {base.name} × {item.qty_normal}{base.unit} <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>({cpUnit.toFixed(3)}₭/{base.unit})</span></span>
+                                  <span style={{ color: GOLD }}>{itemCost.toFixed(0)} ₭</span>
+                                </div>
+                              )
+                            }
+                            const ing      = ingredients.find(i => i.id === item.ingredient_id)
+                            if (!ing) return null
+                            const itemCost = (ing.pkg_cost / ing.pkg_size) * item.qty_normal
+                            return (
+                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 3 }}>
+                                <span>{ing.name} × {item.qty_normal}{ing.unit}</span>
+                                <span>{itemCost.toFixed(0)} ₭</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {[
                             { label: 'ต้นทุน',           value: cost,         color: RED   },
@@ -4838,9 +5066,10 @@ function RecipeCostTab() {
   }
 
   const subs: { id: SubTab; label: string }[] = [
-    { id: 'ingredients', label: 'วัตถุดิบ'   },
-    { id: 'recipes',     label: 'สร้างสูตร'  },
-    { id: 'pricing',     label: 'แนะนำราคา' },
+    { id: 'ingredients', label: 'วัตถุดิบ'     },
+    { id: 'bases',       label: 'สูตรพื้นฐาน' },
+    { id: 'recipes',     label: 'สร้างสูตร'    },
+    { id: 'pricing',     label: 'แนะนำราคา'   },
   ]
 
   return (
@@ -4858,6 +5087,7 @@ function RecipeCostTab() {
         ))}
       </div>
       {sub === 'ingredients' && <IngredientsPanel />}
+      {sub === 'bases'       && <BaseRecipesPanel />}
       {sub === 'recipes'     && <RecipesPanel />}
       {sub === 'pricing'     && <PricingPanel />}
     </div>
