@@ -27,9 +27,9 @@ Deno.serve(async (req) => {
     // Convert Gemini-format messages to OpenAI format and prepend system message
     const openaiMessages = [
       { role: 'system', content: context },
-      ...messages.map((m: { role: string; parts: { text: string }[] }) => ({
-        role: m.role === 'model' ? 'assistant' : 'user',
-        content: m.parts[0]?.text ?? '',
+      ...messages.map((m: { role: string; parts?: { text: string }[]; content?: string }) => ({
+        role: m.role === 'model' ? 'assistant' : m.role,
+        content: m.content ?? m.parts?.[0]?.text ?? '',
       })),
     ]
 
