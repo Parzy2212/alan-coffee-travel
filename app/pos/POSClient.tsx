@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { MoneyInput } from '@/components/MoneyInput'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -506,7 +507,7 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
                 <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8 }}>
                   <div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>ส่วนลด ₭</div>
-                    <input value={discount} onChange={e => setDiscount(e.target.value)} type="number" min="0" style={popupInput} placeholder="0" />
+                    <MoneyInput value={discount} onChange={v => setDiscount(v)} style={popupInput} placeholder="0" />
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>เหตุผลส่วนลด</div>

@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { getFaceApi } from '@/lib/faceapi'
+import { MoneyInput } from '@/components/MoneyInput'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -949,6 +950,7 @@ function RecipeFullForm({ data, onChange, categories, saving, onSave, onCancel, 
   const [uploading, setUploading] = useState(false)
   const set = (k: keyof RecipeFullEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     onChange({ ...data, [k]: e.target.value })
+  const setMoney = (k: keyof RecipeFullEdit) => (v: string) => onChange({ ...data, [k]: v })
   const taStyle: React.CSSProperties = { ...inputStyle, height: 60, resize: 'vertical' as const }
   return (
     <div style={{ padding: 20, backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderRadius: 12 }}>
@@ -970,8 +972,8 @@ function RecipeFullForm({ data, onChange, categories, saving, onSave, onCancel, 
 
       {/* Price + Cost + Prep + Cal + Category */}
       <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 100px 100px 1fr', gap: 10, marginBottom: 12 }}>
-        <Field label="ราคา ₭ *"><input value={data.price_str} onChange={set('price_str')} type="number" min="0" style={inputStyle} /></Field>
-        <Field label="ต้นทุน/แก้ว ₭"><input value={data.cost_str} onChange={set('cost_str')} type="number" min="0" style={inputStyle} /></Field>
+        <Field label="ราคา ₭ *"><MoneyInput value={data.price_str} onChange={setMoney('price_str')} style={inputStyle} placeholder="0" /></Field>
+        <Field label="ต้นทุน/แก้ว ₭"><MoneyInput value={data.cost_str} onChange={setMoney('cost_str')} style={inputStyle} placeholder="0" /></Field>
         <Field label="เวลา (นาที)"><input value={data.prep_str} onChange={set('prep_str')} type="number" min="0" style={inputStyle} /></Field>
         <Field label="แคลอรี่"><input value={data.cal_str} onChange={set('cal_str')} type="number" min="0" style={inputStyle} /></Field>
         <Field label="หมวดหมู่">
@@ -1766,6 +1768,7 @@ function InventoryFormFields({ data, onChange, showQty }: {
 }) {
   const set = (k: keyof InventoryForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     onChange({ ...data, [k]: e.target.value })
+  const setMoney = (k: keyof InventoryForm) => (v: string) => onChange({ ...data, [k]: v })
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
@@ -1778,7 +1781,7 @@ function InventoryFormFields({ data, onChange, showQty }: {
         {showQty && <Field label="ปริมาณเริ่มต้น"><input value={data.current_qty} onChange={set('current_qty')} type="number" min="0" style={inputStyle} /></Field>}
         <Field label="Reorder Point"><input value={data.reorder_point} onChange={set('reorder_point')} type="number" min="0" style={inputStyle} placeholder="ขั้นต่ำ" /></Field>
         <Field label="ความจุสูงสุด"><input value={data.max_quantity} onChange={set('max_quantity')} type="number" min="0" style={inputStyle} placeholder="Max" /></Field>
-        <Field label="ต้นทุน/หน่วย ₭"><input value={data.cost_per_unit} onChange={set('cost_per_unit')} type="number" min="0" style={inputStyle} /></Field>
+        <Field label="ต้นทุน/หน่วย ₭"><MoneyInput value={data.cost_per_unit} onChange={setMoney('cost_per_unit')} style={inputStyle} placeholder="0" /></Field>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '160px 100px', gap: 10 }}>
         <Field label="ที่เก็บ">
@@ -1988,7 +1991,7 @@ function StockItemRow({ item, onReload, showMsg }: {
           <div style={{ fontSize: 12, color: GOLD, marginBottom: 12, letterSpacing: '1px' }}>+ เติมสต็อก — {item.name}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
             <Field label={`จำนวน (${item.unit})`}><input autoFocus value={addForm.qty} onChange={e => setAddForm(f => ({ ...f, qty: e.target.value }))} type="number" min="0" style={inputStyle} /></Field>
-            <Field label="ราคาทุน ₭ (รวม)"><input value={addForm.cost} onChange={e => setAddForm(f => ({ ...f, cost: e.target.value }))} type="number" min="0" style={inputStyle} /></Field>
+            <Field label="ราคาทุน ₭ (รวม)"><MoneyInput value={addForm.cost} onChange={v => setAddForm(f => ({ ...f, cost: v }))} style={inputStyle} placeholder="0" /></Field>
             <Field label="ซัพพลายเออร์"><input value={addForm.supplier} onChange={e => setAddForm(f => ({ ...f, supplier: e.target.value }))} style={inputStyle} /></Field>
             <Field label="วันที่ซื้อ"><input value={addForm.date} onChange={e => setAddForm(f => ({ ...f, date: e.target.value }))} type="date" style={inputStyle} /></Field>
           </div>
@@ -3042,6 +3045,7 @@ function StaffManageView() {
 
   const f = (k: keyof StaffForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
+  const fMoney = (k: keyof StaffForm) => (v: string) => setForm(prev => ({ ...prev, [k]: v }))
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '10px 12px', backgroundColor: '#1a1a1a', border: `1px solid ${BORDER}`,
@@ -3067,7 +3071,7 @@ function StaffManageView() {
             <div><div style={labelStyle}>ชื่อ (TH)</div><input value={form.name_th} onChange={f('name_th')} style={inputStyle} /></div>
             <div><div style={labelStyle}>ชื่อ (LO)</div><input value={form.name_lo} onChange={f('name_lo')} style={inputStyle} /></div>
             <div><div style={labelStyle}>โทรศัพท์</div><input value={form.phone} onChange={f('phone')} style={inputStyle} /></div>
-            <div><div style={labelStyle}>เงินเดือน (LAK)</div><input type="number" value={form.salary} onChange={f('salary')} style={inputStyle} /></div>
+            <div><div style={labelStyle}>เงินเดือน (LAK)</div><MoneyInput value={form.salary} onChange={fMoney('salary')} style={inputStyle} placeholder="0" /></div>
             <div>
               <div style={labelStyle}>ประเภทเงินเดือน</div>
               <select value={form.salary_type} onChange={f('salary_type')} style={inputStyle}>
@@ -3726,7 +3730,7 @@ function FinanceTab() {
           {[['opening_cash', 'เงินเปิดกะ'], ['actual_cash', 'เงินที่นับได้']].map(([key, lbl]) => (
             <div key={key}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '1px' }}>{lbl} (LAK)</div>
-              <input type="number" value={(form as Record<string, string>)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+              <MoneyInput value={(form as Record<string, string>)[key]} onChange={v => setForm(f => ({ ...f, [key]: v }))}
                 placeholder="0" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
             </div>
           ))}
@@ -3786,7 +3790,7 @@ function FinanceTab() {
             {BUDGET_CATS.map(c => (
               <div key={c.key} style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 12, alignItems: 'center' }}>
                 <div style={{ fontSize: 13, color: c.color }}>{c.label}</div>
-                <input type="number" value={budgetDraft[c.key]} onChange={e => setBudgetDraft(d => ({ ...d, [c.key]: e.target.value }))}
+                <MoneyInput value={budgetDraft[c.key]} onChange={v => setBudgetDraft(d => ({ ...d, [c.key]: v }))}
                   placeholder="0 LAK" style={{ padding: '8px 10px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 13, boxSizing: 'border-box' }} />
               </div>
             ))}
@@ -4538,7 +4542,7 @@ function RecipeCostTab() {
                 <input style={inputStyle} type="number" min={0} value={form.pkg_size} onChange={e => setForm(f => ({ ...f, pkg_size: e.target.value }))} placeholder="เช่น 1000" />
               </Field>
               <Field label="ราคาแพ็กเกจ (₭)">
-                <input style={inputStyle} type="number" min={0} value={form.pkg_cost} onChange={e => setForm(f => ({ ...f, pkg_cost: e.target.value }))} placeholder="เช่น 25000" />
+                <MoneyInput style={inputStyle} value={form.pkg_cost} onChange={v => setForm(f => ({ ...f, pkg_cost: v }))} placeholder="25,000" />
               </Field>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={btnStyle(GOLD)} onClick={save}>บันทึก</button>
