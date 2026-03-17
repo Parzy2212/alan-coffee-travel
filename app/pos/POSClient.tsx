@@ -157,14 +157,16 @@ function QtyButton({ label, onClick }: { label: string; onClick: () => void }) {
 const SWEETNESS_OPTIONS = ['หวานปกติ', 'หวานน้อย', 'ไม่หวาน']
 const TEMP_OPTIONS      = ['ร้อน', 'เย็น', 'อุ่น']
 
-function CustomPopup({ recipe, onConfirm, onClose }: {
+function CustomPopup({ recipe, onConfirm, onClose, initialCustomization }: {
   recipe: Recipe
   onConfirm: (customization: string) => void
   onClose: () => void
+  initialCustomization?: string
 }) {
-  const [sweetness, setSweetness] = useState('หวานปกติ')
-  const [temp, setTemp]           = useState('ร้อน')
-  const [note, setNote]           = useState('')
+  const initParts = initialCustomization?.split(' · ') ?? []
+  const [sweetness, setSweetness] = useState(() => SWEETNESS_OPTIONS.find(s => initParts.includes(s)) ?? 'หวานปกติ')
+  const [temp, setTemp]           = useState(() => TEMP_OPTIONS.find(t => initParts.includes(t)) ?? 'ร้อน')
+  const [note, setNote]           = useState(() => initParts.filter(p => !SWEETNESS_OPTIONS.includes(p) && !TEMP_OPTIONS.includes(p)).join(' · '))
   const overlayRef                = useRef<HTMLDivElement>(null)
 
   function handleOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -246,9 +248,11 @@ function CustomPopup({ recipe, onConfirm, onClose }: {
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
+  discount: string
+  discountReason: string
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod) => void
   onClose: () => void
 }) {
@@ -263,8 +267,6 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
   const [showExtra,      setShowExtra]      = useState(false)
   const [customer,       setCustomer]       = useState('')
   const [table,          setTable]          = useState('')
-  const [discount,       setDiscount]       = useState('')
-  const [discountReason, setDiscountReason] = useState('')
   const [staffNote,      setStaffNote]      = useState('')
   const [loading,        setLoading]        = useState(false)
   const [errMsg,         setErrMsg]         = useState('')
@@ -518,7 +520,7 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
               padding: '7px 14px', color: 'rgba(255,255,255,0.35)', fontSize: 12,
               cursor: 'pointer', width: '100%', textAlign: 'left',
             }}>
-              {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · โต๊ะ · ส่วนลด · หมายเหตุ
+              {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · โต๊ะ · หมายเหตุ
             </button>
             {showExtra && (
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -530,16 +532,6 @@ function ChargePopup({ subtotal, cartPayload, onSuccess, onClose }: {
                   <div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>โต๊ะ</div>
                     <input value={table} onChange={e => setTable(e.target.value)} style={popupInput} placeholder="A1" />
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>ส่วนลด ₭</div>
-                    <MoneyInput value={discount} onChange={v => setDiscount(v)} style={popupInput} placeholder="0" />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>เหตุผลส่วนลด</div>
-                    <input value={discountReason} onChange={e => setDiscountReason(e.target.value)} style={popupInput} placeholder="VIP / โปรโมชัน..." />
                   </div>
                 </div>
                 <div>
@@ -896,6 +888,9 @@ export default function POSClient() {
   const [chargeStatus, setChargeStatus] = useState<ChargeStatus>('idle')
   const [successData,  setSuccessData]  = useState<{ queue: number; receipt: string; change: number; method: PaymentMethod } | null>(null)
   const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null)
+  const [editingCartKey, setEditingCartKey] = useState<string | null>(null)
+  const [discount,       setDiscount]       = useState('')
+  const [discountReason, setDiscountReason] = useState('')
   const [queueEntries,  setQueueEntries] = useState<QueueEntry[]>([])
   const [todayOrders,   setTodayOrders]  = useState<TodayOrder[]>([])
   const [showCharge,     setShowCharge]    = useState(false)
@@ -949,10 +944,28 @@ export default function POSClient() {
     return recipes.filter(r => r.category_id && familyIds.includes(r.category_id))
   }, [recipes, activeL1, activeL2, categories])
 
-  const subtotal   = cart.reduce((s, i) => s + i.recipe.price_lak * i.qty, 0)
-  const totalItems = cart.reduce((s, i) => s + i.qty, 0)
+  const subtotal    = cart.reduce((s, i) => s + i.recipe.price_lak * i.qty, 0)
+  const totalItems  = cart.reduce((s, i) => s + i.qty, 0)
+  const discountAmt = parseInt(discount, 10) || 0
+  const finalTotal  = Math.max(subtotal - discountAmt, 0)
 
   // Cart actions
+  function editCartItem(oldKey: string, newCustomization: string) {
+    setCart(prev => {
+      const item = prev.find(i => i.cartKey === oldKey)
+      if (!item) return prev
+      const newKey = `${item.recipe.id}::${newCustomization}`
+      if (newKey === oldKey) return prev
+      const existing = prev.find(i => i.cartKey === newKey)
+      if (existing) {
+        return prev
+          .filter(i => i.cartKey !== oldKey)
+          .map(i => i.cartKey === newKey ? { ...i, qty: i.qty + item.qty } : i)
+      }
+      return prev.map(i => i.cartKey === oldKey ? { ...i, cartKey: newKey, customization: newCustomization } : i)
+    })
+  }
+
   function addToCartWithCustomization(recipe: Recipe, customization: string) {
     const cartKey = `${recipe.id}::${customization}`
     setCart(prev => {
@@ -972,18 +985,21 @@ export default function POSClient() {
     })
   }
 
+  function dismissSuccess() {
+    setChargeStatus('idle')
+    setSuccessData(null)
+  }
+
   // Charge success handler (called from ChargePopup)
   function handleChargeSuccess(queueNum: number, receipt: string, change: number, method: PaymentMethod) {
     setSuccessData({ queue: queueNum, receipt, change, method })
     setCart([])
+    setDiscount('')
+    setDiscountReason('')
     try { localStorage.removeItem('pos_cart') } catch { /* ignore */ }
     setChargeStatus('success')
     setShowCharge(false)
     loadTodayOrders()
-    setTimeout(() => {
-      setChargeStatus('idle')
-      setSuccessData(null)
-    }, 5000)
   }
 
   // ── Queue ─────────────────────────────────────────────────────────────────
@@ -1044,8 +1060,20 @@ export default function POSClient() {
           onClose={() => setPendingRecipe(null)} />
       )}
 
+      {editingCartKey && (() => {
+        const editItem = cart.find(i => i.cartKey === editingCartKey)
+        if (!editItem) return null
+        return (
+          <CustomPopup recipe={editItem.recipe}
+            initialCustomization={editItem.customization}
+            onConfirm={newCustomization => { editCartItem(editingCartKey, newCustomization); setEditingCartKey(null) }}
+            onClose={() => setEditingCartKey(null)} />
+        )
+      })()}
+
       {showCharge && (
         <ChargePopup subtotal={subtotal} cartPayload={cartPayload}
+          discount={discount} discountReason={discountReason}
           onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
       )}
 
@@ -1154,8 +1182,8 @@ export default function POSClient() {
 
           {/* Success overlay */}
           {chargeStatus === 'success' && successData && (
-            <div style={{
-              position: 'absolute', inset: 0, zIndex: 10,
+            <div onClick={dismissSuccess} style={{
+              position: 'absolute', inset: 0, zIndex: 10, cursor: 'pointer',
               backgroundColor: 'rgba(10,10,10,0.96)',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
             }}>
@@ -1178,6 +1206,12 @@ export default function POSClient() {
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 6 }}>
                 {PAY_METHODS.find(m => m.value === successData.method)?.icon} {PAY_METHODS.find(m => m.value === successData.method)?.label}
               </div>
+              <button onClick={e => { e.stopPropagation(); dismissSuccess() }} style={{
+                marginTop: 14, padding: '10px 32px', borderRadius: 8, border: `1px solid ${GOLD}55`,
+                backgroundColor: `${GOLD}18`, color: GOLD, fontWeight: 700, fontSize: 13,
+                cursor: 'pointer', letterSpacing: '1px', fontFamily: 'var(--font-heading)',
+              }}>ออเดอร์ต่อไป →</button>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', marginTop: 2 }}>แตะที่ใดก็ได้เพื่อปิด</div>
             </div>
           )}
 
@@ -1227,6 +1261,8 @@ export default function POSClient() {
                     <span style={{ fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{item.qty}</span>
                     <QtyButton label="+" onClick={() => addToCartWithCustomization(item.recipe, item.customization)} />
                   </div>
+                  <button onClick={() => setEditingCartKey(item.cartKey)}
+                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.22)', fontSize: 13, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>✏️</button>
                   <button onClick={() => setCart(prev => prev.filter(i => i.cartKey !== item.cartKey))}
                     style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.22)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
                 </div>
@@ -1236,10 +1272,26 @@ export default function POSClient() {
 
           {/* Cart footer */}
           <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: discountAmt > 0 ? 4 : 10 }}>
               <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase' }}>Total</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{fmtLak(subtotal)}</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: discountAmt > 0 ? 'rgba(255,255,255,0.35)' : '#fff', fontVariantNumeric: 'tabular-nums', textDecoration: discountAmt > 0 ? 'line-through' : 'none' }}>{fmtLak(subtotal)}</span>
             </div>
+            {/* Discount row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', textTransform: 'uppercase', flexShrink: 0 }}>ส่วนลด</span>
+              <MoneyInput value={discount} onChange={v => setDiscount(v)}
+                style={{ flex: 1, padding: '5px 10px', borderRadius: 6, border: `1px solid ${discountAmt > 0 ? GOLD + '55' : 'rgba(255,255,255,0.1)'}`, backgroundColor: 'rgba(255,255,255,0.04)', color: discountAmt > 0 ? GOLD : '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const }}
+                placeholder="0" />
+              <input value={discountReason} onChange={e => setDiscountReason(e.target.value)}
+                style={{ flex: 2, padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }}
+                placeholder="เหตุผล (ไม่บังคับ)" />
+            </div>
+            {discountAmt > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase' }}>ยอดสุทธิ</span>
+                <span style={{ fontSize: 22, fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</span>
+              </div>
+            )}
             <button
               onClick={() => cart.length > 0 && setShowCharge(true)}
               disabled={cart.length === 0}
@@ -1252,7 +1304,7 @@ export default function POSClient() {
                 fontFamily: 'var(--font-heading)', transition: 'all 0.2s',
               }}
             >
-              {cart.length > 0 ? `Charge ${fmtLak(subtotal)}` : 'No Items'}
+              {cart.length > 0 ? `Charge ${fmtLak(finalTotal)}` : 'No Items'}
             </button>
           </div>
 
