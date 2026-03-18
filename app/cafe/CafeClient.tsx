@@ -605,6 +605,18 @@ function DashboardTab() {
     load()
   }, [period])
 
+  // Realtime: refresh today's stats whenever any order changes
+  useEffect(() => {
+    const ch = supabase
+      .channel('dashboard_orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        supabase.rpc('get_dashboard_stats').then(({ data }) => { if (data) setStats(data as ExtDashStats) })
+        supabase.rpc('get_hourly_sales', { p_date: todayVientiane() }).then(({ data }) => { if (data) setHourly((data as HourlySale[]) ?? []) })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
+
   if (loading) return <LoadingSpinner />
 
   // ── Derived ──────────────────────────────────────────────────────────────────
@@ -5137,7 +5149,18 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
 ]
 
 export default function CafeClient() {
-  const [tab, setTab] = useState<Tab>('dashboard')
+  const [tab,     setTab]     = useState<Tab>('dashboard')
+  const [visited, setVisited] = useState<Set<Tab>>(() => new Set<Tab>(['dashboard']))
+
+  function switchTab(t: Tab) {
+    setTab(t)
+    setVisited(prev => { const next = new Set(prev); next.add(t); return next })
+  }
+
+  function tabWrap(id: Tab, node: React.ReactNode) {
+    if (!visited.has(id)) return null
+    return <div style={{ display: tab === id ? undefined : 'none' }}>{node}</div>
+  }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: BLACK, color: '#fff', fontFamily: 'var(--font-body, Inter, sans-serif)' }}>
@@ -5149,7 +5172,7 @@ export default function CafeClient() {
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px' }}>
           {NAV_ITEMS.map(item => (
-            <button key={item.id} onClick={() => setTab(item.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 9, border: 'none', cursor: 'pointer', backgroundColor: tab === item.id ? `${GOLD}18` : 'transparent', color: tab === item.id ? GOLD : 'rgba(255,255,255,0.42)', fontSize: 14, fontWeight: tab === item.id ? 600 : 400, textAlign: 'left', transition: 'all .15s' }}>
+            <button key={item.id} onClick={() => switchTab(item.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 9, border: 'none', cursor: 'pointer', backgroundColor: tab === item.id ? `${GOLD}18` : 'transparent', color: tab === item.id ? GOLD : 'rgba(255,255,255,0.42)', fontSize: 14, fontWeight: tab === item.id ? 600 : 400, textAlign: 'left', transition: 'all .15s' }}>
               <span style={{ fontSize: 16 }}>{item.icon}</span>
               {item.label}
             </button>
@@ -5168,18 +5191,18 @@ export default function CafeClient() {
           <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{NAV_ITEMS.find(n => n.id === tab)?.label}</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', marginTop: 6 }}>Alan Cafe OS — Admin</div>
         </div>
-        {tab === 'dashboard'  && <DashboardTab />}
-        {tab === 'menu'       && <MenuTab />}
-        {tab === 'categories' && <CategoriesTab />}
-        {tab === 'stock'      && <StockTab />}
-        {tab === 'settings'   && <SettingsTab />}
-        {tab === 'staff'      && <StaffTab />}
-        {tab === 'customers'  && <CustomersTab />}
-        {tab === 'purchase'   && <PurchaseTab />}
-        {tab === 'finance'    && <FinanceTab />}
-        {tab === 'ai'          && <AITab />}
-        {tab === 'audit'       && <AuditTab />}
-        {tab === 'recipe-cost' && <RecipeCostTab />}
+        {tabWrap('dashboard',   <DashboardTab />)}
+        {tabWrap('menu',        <MenuTab />)}
+        {tabWrap('categories',  <CategoriesTab />)}
+        {tabWrap('stock',       <StockTab />)}
+        {tabWrap('settings',    <SettingsTab />)}
+        {tabWrap('staff',       <StaffTab />)}
+        {tabWrap('customers',   <CustomersTab />)}
+        {tabWrap('purchase',    <PurchaseTab />)}
+        {tabWrap('finance',     <FinanceTab />)}
+        {tabWrap('ai',          <AITab />)}
+        {tabWrap('audit',       <AuditTab />)}
+        {tabWrap('recipe-cost', <RecipeCostTab />)}
       </div>
     </div>
   )
