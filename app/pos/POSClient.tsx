@@ -34,6 +34,28 @@ type CartItem = {
 
 type ChargeStatus = 'idle' | 'loading' | 'success' | 'error'
 
+type PosSettings = {
+  shop_name: string
+  vat_percent: number
+  qr_payment_number: string
+  shop_line: string
+  shop_facebook: string
+}
+
+type SuccessData = {
+  queue: number
+  receipt: string
+  change: number
+  method: PaymentMethod
+  customer: string
+  table: string
+  discountAmt: number
+  received: number
+  cartSnapshot: CartItem[]
+  subtotal: number
+  finalTotal: number
+}
+
 type QueueEntry = {
   order_id: string
   queue_number: number
@@ -247,6 +269,277 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization }: {
   )
 }
 
+// ─── DigitalReceiptPopup ──────────────────────────────────────────────────────
+
+function DigitalReceiptPopup({
+  data, settings, onClose,
+}: {
+  data: SuccessData
+  settings: PosSettings
+  onClose: () => void
+}) {
+  const now     = new Date()
+  const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+  const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+
+  const vatPct    = settings.vat_percent
+  const vatAmount = vatPct > 0 ? Math.round(data.finalTotal * vatPct / (100 + vatPct)) : 0
+
+  const qrContent = settings.qr_payment_number || settings.shop_line || settings.shop_facebook || ''
+
+  const payLabel = data.method === 'cash' ? 'เงินสด' : data.method === 'qr' ? 'QR Code' : 'โอนเงิน'
+
+  function handlePrint() { window.print() }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 300,
+      backgroundColor: 'rgba(0,0,0,0.88)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16,
+    }}>
+      <style>{`
+        @media print {
+          body > * { display: none !important; }
+          #pos-receipt-print { display: block !important; }
+          #pos-receipt-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+        #pos-receipt-print { display: none; }
+      `}</style>
+
+      {/* Screen receipt card */}
+      <div style={{
+        backgroundColor: '#121212', border: `1px solid ${GOLD}44`,
+        borderRadius: 16, width: '100%', maxWidth: 420,
+        maxHeight: '92vh', display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+      }}>
+        {/* Header bar */}
+        <div style={{
+          padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexShrink: 0,
+        }}>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2.5px', textTransform: 'uppercase', fontWeight: 700 }}>
+            ใบเสร็จ / Receipt
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handlePrint} style={{
+              padding: '5px 14px', borderRadius: 6,
+              border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`,
+              color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>
+              🖨️ พิมพ์
+            </button>
+            <button onClick={onClose} style={{
+              padding: '5px 14px', borderRadius: 6,
+              border: '1px solid rgba(255,255,255,0.12)',
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              color: 'rgba(255,255,255,0.5)', fontSize: 12, cursor: 'pointer',
+            }}>
+              ปิด
+            </button>
+          </div>
+        </div>
+
+        {/* Receipt body */}
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+            {/* Shop info */}
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{
+                fontFamily: 'var(--font-heading)', fontWeight: 900,
+                fontSize: 24, color: '#fff', letterSpacing: '-0.5px',
+              }}>
+                {settings.shop_name || 'ALAN COFFEE'}
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+                {dateStr} · {timeStr}
+              </div>
+            </div>
+
+            {/* Receipt / Queue numbers */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              padding: '10px 12px', borderRadius: 8,
+              backgroundColor: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              marginBottom: 16,
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>ใบเสร็จ</div>
+                <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: GOLD, marginTop: 2 }}>{data.receipt || '—'}</div>
+              </div>
+              <div style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>คิว</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 900, color: '#fff', marginTop: 2, letterSpacing: '-1px' }}>
+                  {fmtQueue(data.queue)}
+                </div>
+              </div>
+              {data.customer && (
+                <>
+                  <div style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>ลูกค้า</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fff', marginTop: 2 }}>{data.customer}</div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div style={{ borderTop: '1px dashed rgba(255,255,255,0.12)', marginBottom: 14 }} />
+
+            {/* Items */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+              {data.cartSnapshot.map((item, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ minWidth: 20, textAlign: 'right', fontSize: 12, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>
+                    {item.qty}×
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{item.recipe.product_name}</div>
+                    {item.customization && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>{item.customization}</div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 13, color: '#fff', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                    {(item.recipe.price_lak * item.qty).toLocaleString('en-US')}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div style={{ borderTop: '1px dashed rgba(255,255,255,0.12)', marginBottom: 12 }} />
+
+            {/* Totals */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+                <span>ยอดรวม</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{data.subtotal.toLocaleString('en-US')}</span>
+              </div>
+              {data.discountAmt > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: GREEN }}>
+                  <span>ส่วนลด</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>−{data.discountAmt.toLocaleString('en-US')}</span>
+                </div>
+              )}
+              {vatPct > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+                  <span>VAT {vatPct}% (รวมอยู่แล้ว)</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{vatAmount.toLocaleString('en-US')}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Grand total */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+              marginTop: 10, paddingTop: 10, borderTop: `1px solid ${GOLD}33`,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: '0.5px' }}>ยอดสุทธิ</span>
+              <span style={{ fontSize: 26, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums', letterSpacing: '-1px' }}>
+                {data.finalTotal.toLocaleString('en-US')} <span style={{ fontSize: 14 }}>LAK</span>
+              </span>
+            </div>
+
+            {/* Payment info */}
+            <div style={{
+              marginTop: 14, padding: '10px 14px', borderRadius: 8,
+              backgroundColor: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
+                <span>ชำระด้วย</span>
+                <span style={{ fontWeight: 600, color: '#fff' }}>{payLabel}</span>
+              </div>
+              {data.method === 'cash' && data.received > 0 && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>
+                    <span>รับมา</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{data.received.toLocaleString('en-US')}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: GREEN, fontWeight: 700 }}>
+                    <span>เงินทอน</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{data.change.toLocaleString('en-US')}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Shop QR */}
+            {qrContent && (
+              <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrContent)}&bgcolor=121212&color=c9a84c&margin=6`}
+                  alt="QR"
+                  width={120} height={120}
+                  style={{ borderRadius: 8, border: `1px solid ${GOLD}33` }}
+                />
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '1px' }}>
+                  ขอบคุณที่ใช้บริการ
+                </div>
+              </div>
+            )}
+
+            {!qrContent && (
+              <div style={{ marginTop: 16, textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>
+                ขอบคุณที่ใช้บริการ — Thank you
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Print-only version */}
+      <div id="pos-receipt-print" style={{
+        fontFamily: 'monospace', fontSize: 12, color: '#000',
+        backgroundColor: '#fff', padding: '20px', width: '280px',
+        margin: '0 auto',
+      }}>
+        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>
+          {settings.shop_name || 'ALAN COFFEE'}
+        </div>
+        <div style={{ textAlign: 'center', fontSize: 10, marginBottom: 12 }}>
+          {dateStr} {timeStr} | {data.receipt}
+        </div>
+        <div style={{ borderTop: '1px dashed #000', marginBottom: 8 }} />
+        {data.cartSnapshot.map((item, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span>{item.qty}× {item.recipe.product_name}{item.customization ? ` (${item.customization})` : ''}</span>
+            <span>{(item.recipe.price_lak * item.qty).toLocaleString('en-US')}</span>
+          </div>
+        ))}
+        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+        {data.discountAmt > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span>ส่วนลด</span><span>-{data.discountAmt.toLocaleString('en-US')}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: 4 }}>
+          <span>รวม</span><span>{data.finalTotal.toLocaleString('en-US')} LAK</span>
+        </div>
+        {data.method === 'cash' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>รับมา</span><span>{data.received.toLocaleString('en-US')}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>เงินทอน</span><span>{data.change.toLocaleString('en-US')}</span>
+            </div>
+          </>
+        )}
+        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+        <div style={{ textAlign: 'center', fontSize: 10 }}>ขอบคุณที่ใช้บริการ</div>
+      </div>
+    </div>
+  )
+}
+
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
 function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSuccess, onClose }: {
@@ -254,7 +547,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
   discount: string
   discountReason: string
-  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod) => void
+  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number) => void
   onClose: () => void
 }) {
   const isSmall = useIsSmall()
@@ -323,7 +616,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
     })
 
     const finalReceipt = err2 ? '—' : ((receipt as string) ?? '—')
-    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method)
+    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customer, table, discountAmt, method === 'cash' ? receivedNum : 0)
     setLoading(false)
   }
 
@@ -883,7 +1176,8 @@ export default function POSClient() {
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
   const [now,          setNow]          = useState(new Date())
   const [chargeStatus, setChargeStatus] = useState<ChargeStatus>('idle')
-  const [successData,  setSuccessData]  = useState<{ queue: number; receipt: string; change: number; method: PaymentMethod } | null>(null)
+  const [successData,  setSuccessData]  = useState<SuccessData | null>(null)
+  const [posSettings,  setPosSettings]  = useState<PosSettings>({ shop_name: '', vat_percent: 0, qr_payment_number: '', shop_line: '', shop_facebook: '' })
   const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null)
   const [editingCartKey, setEditingCartKey] = useState<string | null>(null)
   const [discount,       setDiscount]       = useState('')
@@ -903,6 +1197,18 @@ export default function POSClient() {
       if (saved) setCart(JSON.parse(saved) as CartItem[])
     } catch { /* ignore */ }
     setMounted(true)
+    // Load shop settings for receipt
+    supabase.rpc('get_site_settings').then(({ data }) => {
+      if (data) {
+        setPosSettings({
+          shop_name:         (data.shop_name as string)         || '',
+          vat_percent:       parseFloat((data.vat_percent as string) || '0') || 0,
+          qr_payment_number: (data.qr_payment_number as string) || '',
+          shop_line:         (data.shop_line as string)         || '',
+          shop_facebook:     (data.shop_facebook as string)     || '',
+        })
+      }
+    })
   }, [])
 
   // Persist cart to localStorage
@@ -1008,8 +1314,20 @@ export default function POSClient() {
   }
 
   // Charge success handler (called from ChargePopup)
-  function handleChargeSuccess(queueNum: number, receipt: string, change: number, method: PaymentMethod) {
-    setSuccessData({ queue: queueNum, receipt, change, method })
+  function handleChargeSuccess(
+    queueNum: number, receipt: string, change: number, method: PaymentMethod,
+    customer: string, table: string, discAmt: number, received: number,
+  ) {
+    const cartSnapshot = [...cart]
+    setSuccessData({
+      queue: queueNum, receipt, change, method,
+      customer, table,
+      discountAmt: discAmt,
+      received,
+      cartSnapshot,
+      subtotal,
+      finalTotal,
+    })
     setCart([])
     setDiscount('')
     setDiscountReason('')
@@ -1096,6 +1414,9 @@ export default function POSClient() {
 
       {showSettings && <SettingsPopup onClose={() => setShowSettings(false)} />}
       {showShiftClose && <ShiftClosePopup todayTotal={todayTotal} todayCount={todayCount} onClose={() => setShowShiftClose(false)} />}
+      {chargeStatus === 'success' && successData && (
+        <DigitalReceiptPopup data={successData} settings={posSettings} onClose={dismissSuccess} />
+      )}
 
       {/* ── TOP BAR ───────────────────────────────────────────────────────── */}
       <header style={{
@@ -1229,41 +1550,6 @@ export default function POSClient() {
 
         {/* ── RIGHT: CART ──────────────────────────────────────────────────── */}
         <div style={{ width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column', backgroundColor: '#111', position: 'relative' }}>
-
-          {/* Success overlay */}
-          {chargeStatus === 'success' && successData && (
-            <div onClick={dismissSuccess} style={{
-              position: 'absolute', inset: 0, zIndex: 10, cursor: 'pointer',
-              backgroundColor: 'rgba(10,10,10,0.96)',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
-            }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', letterSpacing: '3px', textTransform: 'uppercase' }}>คิวของคุณ</div>
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 80, fontWeight: 900, color: GOLD, letterSpacing: '-2px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                {fmtQueue(successData.queue)}
-              </div>
-              <div style={{ fontSize: 24 }}>✅</div>
-              {successData.receipt !== '—' && (
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
-                  ใบเสร็จ <span style={{ color: GOLD, fontFamily: 'monospace' }}>{successData.receipt}</span>
-                </div>
-              )}
-              {successData.method === 'cash' && successData.change > 0 && (
-                <div style={{ marginTop: 8, padding: '10px 24px', backgroundColor: `${GREEN}18`, border: `1px solid ${GREEN}33`, borderRadius: 10, textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>เงินทอน</div>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: GREEN, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(successData.change)}</div>
-                </div>
-              )}
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 6 }}>
-                {PAY_METHODS.find(m => m.value === successData.method)?.icon} {PAY_METHODS.find(m => m.value === successData.method)?.label}
-              </div>
-              <button onClick={e => { e.stopPropagation(); dismissSuccess() }} style={{
-                marginTop: 14, padding: '10px 32px', borderRadius: 8, border: `1px solid ${GOLD}55`,
-                backgroundColor: `${GOLD}18`, color: GOLD, fontWeight: 700, fontSize: 13,
-                cursor: 'pointer', letterSpacing: '1px', fontFamily: 'var(--font-heading)',
-              }}>ออเดอร์ต่อไป →</button>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', marginTop: 2 }}>แตะที่ใดก็ได้เพื่อปิด</div>
-            </div>
-          )}
 
           {/* Cart header */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>

@@ -7,11 +7,12 @@ import {
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 
-const LazyMenuTab      = lazy(() => import('@/components/cafe/MenuTab'))
-const LazyStockTab     = lazy(() => import('@/components/cafe/StockTab'))
-const LazyStaffTab     = lazy(() => import('@/components/cafe/StaffTab'))
-const LazyFinanceTab   = lazy(() => import('@/components/cafe/FinanceTab'))
-const LazyRecipeCostTab = lazy(() => import('@/components/cafe/RecipeCostTab'))
+const LazyMenuTab        = lazy(() => import('@/components/cafe/MenuTab'))
+const LazyStockTab       = lazy(() => import('@/components/cafe/StockTab'))
+const LazyStaffTab       = lazy(() => import('@/components/cafe/StaffTab'))
+const LazyFinanceTab     = lazy(() => import('@/components/cafe/FinanceTab'))
+const LazyRecipeCostTab  = lazy(() => import('@/components/cafe/RecipeCostTab'))
+const LazyScheduleTab    = lazy(() => import('@/components/cafe/ScheduleTab'))
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ const ORANGE  = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'purchase' | 'finance' | 'ai' | 'audit' | 'recipe-cost'
+type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'purchase' | 'finance' | 'ai' | 'audit' | 'recipe-cost' | 'schedule'
 
 type ExtDashStats = {
   today_sales:     number
@@ -2534,6 +2535,7 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: 'stock',      label: 'สต็อก',       icon: '📦' },
   { id: 'settings',   label: 'ตั้งค่า',     icon: '⚙️' },
   { id: 'staff',      label: 'พนักงาน',     icon: '👥' },
+  { id: 'schedule',   label: 'ตารางงาน',    icon: '📅' },
   { id: 'customers',  label: 'ลูกค้า',      icon: '🧑‍🤝‍🧑' },
   { id: 'purchase',   label: 'การซื้อ',     icon: '🧾' },
   { id: 'finance',    label: 'การเงิน',     icon: '💰' },
@@ -2591,6 +2593,7 @@ export default function CafeClient() {
         {tabWrap('stock',       <Suspense fallback={<LoadingSpinner />}><LazyStockTab /></Suspense>)}
         {tabWrap('settings',    <SettingsTab />)}
         {tabWrap('staff',       <Suspense fallback={<LoadingSpinner />}><LazyStaffTab /></Suspense>)}
+        {tabWrap('schedule',    <Suspense fallback={<LoadingSpinner />}><LazyScheduleTab /></Suspense>)}
         {tabWrap('customers',   <CustomersTab />)}
         {tabWrap('purchase',    <PurchaseTab />)}
         {tabWrap('finance',     <Suspense fallback={<LoadingSpinner />}><LazyFinanceTab /></Suspense>)}
