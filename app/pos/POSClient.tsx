@@ -560,6 +560,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
   const [qrName,         setQrName]         = useState('')
   const [showExtra,      setShowExtra]      = useState(false)
   const [customer,       setCustomer]       = useState('')
+  const [phone,          setPhone]          = useState('')
   const [table,          setTable]          = useState('')
   const [staffNote,      setStaffNote]      = useState('')
   const [loading,        setLoading]        = useState(false)
@@ -599,7 +600,20 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
     if (!cashOk) { setErrMsg('เงินที่รับมาไม่เพียงพอ'); return }
     setLoading(true); setErrMsg('')
 
-    const { data, error } = await supabase.rpc('create_order_with_deduction', { p_cart: cartPayload })
+    // Link order to customer record if phone is provided
+    let customerId: string | null = null
+    if (customer.trim() && phone.trim()) {
+      const { data: custData } = await supabase.rpc('upsert_customer', {
+        p_phone: phone.trim(),
+        p_name:  customer.trim(),
+      })
+      if (custData?.id) customerId = custData.id as string
+    }
+
+    const { data, error } = await supabase.rpc('create_order_with_deduction', {
+      p_cart:        cartPayload,
+      p_customer_id: customerId,
+    })
     if (error) { setErrMsg(translateError(error.message)); setLoading(false); return }
 
     const result = data as { order_id: string; queue_number: number }
@@ -814,14 +828,18 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
               padding: '7px 14px', color: 'rgba(255,255,255,0.35)', fontSize: 12,
               cursor: 'pointer', width: '100%', textAlign: 'left',
             }}>
-              {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · โต๊ะ · หมายเหตุ
+              {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · เบอร์โทร · โต๊ะ · หมายเหตุ
             </button>
             {showExtra && (
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                   <div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>ชื่อลูกค้า</div>
                     <input value={customer} onChange={e => setCustomer(e.target.value)} style={popupInput} placeholder="(ไม่บังคับ)" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>เบอร์โทร</div>
+                    <input value={phone} onChange={e => setPhone(e.target.value)} style={popupInput} placeholder="020xxxxxxx" />
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>โต๊ะ</div>

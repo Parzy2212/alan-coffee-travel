@@ -332,6 +332,9 @@ export default function RecipeCostTab() {
       if (!menu) { setMsg('เกิดข้อผิดพลาด: เลือกเมนูก่อน'); return }
       const draft: RecipeFormula = { id: editId === 'new' ? '' : editId!, recipe_id: form.recipe_id, recipe_name: menu.product_name, price_lak: menu.price_lak, items: form.items, target_margin: form.target_margin }
       const saved = await upsertFormula(draft)
+      // Sync calculated cost back to the menu item in recipes table
+      const costNormal = calcCost(form.items, 'qty_normal', ingredients, baseRecipes)
+      await supabase.from('recipes').update({ cost_per_cup_lak: Math.round(costNormal) }).eq('id', form.recipe_id)
       setFormulas(prev => editId === 'new' ? [...prev, saved] : prev.map(f => f.id === editId ? saved : f))
       setEditId(null); setMsg('บันทึกแล้ว')
     }

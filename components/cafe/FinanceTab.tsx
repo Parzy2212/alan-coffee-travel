@@ -66,9 +66,11 @@ export default function FinanceTab() {
     const opening = parseFloat(form.opening_cash), actual = parseFloat(form.actual_cash)
     if (isNaN(opening) || isNaN(actual)) { setMsg('กรุณากรอกยอดเงินให้ถูกต้อง'); return }
     setSaving(true); setMsg('')
+    const { data: stats } = await supabase.rpc('get_dashboard_stats')
+    const systemSales = (stats as { today_sales?: number } | null)?.today_sales ?? 0
     const { error } = await supabase.rpc('close_shift', {
       p_staff_id: null, p_shift: form.shift,
-      p_opening_cash: opening, p_actual_cash: actual, p_system_sales: 0,
+      p_opening_cash: opening, p_actual_cash: actual, p_system_sales: systemSales,
     })
     if (error) { setMsg(error.message) } else {
       setForm(f => ({ ...f, opening_cash: '', actual_cash: '' }))
