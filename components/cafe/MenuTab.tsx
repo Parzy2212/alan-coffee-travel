@@ -8,13 +8,14 @@ import {
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
-  GOLD, GOLD_DIM, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
+  GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
   Category, RecipeFull, RecipeFullEdit, DaySale,
   inputStyle, btnStyle, btnStyleSm,
-  Badge, Toast, LoadingSpinner, Field,
-  fmtLAK, fmtK, fmtDate,
+  Badge, Toast, LoadingSpinner,
+  fmtLAK, fmtK,
   ALLERGENS, toEdit, emptyEdit,
 } from '@/components/cafe/shared'
+void BLACK
 
 // ─── AllergenToggle ───────────────────────────────────────────────────────────
 
@@ -26,9 +27,11 @@ function AllergenToggle({ selected, onChange }: { selected: string[]; onChange: 
         const on = selected.includes(a)
         return (
           <button key={a} onClick={() => toggle(a)} type="button" style={{
-            padding: '3px 10px', borderRadius: 20, border: `1px solid ${on ? ORANGE : 'rgba(255,255,255,0.12)'}`,
+            padding: '6px 14px', borderRadius: 20,
+            border: `1px solid ${on ? ORANGE : 'rgba(255,255,255,0.12)'}`,
             backgroundColor: on ? ORANGE + '22' : 'transparent',
-            color: on ? ORANGE : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer',
+            color: on ? ORANGE : 'rgba(255,255,255,0.4)',
+            fontSize: 13, cursor: 'pointer', transition: 'all .15s',
           }}>{a}</button>
         )
       })}
@@ -36,103 +39,392 @@ function AllergenToggle({ selected, onChange }: { selected: string[]; onChange: 
   )
 }
 
-// ─── RecipeFullForm ───────────────────────────────────────────────────────────
+// ─── Toggle Switch ────────────────────────────────────────────────────────────
 
-function RecipeFullForm({ data, onChange, categories, saving, onSave, onCancel, title }: {
-  data: RecipeFullEdit; onChange: (d: RecipeFullEdit) => void; categories: Category[]
-  saving: boolean; onSave: () => void; onCancel: () => void; title: string
-}) {
-  const [uploading, setUploading] = useState(false)
-  const set = (k: keyof RecipeFullEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    onChange({ ...data, [k]: e.target.value })
-  const setMoney = (k: keyof RecipeFullEdit) => (v: string) => onChange({ ...data, [k]: v })
-  const taStyle: React.CSSProperties = { ...inputStyle, height: 60, resize: 'vertical' as const }
+function Toggle({ on, onChange, label, icon }: { on: boolean; onChange: (v: boolean) => void; label: string; icon?: string }) {
   return (
-    <div style={{ padding: 20, backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderRadius: 12 }}>
-      <div style={{ fontSize: 12, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 16 }}>{title}</div>
-
-      {/* Names */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-        <Field label="ชื่อ EN *"><input value={data.product_name} onChange={set('product_name')} style={inputStyle} placeholder="Espresso" /></Field>
-        <Field label="ชื่อ TH"><input value={data.product_name_th} onChange={set('product_name_th')} style={inputStyle} placeholder="เอสเพรสโซ่" /></Field>
-        <Field label="ชื่อ LO"><input value={data.product_name_lo} onChange={set('product_name_lo')} style={inputStyle} placeholder="ເອສເປຣັສໂຊ" /></Field>
-      </div>
-
-      {/* Descriptions */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-        <Field label="คำอธิบาย EN"><textarea value={data.description_en} onChange={set('description_en')} style={taStyle} placeholder="Rich espresso..." /></Field>
-        <Field label="คำอธิบาย TH"><textarea value={data.description_th} onChange={set('description_th')} style={taStyle} placeholder="กาแฟเข้มข้น..." /></Field>
-        <Field label="คำอธิบาย LO"><textarea value={data.description_lo} onChange={set('description_lo')} style={taStyle} placeholder="ກາເຟ..." /></Field>
-      </div>
-
-      {/* Price + Cost + Prep + Cal + Category */}
-      <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 100px 100px 1fr', gap: 10, marginBottom: 12 }}>
-        <Field label="ราคา ₭ *"><MoneyInput value={data.price_str} onChange={setMoney('price_str')} style={inputStyle} placeholder="0" /></Field>
-        <Field label="ต้นทุน/แก้ว ₭"><MoneyInput value={data.cost_str} onChange={setMoney('cost_str')} style={inputStyle} placeholder="0" /></Field>
-        <Field label="เวลา (นาที)"><input value={data.prep_str} onChange={set('prep_str')} type="number" min="0" style={inputStyle} /></Field>
-        <Field label="แคลอรี่"><input value={data.cal_str} onChange={set('cal_str')} type="number" min="0" style={inputStyle} /></Field>
-        <Field label="หมวดหมู่">
-          <select value={data.category_id} onChange={set('category_id')} style={{ ...inputStyle, cursor: 'pointer' }}>
-            <option value="">— ไม่ระบุ —</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.name}{c.name_th ? ` (${c.name_th})` : ''}</option>)}
-          </select>
-        </Field>
-      </div>
-
-      {/* Allergens */}
-      <div style={{ marginBottom: 12 }}>
-        <Field label="Allergens">
-          <AllergenToggle selected={data.allergens} onChange={v => onChange({ ...data, allergens: v })} />
-        </Field>
-      </div>
-
-      {/* Image upload */}
-      <div style={{ marginBottom: 12 }}>
-        <Field label="รูปภาพ">
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ padding: '8px 14px', borderRadius: 6, border: `1px solid ${GOLD}44`, color: GOLD, fontSize: 13, cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1, userSelect: 'none' }}>
-              {uploading ? 'กำลังอัปโหลด...' : '+ เลือกรูป'}
-              <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploading}
-                onChange={async e => {
-                  const file = e.target.files?.[0]
-                  if (!file) return
-                  setUploading(true)
-                  const ext = file.name.split('.').pop() ?? 'jpg'
-                  const path = `recipes/${Date.now()}.${ext}`
-                  const { data: up, error } = await supabase.storage.from('menu-images').upload(path, file, { upsert: true })
-                  if (!error && up) {
-                    const { data: url } = supabase.storage.from('menu-images').getPublicUrl(up.path)
-                    onChange({ ...data, image_url: url.publicUrl })
-                  }
-                  setUploading(false)
-                  e.target.value = ''
-                }} />
-            </label>
-            {data.image_url && (
-              <img src={data.image_url} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: `1px solid ${BORDER}` }} />
-            )}
-            {data.image_url && (
-              <button type="button" onClick={() => onChange({ ...data, image_url: '' })} style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
-            )}
-          </div>
-        </Field>
-      </div>
-
-      {/* Seasonal toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <button type="button" onClick={() => onChange({ ...data, is_seasonal: !data.is_seasonal })} style={{
-          width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
-          backgroundColor: data.is_seasonal ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s',
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => onChange(!on)}>
+      <div style={{
+        width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', position: 'relative',
+        backgroundColor: on ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s', flexShrink: 0,
+      }}>
+        <div style={{
+          position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18,
+          borderRadius: 9, backgroundColor: '#fff', transition: 'left .2s',
         }} />
-        <span style={{ fontSize: 13, color: data.is_seasonal ? GOLD : 'rgba(255,255,255,0.4)' }}>Seasonal</span>
-        {data.is_seasonal && (
-          <input value={data.seasonal_note} onChange={set('seasonal_note')} style={{ ...inputStyle, flex: 1 }} placeholder="หมายเหตุ Seasonal..." />
+      </div>
+      {icon && <span style={{ fontSize: 16 }}>{icon}</span>}
+      <span style={{ fontSize: 14, color: on ? GOLD : 'rgba(255,255,255,0.45)' }}>{label}</span>
+    </div>
+  )
+}
+
+// ─── MenuWizard ───────────────────────────────────────────────────────────────
+
+function MenuWizard({
+  data, onChange, categories, saving, onSave, onCancel, costPerCup,
+}: {
+  data: RecipeFullEdit
+  onChange: (d: RecipeFullEdit) => void
+  categories: Category[]
+  saving: boolean
+  onSave: () => void
+  onCancel: () => void
+  costPerCup?: number
+}) {
+  const [step,           setStep]          = useState(1)
+  const [showAltNames,   setShowAltNames]  = useState(!!(data.product_name || data.product_name_lo))
+  const [uploading,      setUploading]     = useState(false)
+  const [toastMsg,       setToastMsg]      = useState<string | null>(null)
+  const [costInputMode,  setCostInputMode] = useState(false)
+
+  const showToast = (m: string) => { setToastMsg(m); setTimeout(() => setToastMsg(null), 3000) }
+  const set = (k: keyof RecipeFullEdit) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      onChange({ ...data, [k]: e.target.value })
+
+  const price         = parseFloat(data.price_str) || 0
+  const effectiveCost = costPerCup ?? (parseFloat(data.cost_str) || 0)
+  const margin        = price > 0 && effectiveCost > 0
+    ? Math.round(((price - effectiveCost) / price) * 100) : null
+  const marginColor   = margin === null ? 'rgba(255,255,255,0.3)'
+    : margin >= 60 ? GREEN : margin >= 40 ? ORANGE : RED
+  const suggested = effectiveCost > 0 ? {
+    lo: Math.round(effectiveCost / 0.5 / 1000) * 1000,
+    hi: Math.round(effectiveCost / 0.3 / 1000) * 1000,
+  } : null
+
+  function goNext() {
+    if (step === 1 && !data.product_name_th.trim() && !data.product_name.trim()) {
+      showToast('กรุณาระบุชื่อเมนูก่อน'); return
+    }
+    setStep(s => Math.min(s + 1, 3))
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return
+    setUploading(true)
+    const ext  = file.name.split('.').pop() ?? 'jpg'
+    const path = `recipes/${Date.now()}.${ext}`
+    const { data: up, error } = await supabase.storage.from('menu-images').upload(path, file, { upsert: true })
+    if (!error && up) {
+      const { data: url } = supabase.storage.from('menu-images').getPublicUrl(up.path)
+      onChange({ ...data, image_url: url.publicUrl })
+    }
+    setUploading(false)
+    e.target.value = ''
+  }
+
+  const stepLabels = ['ข้อมูลหลัก', 'ราคาและต้นทุน', 'รายละเอียด']
+
+  const cardStyle: React.CSSProperties = {
+    backgroundColor: CARD2, borderRadius: 12, padding: '18px 20px', border: `1px solid ${BORDER}`,
+  }
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12,
+  }
+
+  return (
+    <div style={{ backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderRadius: 16, overflow: 'hidden' }}>
+
+      {/* ── Progress indicator ── */}
+      <div style={{ padding: '18px 24px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+        {[1, 2, 3].map(s => (
+          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: s < step ? 'pointer' : 'default' }}
+            onClick={() => s < step && setStep(s)}>
+            <div style={{
+              width: s === step ? 28 : 22, height: 8, borderRadius: 4,
+              backgroundColor: s === step ? GOLD : s < step ? GOLD + '66' : 'rgba(255,255,255,0.1)',
+              transition: 'all .2s',
+            }} />
+          </div>
+        ))}
+        <span style={{ fontSize: 12, color: GOLD, fontWeight: 700, marginLeft: 4 }}>
+          {stepLabels[step - 1]}
+        </span>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginLeft: 2 }}>
+          ({step}/3)
+        </span>
+      </div>
+
+      {/* ── Step content ── */}
+      <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {toastMsg && <Toast msg={toastMsg} />}
+
+        {/* ════════ STEP 1: Basic Info ════════ */}
+        {step === 1 && (
+          <>
+            {/* Primary name — Thai */}
+            <div style={cardStyle}>
+              <div style={sectionLabel}>ชื่อเมนู *</div>
+              <input
+                value={data.product_name_th}
+                onChange={set('product_name_th')}
+                style={{ ...inputStyle, fontSize: 20, height: 56, fontWeight: 700 }}
+                placeholder="เช่น กาแฟลาเต้..."
+                autoFocus
+              />
+              {/* Collapsed alt names */}
+              <button
+                type="button"
+                onClick={() => setShowAltNames(v => !v)}
+                style={{ marginTop: 10, background: 'none', border: 'none', color: GOLD + 'aa', cursor: 'pointer', fontSize: 12, padding: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                {showAltNames ? '▼' : '▶'} ชื่อภาษาอื่น (EN / LO)
+              </button>
+              {showAltNames && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>ชื่อภาษาอังกฤษ</div>
+                    <input value={data.product_name} onChange={set('product_name')} style={inputStyle} placeholder="Latte" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>ชื่อภาษาลาว</div>
+                    <input value={data.product_name_lo} onChange={set('product_name_lo')} style={inputStyle} placeholder="ລາເຕ..." />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Category grid */}
+            <div style={cardStyle}>
+              <div style={sectionLabel}>หมวดหมู่</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button type="button" onClick={() => onChange({ ...data, category_id: '' })} style={{
+                  padding: '8px 18px', borderRadius: 20, fontSize: 13, cursor: 'pointer', transition: 'all .15s',
+                  border: `1px solid ${!data.category_id ? GOLD : 'rgba(255,255,255,0.14)'}`,
+                  backgroundColor: !data.category_id ? GOLD + '22' : 'transparent',
+                  color: !data.category_id ? GOLD : 'rgba(255,255,255,0.4)',
+                }}>ไม่ระบุ</button>
+                {categories.map(c => {
+                  const sel = data.category_id === c.id
+                  return (
+                    <button key={c.id} type="button" onClick={() => onChange({ ...data, category_id: c.id })} style={{
+                      padding: '8px 18px', borderRadius: 20, fontSize: 13, cursor: 'pointer', transition: 'all .15s',
+                      border: `1px solid ${sel ? GOLD : 'rgba(255,255,255,0.14)'}`,
+                      backgroundColor: sel ? GOLD + '22' : 'transparent',
+                      color: sel ? GOLD : 'rgba(255,255,255,0.4)',
+                    }}>
+                      {c.name_th || c.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Photo upload */}
+            <div style={cardStyle}>
+              <div style={sectionLabel}>รูปภาพเมนู</div>
+              <label style={{ display: 'block', cursor: uploading ? 'not-allowed' : 'pointer' }}>
+                {data.image_url ? (
+                  <div style={{ position: 'relative' }}>
+                    <img src={data.image_url} alt="" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 10, display: 'block' }} />
+                    <button
+                      type="button"
+                      onClick={e => { e.preventDefault(); onChange({ ...data, image_url: '' }) }}
+                      style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff', width: 28, height: 28, borderRadius: 14, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+                    >✕</button>
+                  </div>
+                ) : (
+                  <div style={{
+                    height: 130, border: `2px dashed ${GOLD}33`, borderRadius: 12,
+                    backgroundColor: CARD2, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}>
+                    <div style={{ fontSize: 28 }}>📷</div>
+                    <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)' }}>
+                      {uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูปภาพเมนู'}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>ลากหรือคลิกเพื่อเลือก</div>
+                  </div>
+                )}
+                <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
+              </label>
+            </div>
+
+            {/* Seasonal */}
+            <div style={cardStyle}>
+              <Toggle
+                on={data.is_seasonal}
+                onChange={v => onChange({ ...data, is_seasonal: v })}
+                label="เมนูตามฤดูกาล (Seasonal)"
+                icon="☀️"
+              />
+              {data.is_seasonal && (
+                <input
+                  value={data.seasonal_note}
+                  onChange={set('seasonal_note')}
+                  style={{ ...inputStyle, marginTop: 10 }}
+                  placeholder="หมายเหตุ เช่น มีเฉพาะเดือนธันวา-กุมภา..."
+                />
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ════════ STEP 2: Pricing ════════ */}
+        {step === 2 && (
+          <>
+            {/* Cost connection */}
+            <div style={cardStyle}>
+              <div style={sectionLabel}>เชื่อมกับสูตรต้นทุน</div>
+              {costPerCup ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', backgroundColor: GREEN + '14', borderRadius: 10, border: `1px solid ${GREEN}33` }}>
+                  <span style={{ fontSize: 18 }}>✓</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: GREEN }}>เชื่อมกับสูตรต้นทุนแล้ว</div>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+                      ต้นทุน/แก้ว: <span style={{ color: '#fff', fontWeight: 600 }}>{fmtLAK(costPerCup)}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : parseFloat(data.cost_str) > 0 && !costInputMode ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: CARD, borderRadius: 10 }}>
+                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+                    ต้นทุนที่บันทึกไว้: <span style={{ color: '#fff', fontWeight: 600 }}>{fmtLAK(parseFloat(data.cost_str))}</span>
+                  </div>
+                  <button type="button" onClick={() => setCostInputMode(true)} style={btnStyleSm(GOLD + '22', GOLD)}>แก้ไข</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ padding: '12px 16px', backgroundColor: CARD, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 16 }}>💡</span>
+                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>
+                      ยังไม่มีสูตรต้นทุน — ไปที่แท็บ <span style={{ color: GOLD }}>&ldquo;ต้นทุนสูตร&rdquo;</span> เพื่อสร้าง
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>หรือกรอกต้นทุนเองชั่วคราว</div>
+                    <MoneyInput value={data.cost_str} onChange={v => onChange({ ...data, cost_str: v })} style={inputStyle} placeholder="ต้นทุน/แก้ว (₭)" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Price — large prominent */}
+            <div style={cardStyle}>
+              <div style={sectionLabel}>ราคาขาย *</div>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <MoneyInput
+                  value={data.price_str}
+                  onChange={v => onChange({ ...data, price_str: v })}
+                  style={{ ...inputStyle, fontSize: 24, height: 60, fontWeight: 800, paddingRight: 36, flex: 1 }}
+                  placeholder="0"
+                />
+                <span style={{ fontSize: 18, color: GOLD, fontWeight: 700, flexShrink: 0 }}>₭</span>
+              </div>
+
+              {/* Margin indicator */}
+              {price > 0 && (
+                <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Gross Margin</span>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: marginColor }}>
+                      {margin !== null ? `${margin}%` : '—'}
+                    </span>
+                  </div>
+                  {margin !== null && (
+                    <div style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, margin))}%`, backgroundColor: marginColor, borderRadius: 3, transition: 'width .3s' }} />
+                    </div>
+                  )}
+                  {suggested && (
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+                      ราคาแนะนำ (margin 50-70%):&nbsp;
+                      <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                        {suggested.lo.toLocaleString()} – {suggested.hi.toLocaleString()} ₭
+                      </span>
+                    </div>
+                  )}
+                  {margin !== null && margin < 40 && price > 0 && (
+                    <div style={{ padding: '8px 12px', backgroundColor: RED + '18', borderRadius: 8, border: `1px solid ${RED}33`, fontSize: 12, color: RED, fontWeight: 600 }}>
+                      ⚠️ Margin ต่ำกว่า 40% — อาจไม่คุ้มต้นทุน
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Prep time + Calories */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={cardStyle}>
+                <div style={sectionLabel}>เวลาเตรียม</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input value={data.prep_str} onChange={set('prep_str')} type="number" min="0"
+                    style={{ ...inputStyle, flex: 1 }} placeholder="5" />
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>นาที</span>
+                </div>
+              </div>
+              <div style={cardStyle}>
+                <div style={sectionLabel}>แคลอรี่</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input value={data.cal_str} onChange={set('cal_str')} type="number" min="0"
+                    style={{ ...inputStyle, flex: 1 }} placeholder="120" />
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>kcal</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ════════ STEP 3: Details (optional) ════════ */}
+        {step === 3 && (
+          <>
+            {/* Allergens */}
+            <div style={cardStyle}>
+              <div style={sectionLabel}>สารก่อภูมิแพ้</div>
+              <AllergenToggle selected={data.allergens} onChange={v => onChange({ ...data, allergens: v })} />
+            </div>
+
+            {/* Description — Thai only */}
+            <div style={cardStyle}>
+              <div style={sectionLabel}>คำอธิบายเมนู (ไทย)</div>
+              <textarea
+                value={data.description_th}
+                onChange={set('description_th')}
+                style={{ ...inputStyle, height: 80, resize: 'vertical' as const }}
+                placeholder="อธิบายเมนูสั้นๆ เช่น กาแฟลาเต้เข้มข้น หอมกลิ่นนม..."
+              />
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>
+                * ภาษาอื่นจะถูกแปลอัตโนมัติในอนาคต
+              </div>
+            </div>
+
+            {/* Requires customization toggle */}
+            <div style={cardStyle}>
+              <Toggle
+                on={data.is_seasonal}  // placeholder — requires_customization not yet in DB
+                onChange={() => {}}    // no-op until DB column added
+                label="ต้องเลือกความหวาน / อุณหภูมิ"
+                icon="🎛️"
+              />
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>
+                (ฟีเจอร์นี้จะพร้อมใช้ในเวอร์ชันถัดไป)
+              </div>
+            </div>
+          </>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button onClick={onSave} disabled={saving} style={btnStyle(GOLD)}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
-        <button onClick={onCancel} style={btnStyle('rgba(255,255,255,0.08)')}>ยกเลิก</button>
+      {/* ── Bottom action bar ── */}
+      <div style={{ padding: '16px 24px', borderTop: `1px solid ${BORDER}`, display: 'flex', gap: 10, alignItems: 'center', backgroundColor: '#0a0a0a' }}>
+        {step > 1 && (
+          <button onClick={() => setStep(s => s - 1)} style={btnStyle('rgba(255,255,255,0.08)')}>
+            ← ย้อนกลับ
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button onClick={onCancel} style={{ ...btnStyle('rgba(255,255,255,0.06)'), color: 'rgba(255,255,255,0.4)' }}>
+          ยกเลิก
+        </button>
+        {step < 3 && (
+          <button onClick={goNext} style={btnStyle('rgba(255,255,255,0.1)')}>
+            ถัดไป →
+          </button>
+        )}
+        <button onClick={onSave} disabled={saving} style={{ ...btnStyle(GOLD), fontWeight: 800, fontSize: 15, paddingLeft: 24, paddingRight: 24 }}>
+          {saving ? 'กำลังบันทึก...' : '✓ บันทึก'}
+        </button>
       </div>
     </div>
   )
@@ -177,7 +469,7 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
     setSaving(true)
     const { error } = await supabase.rpc('update_recipe_full', {
       p_recipe_id:      r.id,
-      p_product_name:   editData.product_name,
+      p_product_name:   editData.product_name || editData.product_name_th,
       p_name_th:        editData.product_name_th,
       p_name_lo:        editData.product_name_lo,
       p_description_en: editData.description_en,
@@ -216,14 +508,16 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{r.product_name}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{r.product_name_th || r.product_name}</span>
+              {r.product_name_th && r.product_name && r.product_name !== r.product_name_th && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>{r.product_name}</span>
+              )}
               {r.is_seasonal && <Badge label="Seasonal" bg={GOLD + '22'} color={GOLD} />}
               {!r.is_active && <Badge label="ปิด" bg="rgba(255,255,255,0.06)" color="rgba(255,255,255,0.3)" />}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
-              {r.product_name_th && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)' }}>{r.product_name_th}</span>}
-              {r.product_name_lo && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.28)' }}>{r.product_name_lo}</span>}
-            </div>
+            {r.product_name_lo && (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 2 }}>{r.product_name_lo}</div>
+            )}
           </div>
           {r.category && <Badge label={r.category} bg={GOLD + '18'} color={GOLD} />}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -273,8 +567,8 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
           {(r.description_en || r.description_th || r.description_lo) && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>คำอธิบาย</div>
-              {r.description_en && <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>{r.description_en}</div>}
-              {r.description_th && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 3 }}>{r.description_th}</div>}
+              {r.description_th && <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>{r.description_th}</div>}
+              {r.description_en && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 3 }}>{r.description_en}</div>}
               {r.description_lo && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{r.description_lo}</div>}
             </div>
           )}
@@ -352,18 +646,18 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
         </div>
       )}
 
-      {/* Edit form */}
+      {/* Edit wizard */}
       {open && editing && (
         <div style={{ borderTop: `1px solid ${BORDER}` }}>
           {msg && <div style={{ padding: '8px 18px' }}><Toast msg={msg} /></div>}
-          <RecipeFullForm
-            title={`แก้ไข: ${r.product_name}`}
+          <MenuWizard
             data={editData}
             onChange={setEditData}
             categories={categories}
             saving={saving}
             onSave={saveEdit}
             onCancel={() => setEditing(false)}
+            costPerCup={r.cost_per_cup_lak ?? undefined}
           />
         </div>
       )}
@@ -399,12 +693,14 @@ export default function MenuTab() {
   useEffect(() => { load() }, [load])
 
   async function createRecipe() {
-    if (!newData.product_name.trim()) { showMsg('กรุณาระบุชื่อเมนู'); return }
+    // Fallback: use TH name if EN name is empty
+    const name = newData.product_name.trim() || newData.product_name_th.trim()
+    if (!name) { showMsg('กรุณาระบุชื่อเมนู'); return }
     const price = parseFloat(newData.price_str)
     if (isNaN(price) || price < 0) { showMsg('ราคาไม่ถูกต้อง'); return }
     setSaving(true)
     const { error } = await supabase.rpc('create_recipe_full', {
-      p_product_name:   newData.product_name.trim(),
+      p_product_name:   name,
       p_name_th:        newData.product_name_th,
       p_name_lo:        newData.product_name_lo,
       p_description_en: newData.description_en,
@@ -432,8 +728,9 @@ export default function MenuTab() {
   }
 
   const filtered = recipes.filter(r =>
-    !search || r.product_name.toLowerCase().includes(search.toLowerCase()) ||
-    (r.product_name_th ?? '').includes(search) || (r.category ?? '').toLowerCase().includes(search.toLowerCase())
+    !search || (r.product_name_th ?? '').includes(search) ||
+    r.product_name.toLowerCase().includes(search.toLowerCase()) ||
+    (r.category ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
   if (loading) return <LoadingSpinner />
@@ -459,8 +756,7 @@ export default function MenuTab() {
 
       {showForm && (
         <div style={{ marginBottom: 20 }}>
-          <RecipeFullForm
-            title="เพิ่มเมนูใหม่"
+          <MenuWizard
             data={newData}
             onChange={setNewData}
             categories={categories}
