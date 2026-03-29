@@ -332,165 +332,261 @@ export default function RecipeCostTab() {
 
   // ── Recipe Builder Panel ──────────────────────────────────────────────────
   function RecipesPanel() {
-    const [editId, setEditId] = useState<string | null>(null)
-    const [form, setForm]     = useState<{ recipe_id: string; target_margin: number; items: FormulaItem[] }>({ recipe_id: '', target_margin: 60, items: [] })
+    const [recipeId,    setRecipeId]    = useState(menuItems[0]?.id ?? '')
+    const [formulaId,   setFormulaId]   = useState('')
+    const [targetMargin, setTargetMargin] = useState(60)
+    const [items,       setItems]       = useState<FormulaItem[]>([])
+    const [saving,      setSaving]      = useState(false)
 
-    function startNew() { setEditId('new'); setForm({ recipe_id: menuItems[0]?.id ?? '', target_margin: 60, items: [] }) }
-    function startEdit(f: RecipeFormula) { setEditId(f.id); setForm({ recipe_id: f.recipe_id, target_margin: f.target_margin, items: f.items.map(i => ({ ...i })) }) }
-    function addRawItem() {
-      if (!ingredients.length) return
-      setForm(f => ({ ...f, items: [...f.items, { ingredient_id: ingredients[0].id, qty_normal: 0, qty_less: 0, qty_more: 0 }] }))
-    }
-    function addBaseItem() {
-      if (!baseRecipes.length) return
-      setForm(f => ({ ...f, items: [...f.items, { base_id: baseRecipes[0].id, qty_normal: 0, qty_less: 0, qty_more: 0 }] }))
-    }
-    function updateItem(idx: number, patch: Partial<FormulaItem>) {
-      setForm(f => { const items = [...f.items]; items[idx] = { ...items[idx], ...patch }; return { ...f, items } })
-    }
-    function removeItem(idx: number) { setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) })) }
+    // Auto-load formula when menu selection changes
+    useEffect(() => {
+      const f = formulas.find(x => x.recipe_id === recipeId)
+      if (f) { setFormulaId(f.id); setTargetMargin(f.target_margin); setItems(f.items.map(i => ({ ...i }))) }
+      else   { setFormulaId('');   setTargetMargin(60);               setItems([]) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [recipeId])
+
+    function addRawItem()  { if (!ingredients.length) return; setItems(prev => [...prev, { ingredient_id: ingredients[0].id, qty_normal: 0, qty_less: 0, qty_more: 0 }]) }
+    function addBaseItem() { if (!baseRecipes.length) return;  setItems(prev => [...prev, { base_id: baseRecipes[0].id,  qty_normal: 0, qty_less: 0, qty_more: 0 }]) }
+    function updateItem(idx: number, patch: Partial<FormulaItem>) { setItems(prev => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next }) }
+    function removeItem(idx: number) { setItems(prev => prev.filter((_, i) => i !== idx)) }
 
     async function save() {
-      const menu = menuItems.find(m => m.id === form.recipe_id)
-      if (!menu) { setMsg('เกิดข้อผิดพลาด: เลือกเมนูก่อน'); return }
-      const draft: RecipeFormula = { id: editId === 'new' ? '' : editId!, recipe_id: form.recipe_id, recipe_name: menu.product_name, price_lak: menu.price_lak, items: form.items, target_margin: form.target_margin }
+      const menu = menuItems.find(m => m.id === recipeId)
+      if (!menu) { setMsg('เลือกเมนูก่อน'); return }
+      setSaving(true)
+      const draft: RecipeFormula = { id: formulaId, recipe_id: recipeId, recipe_name: menu.product_name, price_lak: menu.price_lak, items, target_margin: targetMargin }
       try {
         const saved = await upsertFormula(draft)
-        // Sync calculated cost back to the menu item in recipes table
-        const costNormal = calcCost(form.items, 'qty_normal', ingredients, baseRecipes)
-        await supabase.from('recipes').update({ cost_per_cup_lak: Math.round(costNormal) }).eq('id', form.recipe_id)
-        setFormulas(prev => editId === 'new' ? [...prev, saved] : prev.map(f => f.id === editId ? saved : f))
-        setEditId(null); setMsg('บันทึกแล้ว')
+        const costNormal = calcCost(items, 'qty_normal', ingredients, baseRecipes)
+        await supabase.from('recipes').update({ cost_per_cup_lak: Math.round(costNormal) }).eq('id', recipeId)
+        setFormulas(prev => formulaId ? prev.map(f => f.id === formulaId ? saved : f) : [...prev, saved])
+        setFormulaId(saved.id)
+        setMsg('บันทึกสูตรแล้ว')
       } catch (e: unknown) {
         setMsg(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
-      }
+      } finally { setSaving(false) }
     }
 
-    const sweetnessFields: { field: 'qty_less' | 'qty_normal' | 'qty_more'; label: string }[] = [
-      { field: 'qty_less',   label: 'หวานน้อย' },
-      { field: 'qty_normal', label: 'หวานกลาง' },
-      { field: 'qty_more',   label: 'หวานมาก'  },
+    const menu         = menuItems.find(m => m.id === recipeId)
+    const sliderColor  = targetMargin >= 60 ? GREEN : targetMargin >= 40 ? ORANGE : RED
+    const levels: { key: 'qty_less' | 'qty_normal' | 'qty_more'; label: string; color: string }[] = [
+      { key: 'qty_less',   label: 'หวานน้อย', color: '#4a9eff' },
+      { key: 'qty_normal', label: 'หวานกลาง', color: GOLD       },
+      { key: 'qty_more',   label: 'หวานมาก',  color: '#ff6b6b'  },
     ]
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <SectionCard title="สร้าง / แก้ไข สูตร" action={<button style={btnStyle(GOLD)} onClick={startNew}>+ สร้างสูตรใหม่</button>}>
-          {editId !== null ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label="เมนู">
-                  <select style={inputStyle} value={form.recipe_id} onChange={e => setForm(f => ({ ...f, recipe_id: e.target.value }))}>
-                    {menuItems.length === 0 && <option value="">— ยังไม่มีเมนู —</option>}
-                    {menuItems.map(m => <option key={m.id} value={m.id}>{m.product_name}</option>)}
-                  </select>
-                </Field>
-                <Field label="เป้าหมาย Gross Margin (%)">
-                  <input style={inputStyle} type="number" min={0} max={99} value={form.target_margin} onChange={e => setForm(f => ({ ...f, target_margin: parseFloat(e.target.value) || 0 }))} />
-                </Field>
-              </div>
 
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>ส่วนผสมในสูตร</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button style={btnStyleSm('#333')} onClick={addRawItem} disabled={ingredients.length === 0}>+ วัตถุดิบ</button>
-                    <button style={btnStyleSm(GOLD + '22', GOLD)} onClick={addBaseItem} disabled={baseRecipes.length === 0}
-                      title={baseRecipes.length === 0 ? 'สร้างสูตรพื้นฐานก่อน' : ''}>+ สูตรพื้นฐาน</button>
-                  </div>
-                </div>
-                {form.items.length === 0 ? (
-                  <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>
-                    {ingredients.length === 0 ? 'เพิ่มวัตถุดิบในแท็บ "วัตถุดิบ" ก่อน' : 'กด "+ วัตถุดิบ" หรือ "+ สูตรพื้นฐาน" เพื่อใส่ส่วนผสม'}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 10, fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', padding: '0 4px' }}>
-                      <span>ส่วนผสม</span><span>หวานน้อย</span><span>หวานกลาง</span><span>หวานมาก</span><span></span>
-                    </div>
-                    {form.items.map((item, idx) => {
-                      const isBase   = !!item.base_id
-                      const unitLabel = isBase
-                        ? (baseRecipes.find(b => b.id === item.base_id)?.unit ?? '')
-                        : (ingredients.find(i => i.id === item.ingredient_id)?.unit ?? '')
-                      return (
-                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            {isBase && (
-                              <span style={{ fontSize: 10, backgroundColor: GOLD + '22', color: GOLD, padding: '2px 6px', borderRadius: 4, flexShrink: 0, fontWeight: 600 }}>สูตร</span>
-                            )}
-                            <select style={{ ...inputStyle, flex: 1 }}
-                              value={isBase ? item.base_id : item.ingredient_id}
-                              onChange={e => updateItem(idx, isBase ? { base_id: e.target.value } : { ingredient_id: e.target.value })}>
-                              {isBase
-                                ? baseRecipes.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)
-                                : ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)
-                              }
-                            </select>
-                          </div>
-                          {(['qty_less', 'qty_normal', 'qty_more'] as const).map(field => (
-                            <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                              <input style={{ ...inputStyle, flex: 1 }} type="number" min={0} value={item[field]}
-                                onChange={e => updateItem(idx, { [field]: parseFloat(e.target.value) || 0 })} />
-                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{unitLabel}</span>
-                            </div>
-                          ))}
-                          <button style={btnStyleSm(RED + '22', RED)} onClick={() => removeItem(idx)}>✕</button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
+        {/* ── Header ── */}
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>สูตรกาแฟ</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', marginTop: 3 }}>คำนวณต้นทุนและกำหนดราคาขาย</div>
+        </div>
 
-              {form.items.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                  {sweetnessFields.map(({ field, label }) => {
-                    const cost = calcCost(form.items, field, ingredients, baseRecipes)
-                    return (
-                      <div key={field} style={{ backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
-                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>{label}</div>
-                        <div style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>{cost.toFixed(0)} ₭</div>
-                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>ต้นทุน/แก้ว</div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+        {/* ── Menu Selector ── */}
+        <div style={{ backgroundColor: CARD2, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 10 }}>เลือกเมนู</div>
+          {menuItems.length === 0 ? (
+            <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>ยังไม่มีเมนูที่เปิดใช้งาน — ไปแท็บ &ldquo;เมนู&rdquo; แล้วเปิดใช้งานเมนูก่อน</div>
+          ) : (
+            <select
+              style={{ ...inputStyle, fontSize: 15, height: 50, fontWeight: 600 }}
+              value={recipeId}
+              onChange={e => setRecipeId(e.target.value)}
+            >
+              {menuItems.map(m => (
+                <option key={m.id} value={m.id}>{m.product_name} · {m.price_lak.toLocaleString()} ₭</option>
+              ))}
+            </select>
+          )}
+          {formulaId
+            ? <div style={{ marginTop: 8, fontSize: 12, color: GREEN }}>✓ มีสูตรบันทึกไว้แล้ว — กำลังแสดงสูตรปัจจุบัน</div>
+            : recipeId
+              ? <div style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>ยังไม่มีสูตร — เพิ่มส่วนผสมด้านล่างแล้วกดบันทึก</div>
+              : null
+          }
+        </div>
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={btnStyle(GOLD)} onClick={save}>บันทึกสูตร</button>
-                <button style={btnStyle('#333')} onClick={() => setEditId(null)}>ยกเลิก</button>
-              </div>
+        {/* ── Target Margin Slider ── */}
+        <div style={{ backgroundColor: CARD2, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>เป้าหมาย Gross Margin</div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: sliderColor, transition: 'color .2s' }}>{targetMargin}%</div>
+          </div>
+          <input type="range" min={0} max={80} value={targetMargin}
+            onChange={e => setTargetMargin(parseInt(e.target.value))}
+            style={{ width: '100%', accentColor: sliderColor, cursor: 'pointer' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginTop: 6 }}>
+            <span style={{ color: RED }}>ต่ำ (0-40%)</span>
+            <span style={{ color: ORANGE }}>ปานกลาง (40-60%)</span>
+            <span style={{ color: GREEN }}>ดี (&gt;60%)</span>
+          </div>
+        </div>
+
+        {/* ── Ingredient Builder ── */}
+        <div style={{ backgroundColor: CARD, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>ส่วนผสมในสูตร</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={btnStyle('#333')} onClick={addRawItem} disabled={!ingredients.length}>
+                ➕ เพิ่มวัตถุดิบ
+              </button>
+              <button style={{ ...btnStyle(GOLD + '22'), color: GOLD }} onClick={addBaseItem} disabled={!baseRecipes.length}
+                title={!baseRecipes.length ? 'สร้างสูตรพื้นฐานในแท็บ "สูตรพื้นฐาน" ก่อน' : undefined}>
+                ➕ เพิ่มสูตรพื้นฐาน
+              </button>
+            </div>
+          </div>
+
+          {items.length === 0 ? (
+            <div style={{ padding: '36px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>
+              {!ingredients.length ? 'เพิ่มวัตถุดิบในแท็บ "วัตถุดิบ" ก่อน' : 'กดปุ่มด้านบนเพื่อเพิ่มส่วนผสม'}
             </div>
           ) : (
-            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>คลิก &ldquo;+ สร้างสูตรใหม่&rdquo; หรือกดแก้ไขสูตรที่มีอยู่</div>
-          )}
-        </SectionCard>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {items.map((item, idx) => {
+                const isBase  = !!item.base_id
+                const base    = isBase ? baseRecipes.find(b => b.id === item.base_id) : undefined
+                const ing     = !isBase ? ingredients.find(i => i.id === item.ingredient_id) : undefined
+                const unit    = (isBase ? base?.unit : ing?.unit) ?? ''
+                const cpUnit  = isBase
+                  ? (() => { const y = base?.items.reduce((s, i) => s + i.qty, 0) ?? 0; return y > 0 ? calcBaseCost(base!, ingredients) / y : 0 })()
+                  : (ing ? ing.pkg_cost / ing.pkg_size : 0)
 
-        {formulas.length > 0 && (
-          <SectionCard title={`สูตรทั้งหมด (${formulas.length})`}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {formulas.map(f => {
-                const cost    = calcCost(f.items, 'qty_normal', ingredients, baseRecipes)
-                const hasBase = f.items.some(i => i.base_id)
                 return (
-                  <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: CARD2, borderRadius: 10, padding: '14px 16px' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 15 }}>{f.recipe_name}</div>
-                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
-                        {f.items.length} ส่วนผสม · ต้นทุนหวานกลาง: <span style={{ color: GOLD }}>{cost.toFixed(0)} ₭</span>
-                        {hasBase && <span style={{ color: GOLD + 'aa', marginLeft: 8 }}>· มีสูตรพื้นฐาน</span>}
-                      </div>
+                  <div key={idx} style={{ backgroundColor: CARD2, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+                    {/* Name row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      {isBase && (
+                        <span style={{ fontSize: 10, backgroundColor: GOLD + '22', color: GOLD, padding: '2px 7px', borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>สูตรพื้นฐาน</span>
+                      )}
+                      <select
+                        style={{ ...inputStyle, flex: 1, fontWeight: 600 }}
+                        value={isBase ? item.base_id : item.ingredient_id}
+                        onChange={e => updateItem(idx, isBase ? { base_id: e.target.value } : { ingredient_id: e.target.value })}
+                      >
+                        {isBase
+                          ? baseRecipes.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)
+                          : ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)
+                        }
+                      </select>
+                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                        {cpUnit.toFixed(2)} ₭/{unit}
+                      </span>
+                      <button
+                        onClick={() => removeItem(idx)}
+                        style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+                      >✕</button>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button style={btnStyleSm(GOLD)} onClick={() => startEdit(f)}>แก้ไข</button>
-                      <button style={btnStyleSm(RED + '22', RED)} onClick={async () => { await removeFormula(f.id); setFormulas(prev => prev.filter(x => x.id !== f.id)); setMsg('ลบแล้ว') }}>ลบ</button>
+                    {/* 3-column quantity inputs */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                      {levels.map((lv, li) => {
+                        const cost = cpUnit * item[lv.key]
+                        return (
+                          <div key={lv.key} style={{ backgroundColor: `${lv.color}12`, borderRadius: 10, padding: '10px 12px', border: `1px solid ${lv.color}28` }}>
+                            <div style={{ fontSize: 11, color: lv.color, marginBottom: 6, fontWeight: 700 }}>
+                              {['🔵 น้อย', '🟡 กลาง', '🔴 มาก'][li]}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <input
+                                style={{ ...inputStyle, flex: 1 }}
+                                type="number" min={0}
+                                value={item[lv.key]}
+                                onChange={e => updateItem(idx, { [lv.key]: parseFloat(e.target.value) || 0 })}
+                              />
+                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{unit}</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: lv.color, marginTop: 6, fontWeight: 600 }}>
+                              {cost.toFixed(0)} ₭
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )
               })}
             </div>
-          </SectionCard>
+          )}
+        </div>
+
+        {/* ── Cost Summary Cards ── */}
+        {items.length > 0 && menu && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            {levels.map(lv => {
+              const cost         = calcCost(items, lv.key, ingredients, baseRecipes)
+              const suggested    = targetMargin < 100 ? Math.round(cost / (1 - targetMargin / 100) / 1000) * 1000 : 0
+              const actualMargin = menu.price_lak > 0 ? ((menu.price_lak - cost) / menu.price_lak) * 100 : 0
+              const marginOk     = actualMargin >= targetMargin
+              const belowCost    = menu.price_lak > 0 && menu.price_lak < suggested
+              return (
+                <div key={lv.key} style={{
+                  backgroundColor: CARD2, borderRadius: 14, padding: 18,
+                  border: `2px solid ${marginOk ? GREEN + '50' : RED + '50'}`,
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: lv.color, marginBottom: 14 }}>{lv.label}</div>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>ต้นทุน/แก้ว</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{cost.toFixed(0)} ₭</div>
+                  </div>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>ราคาแนะนำ</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: GREEN }}>{suggested.toLocaleString()} ₭</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>Margin จริง</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: marginOk ? GREEN : RED }}>{actualMargin.toFixed(1)}%</div>
+                  </div>
+                  {belowCost && (
+                    <div style={{ marginTop: 12, backgroundColor: RED + '22', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: RED, fontWeight: 600, border: `1px solid ${RED}44` }}>
+                      ⚠️ ราคาขายต่ำกว่าต้นทุน!
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── Save Button ── */}
+        {recipeId && (
+          <button
+            style={{ ...btnStyle(GOLD), fontSize: 16, height: 56, borderRadius: 14, fontWeight: 800, letterSpacing: '0.5px', opacity: saving ? 0.6 : 1 }}
+            disabled={saving || !recipeId}
+            onClick={save}
+          >
+            {saving ? 'กำลังบันทึก...' : formulaId ? '✓ อัปเดตสูตร' : 'บันทึกสูตร'}
+          </button>
+        )}
+
+        {/* ── Existing Formulas List ── */}
+        {formulas.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>สูตรทั้งหมด ({formulas.length})</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {formulas.map(f => {
+                const cost    = calcCost(f.items, 'qty_normal', ingredients, baseRecipes)
+                const isActive = f.recipe_id === recipeId
+                return (
+                  <div
+                    key={f.id}
+                    onClick={() => setRecipeId(f.recipe_id)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: isActive ? `${GOLD}12` : CARD2, borderRadius: 10, padding: '12px 16px', border: `1px solid ${isActive ? GOLD + '44' : 'transparent'}`, cursor: 'pointer' }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: isActive ? GOLD : '#fff' }}>{f.recipe_name}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                        {f.items.length} ส่วนผสม · ต้นทุน: <span style={{ color: GOLD }}>{cost.toFixed(0)} ₭</span>
+                      </div>
+                    </div>
+                    <button style={btnStyleSm(RED + '22', RED)} onClick={async e => { e.stopPropagation(); await removeFormula(f.id); setFormulas(prev => prev.filter(x => x.id !== f.id)); if (isActive) setItems([]); setMsg('ลบแล้ว') }}>ลบ</button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         )}
       </div>
     )
