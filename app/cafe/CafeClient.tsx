@@ -142,6 +142,13 @@ type FullSettings = {
   qr_payment_name: string
   shop_lat: string
   shop_lng: string
+  // Cost Management
+  cost_cup_lid: string; cost_straw: string; cost_bag: string; cost_bag_pct: string
+  cost_other_pkg: string; cost_waste_pct: string
+  cost_ice_bag_price: string; cost_ice_melt_pct: string; cost_ice_per_cup_g: string
+  overhead_rent: string; overhead_electric: string; overhead_water: string
+  overhead_salary: string; overhead_supplies: string; overhead_other: string
+  target_cups_month: string
 }
 
 const DEFAULT_SETTINGS: FullSettings = {
@@ -160,6 +167,12 @@ const DEFAULT_SETTINGS: FullSettings = {
   qr_payment_name: '',
   shop_lat: '',
   shop_lng: '',
+  cost_cup_lid: '2500', cost_straw: '210', cost_bag: '500', cost_bag_pct: '30',
+  cost_other_pkg: '0', cost_waste_pct: '15',
+  cost_ice_bag_price: '20000', cost_ice_melt_pct: '30', cost_ice_per_cup_g: '175',
+  overhead_rent: '0', overhead_electric: '0', overhead_water: '0',
+  overhead_salary: '0', overhead_supplies: '0', overhead_other: '0',
+  target_cups_month: '500',
 }
 
 const DAYS_OF_WEEK = [
@@ -1405,6 +1418,218 @@ function SettingsToggle({ value, onChange, label, sub }: { value: boolean; onCha
   )
 }
 
+// ─── CostManagementSection ────────────────────────────────────────────────────
+
+function CostManagementSection({ settings, onChange }: { settings: FullSettings; onChange: (s: FullSettings) => void }) {
+  const [loadingSalary, setLoadingSalary] = useState(false)
+  const set = (k: keyof FullSettings) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...settings, [k]: e.target.value })
+  const n = (k: keyof FullSettings, def = 0) => parseFloat(settings[k] as string) || def
+
+  // ── Derived calculations ──────────────────────────────────────────────────
+  const bagContrib    = n('cost_bag') * (n('cost_bag_pct') / 100)
+  const basePackaging = n('cost_cup_lid') + n('cost_straw') + bagContrib + n('cost_other_pkg')
+  const packagingPerCup = Math.round(basePackaging * (1 + n('cost_waste_pct') / 100))
+
+  const usableKg      = 30 * (1 - n('cost_ice_melt_pct') / 100)
+  const costPerGram   = usableKg > 0 ? n('cost_ice_bag_price') / (usableKg * 1000) : 0
+  const icePerCup     = Math.round(costPerGram * n('cost_ice_per_cup_g'))
+
+  const totalOverhead = n('overhead_rent') + n('overhead_electric') + n('overhead_water') +
+    n('overhead_salary') + n('overhead_supplies') + n('overhead_other')
+  const targetCups    = n('target_cups_month', 500) || 500
+  const overheadPerCup = Math.round(totalOverhead / targetCups)
+  const fixedPerCup   = packagingPerCup + overheadPerCup
+  const breakEvenCupsDay = totalOverhead > 0 ? Math.ceil(targetCups / 30) : 0
+
+  async function loadSalaries() {
+    setLoadingSalary(true)
+    const { data } = await supabase.rpc('get_all_staff')
+    if (data) {
+      const total = (data as { salary?: number }[]).reduce((s, st) => s + (st.salary ?? 0), 0)
+      onChange({ ...settings, overhead_salary: String(total) })
+    }
+    setLoadingSalary(false)
+  }
+
+  const cardS: React.CSSProperties = { backgroundColor: CARD2, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}`, marginBottom: 12 }
+  const labelS: React.CSSProperties = { fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 10 }
+  const dimS: React.CSSProperties = { fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4, lineHeight: 1.5 }
+  const calcRow: React.CSSProperties = {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '10px 14px', backgroundColor: `${GOLD}10`, borderRadius: 8,
+    border: `1px solid ${GOLD}22`, marginTop: 12,
+  }
+  function SliderField({ label, fieldKey, min, max, unit, hint }: { label: string; fieldKey: keyof FullSettings; min: number; max: number; unit: string; hint?: string }) {
+    const val = n(fieldKey)
+    const sliderColor = val <= max * 0.4 ? GREEN : val <= max * 0.7 ? ORANGE : RED
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{label}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: sliderColor }}>{val}{unit}</span>
+        </div>
+        <input type="range" min={min} max={max} value={val}
+          onChange={e => onChange({ ...settings, [fieldKey]: e.target.value })}
+          style={{ width: '100%', accentColor: sliderColor, cursor: 'pointer' }} />
+        {hint && <div style={dimS}>{hint}</div>}
+      </div>
+    )
+  }
+  function MoneyRow({ label, fieldKey, placeholder }: { label: string; fieldKey: keyof FullSettings; placeholder?: string }) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input type="number" min="0" value={settings[fieldKey] as string} onChange={set(fieldKey)}
+            style={{ ...inputStyle, flex: 1 }} placeholder={placeholder ?? '0'} />
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <SettingSection icon="💰" title="ต้นทุนร้าน">
+
+      {/* ── Section 1: Packaging ── */}
+      <div style={cardS}>
+        <div style={labelS}>1. บรรจุภัณฑ์ต่อแก้ว</div>
+        <MoneyRow label="แก้ว + ฝา" fieldKey="cost_cup_lid" placeholder="2500" />
+        <MoneyRow label="หลอด" fieldKey="cost_straw" placeholder="210" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>ถุงกลับบ้าน</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="number" min="0" value={settings.cost_bag} onChange={set('cost_bag')}
+              style={{ ...inputStyle, flex: 1 }} placeholder="500" />
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭/ถุง</span>
+          </div>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>% ลูกค้าที่ขอถุง</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: GOLD }}>{n('cost_bag_pct')}%</span>
+          </div>
+          <input type="range" min={0} max={100} value={n('cost_bag_pct')}
+            onChange={e => onChange({ ...settings, cost_bag_pct: e.target.value })}
+            style={{ width: '100%', accentColor: GOLD, cursor: 'pointer' }} />
+        </div>
+        <MoneyRow label="บรรจุภัณฑ์อื่นๆ" fieldKey="cost_other_pkg" placeholder="0" />
+        <SliderField label="Waste & Loss Factor" fieldKey="cost_waste_pct" min={0} max={30} unit="%"
+          hint="ครอบคลุมของหล่น ลูกค้าหยิบหลอดเพิ่ม ผิดพลาด" />
+        <div style={calcRow}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>ต้นทุน packaging จริงต่อแก้ว</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: GOLD }}>{packagingPerCup.toLocaleString()} ₭</span>
+        </div>
+        <div style={dimS}>= (แก้ว+ฝา+หลอด+ถุง×{n('cost_bag_pct')}%) × (1 + {n('cost_waste_pct')}%)</div>
+      </div>
+
+      {/* ── Section 2: Ice ── */}
+      <div style={cardS}>
+        <div style={labelS}>2. ต้นทุนน้ำแข็ง</div>
+        <MoneyRow label="ราคาน้ำแข็งต่อกระสอบ (30 kg)" fieldKey="cost_ice_bag_price" placeholder="20000" />
+        <SliderField label="น้ำแข็งที่ละลายก่อนใช้" fieldKey="cost_ice_melt_pct" min={0} max={50} unit="%" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>น้ำแข็งต่อแก้วเย็น (g)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="number" min="0" value={settings.cost_ice_per_cup_g} onChange={set('cost_ice_per_cup_g')}
+              style={{ ...inputStyle, flex: 1 }} placeholder="175" />
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>g</span>
+          </div>
+        </div>
+        <div style={calcRow}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>ต้นทุนน้ำแข็งต่อแก้วเย็น</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: '#4a9eff' }}>{icePerCup.toLocaleString()} ₭</span>
+        </div>
+        <div style={dimS}>= {n('cost_ice_per_cup_g')}g × (ราคา/30kg ÷ {Math.round(usableKg*1000).toLocaleString()}g usable)</div>
+      </div>
+
+      {/* ── Section 3: Monthly Overhead ── */}
+      <div style={cardS}>
+        <div style={labelS}>3. ค่าใช้จ่ายประจำเดือน</div>
+        {([
+          { icon: '🏠', label: 'ค่าเช่า', key: 'overhead_rent' },
+          { icon: '⚡', label: 'ค่าไฟ', key: 'overhead_electric' },
+          { icon: '💧', label: 'ค่าน้ำ', key: 'overhead_water' },
+          { icon: '🧴', label: 'วัสดุสิ้นเปลือง (น้ำยา, ผ้า, ฯลฯ)', key: 'overhead_supplies' },
+          { icon: '📦', label: 'อื่นๆ', key: 'overhead_other' },
+        ] as { icon: string; label: string; key: keyof FullSettings }[]).map(row => (
+          <div key={row.key} style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{row.icon} {row.label}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="number" min="0" value={settings[row.key] as string}
+                onChange={e => onChange({ ...settings, [row.key]: e.target.value })}
+                style={{ ...inputStyle, flex: 1 }} placeholder="0" />
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
+            </div>
+          </div>
+        ))}
+        {/* Salary row with auto-fill button */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>👥 เงินเดือนรวม</span>
+            <button type="button" onClick={loadSalaries} disabled={loadingSalary}
+              style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, border: `1px solid ${GOLD}44`, backgroundColor: 'transparent', color: GOLD, cursor: 'pointer', opacity: loadingSalary ? 0.5 : 1 }}>
+              {loadingSalary ? '...' : '↓ ดึงอัตโนมัติ'}
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="number" min="0" value={settings.overhead_salary}
+              onChange={set('overhead_salary')}
+              style={{ ...inputStyle, flex: 1 }} placeholder="0" />
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
+          </div>
+        </div>
+        <div style={{ ...calcRow, marginTop: 14 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>รวม overhead ต่อเดือน</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{totalOverhead.toLocaleString()} ₭</span>
+        </div>
+      </div>
+
+      {/* ── Section 4: Per-Cup Summary ── */}
+      <div style={{ ...cardS, border: `1px solid ${GOLD}44` }}>
+        <div style={labelS}>4. ต้นทุนต่อแก้ว (สรุป)</div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>เป้าหมายจำนวนแก้ว/เดือน</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: GOLD }}>{n('target_cups_month').toLocaleString()} แก้ว</span>
+          </div>
+          <input type="range" min={100} max={3000} step={50} value={n('target_cups_month', 500)}
+            onChange={e => onChange({ ...settings, target_cups_month: e.target.value })}
+            style={{ width: '100%', accentColor: GOLD, cursor: 'pointer' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
+            <span>100</span><span>3,000 แก้ว</span>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+          {[
+            { label: 'Overhead ต่อแก้ว', value: overheadPerCup, color: '#ff9f43' },
+            { label: 'Packaging ต่อแก้ว', value: packagingPerCup, color: GOLD },
+          ].map(item => (
+            <div key={item.label} style={{ backgroundColor: CARD, borderRadius: 10, padding: '12px 14px', border: `1px solid ${BORDER}` }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>{item.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: item.color }}>{item.value.toLocaleString()} ₭</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '16px', backgroundColor: `${GOLD}12`, borderRadius: 12, border: `1px solid ${GOLD}33` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>ต้นทุน fixed ต่อแก้ว</span>
+            <span style={{ fontSize: 26, fontWeight: 900, color: GOLD }}>{fixedPerCup.toLocaleString()} ₭</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>packaging {packagingPerCup.toLocaleString()} + overhead {overheadPerCup.toLocaleString()} ₭</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>+ ต้นทุนวัตถุดิบ (คำนวณในแท็บ ต้นทุนสูตร)</div>
+          {totalOverhead > 0 && (
+            <div style={{ marginTop: 10, padding: '8px 12px', backgroundColor: `${GOLD}18`, borderRadius: 8, fontSize: 13, color: GOLD, fontWeight: 600 }}>
+              💡 ต้องขายอย่างน้อย {breakEvenCupsDay} แก้ว/วัน เพื่อคุ้มทุน overhead
+            </div>
+          )}
+        </div>
+      </div>
+    </SettingSection>
+  )
+}
+
 function SettingsTab() {
   const [settings, setSettings] = useState<FullSettings>({ ...DEFAULT_SETTINGS })
   const [loading,  setLoading]  = useState(true)
@@ -1681,6 +1906,9 @@ function SettingsTab() {
         </div>
         <PaymentBankEditor banks={payBanks} onUpdate={updateBanks} />
       </SettingSection>
+
+      {/* ── 💰 ต้นทุนร้าน ── */}
+      <CostManagementSection settings={settings} onChange={setSettings} />
 
       {/* ── Save button ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, marginBottom: 24 }}>

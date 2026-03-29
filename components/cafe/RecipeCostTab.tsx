@@ -26,6 +26,11 @@ export default function RecipeCostTab() {
   const [menuItems, setMenuItems]     = useState<{ id: string; product_name: string; price_lak: number }[]>([])
   const [msg, setMsg]                 = useState<string | null>(null)
 
+  // ── Overhead settings loaded from site_settings ─────────────────────────
+  const [packagingPerCup, setPackagingPerCup] = useState(0)
+  const [icePerCup,       setIcePerCup]       = useState(0)
+  const [overheadPerCup,  setOverheadPerCup]  = useState(0)
+
   useEffect(() => {
     supabase.from('cost_ingredients').select('*').order('name')
       .then(({ data }) => { if (data) setIngredients(data.map(r => ({ id: r.id as string, name: r.name as string, unit: r.unit as string, pkg_size: r.package_size as number, pkg_cost: r.package_cost as number }))) })
@@ -35,6 +40,25 @@ export default function RecipeCostTab() {
       .then(({ data }) => { if (data) setFormulas(data.map(r => ({ id: r.id as string, recipe_id: r.menu_item_id as string, recipe_name: r.recipe_name as string, price_lak: r.price_lak as number, target_margin: r.target_margin as number, items: (r.components ?? []) as FormulaItem[] }))) })
     supabase.from('recipes').select('id, product_name, price_lak').eq('is_active', true).order('product_name')
       .then(({ data }) => setMenuItems((data ?? []) as { id: string; product_name: string; price_lak: number }[]))
+    // Load overhead settings
+    supabase.rpc('get_site_settings').then(({ data }) => {
+      if (!data) return
+      const s = data as Record<string, string>
+      const n = (k: string, d = 0) => parseFloat(s[k] ?? '') || d
+      const bagContrib    = n('cost_bag') * (n('cost_bag_pct') / 100)
+      const basePkg       = n('cost_cup_lid', 2500) + n('cost_straw', 210) + bagContrib + n('cost_other_pkg')
+      const pkg           = Math.round(basePkg * (1 + n('cost_waste_pct', 15) / 100))
+      const usableKg      = 30 * (1 - n('cost_ice_melt_pct', 30) / 100)
+      const cpg           = usableKg > 0 ? n('cost_ice_bag_price', 20000) / (usableKg * 1000) : 0
+      const ice           = Math.round(cpg * n('cost_ice_per_cup_g', 175))
+      const totalOH       = n('overhead_rent') + n('overhead_electric') + n('overhead_water') +
+        n('overhead_salary') + n('overhead_supplies') + n('overhead_other')
+      const targetCups    = n('target_cups_month', 500) || 500
+      const oh            = Math.round(totalOH / targetCups)
+      setPackagingPerCup(pkg)
+      setIcePerCup(ice)
+      setOverheadPerCup(oh)
+    })
   }, [])
 
   async function upsertIngredient(ing: Ingredient): Promise<Ingredient> {
@@ -358,8 +382,10 @@ export default function RecipeCostTab() {
       const draft: RecipeFormula = { id: formulaId, recipe_id: recipeId, recipe_name: menu.product_name, price_lak: menu.price_lak, items, target_margin: targetMargin }
       try {
         const saved = await upsertFormula(draft)
-        const costNormal = calcCost(items, 'qty_normal', ingredients, baseRecipes)
-        await supabase.from('recipes').update({ cost_per_cup_lak: Math.round(costNormal) }).eq('id', recipeId)
+        const ingredientCost = calcCost(items, 'qty_normal', ingredients, baseRecipes)
+        const isCold = /เย็น|cold|iced/i.test(menu.product_name)
+        const totalCost = Math.round(ingredientCost + packagingPerCup + (isCold ? icePerCup : 0) + overheadPerCup)
+        await supabase.from('recipes').update({ cost_per_cup_lak: totalCost }).eq('id', recipeId)
         setFormulas(prev => formulaId ? prev.map(f => f.id === formulaId ? saved : f) : [...prev, saved])
         setFormulaId(saved.id)
         setMsg('บันทึกสูตรแล้ว')
@@ -369,6 +395,7 @@ export default function RecipeCostTab() {
     }
 
     const menu         = menuItems.find(m => m.id === recipeId)
+    const isColdDrink  = menu ? /เย็น|cold|iced/i.test(menu.product_name) : false
     const sliderColor  = targetMargin >= 60 ? GREEN : targetMargin >= 40 ? ORANGE : RED
     const levels: { key: 'qty_less' | 'qty_normal' | 'qty_more'; label: string; color: string }[] = [
       { key: 'qty_less',   label: 'หวานน้อย', color: '#4a9eff' },
@@ -512,13 +539,32 @@ export default function RecipeCostTab() {
           )}
         </div>
 
+        {/* ── Overhead Banner ── */}
+        {items.length > 0 && (packagingPerCup > 0 || overheadPerCup > 0) && (
+          <div style={{ backgroundColor: CARD2, borderRadius: 12, padding: '12px 16px', border: `1px solid ${BORDER}`, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase', flexShrink: 0 }}>ต้นทุน fixed ต่อแก้ว</span>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>📦 packaging {packagingPerCup.toLocaleString()} ₭</span>
+            {isColdDrink && icePerCup > 0 && (
+              <span style={{ fontSize: 12, color: '#4a9eff' }}>🧊 น้ำแข็ง {icePerCup.toLocaleString()} ₭</span>
+            )}
+            {overheadPerCup > 0 && (
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>🏠 overhead {overheadPerCup.toLocaleString()} ₭</span>
+            )}
+            <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: ORANGE, flexShrink: 0 }}>
+              fixed: {(packagingPerCup + (isColdDrink ? icePerCup : 0) + overheadPerCup).toLocaleString()} ₭
+            </span>
+          </div>
+        )}
+
         {/* ── Cost Summary Cards ── */}
         {items.length > 0 && menu && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
             {levels.map(lv => {
-              const cost         = calcCost(items, lv.key, ingredients, baseRecipes)
-              const suggested    = targetMargin < 100 ? Math.round(cost / (1 - targetMargin / 100) / 1000) * 1000 : 0
-              const actualMargin = menu.price_lak > 0 ? ((menu.price_lak - cost) / menu.price_lak) * 100 : 0
+              const ingCost      = calcCost(items, lv.key, ingredients, baseRecipes)
+              const fixedCost    = packagingPerCup + (isColdDrink ? icePerCup : 0) + overheadPerCup
+              const totalCost    = ingCost + fixedCost
+              const suggested    = targetMargin < 100 ? Math.round(totalCost / (1 - targetMargin / 100) / 1000) * 1000 : 0
+              const actualMargin = menu.price_lak > 0 ? ((menu.price_lak - totalCost) / menu.price_lak) * 100 : 0
               const marginOk     = actualMargin >= targetMargin
               const belowCost    = menu.price_lak > 0 && menu.price_lak < suggested
               return (
@@ -527,9 +573,29 @@ export default function RecipeCostTab() {
                   border: `2px solid ${marginOk ? GREEN + '50' : RED + '50'}`,
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: lv.color, marginBottom: 14 }}>{lv.label}</div>
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>ต้นทุน/แก้ว</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{cost.toFixed(0)} ₭</div>
+                  {/* Cost breakdown */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, padding: '8px 10px', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
+                      <span>วัตถุดิบ</span><span>{ingCost.toFixed(0)} ₭</span>
+                    </div>
+                    {packagingPerCup > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
+                        <span>📦 packaging</span><span>{packagingPerCup.toLocaleString()} ₭</span>
+                      </div>
+                    )}
+                    {isColdDrink && icePerCup > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#4a9eff' }}>
+                        <span>🧊 น้ำแข็ง</span><span>{icePerCup.toLocaleString()} ₭</span>
+                      </div>
+                    )}
+                    {overheadPerCup > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
+                        <span>🏠 overhead</span><span>{overheadPerCup.toLocaleString()} ₭</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: '#fff', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 2 }}>
+                      <span>รวม</span><span>{totalCost.toFixed(0)} ₭</span>
+                    </div>
                   </div>
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>ราคาแนะนำ</div>
