@@ -27,11 +27,11 @@ export default function RecipeCostTab() {
   const [msg, setMsg]                 = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.from('recipe_ingredients').select('*').order('name')
+    supabase.from('cost_ingredients').select('*').order('name')
       .then(({ data }) => { if (data) setIngredients(data.map(r => ({ id: r.id as string, name: r.name as string, unit: r.unit as string, pkg_size: r.package_size as number, pkg_cost: r.package_cost as number }))) })
-    supabase.from('recipe_base').select('*').order('name')
+    supabase.from('cost_base_recipes').select('*').order('name')
       .then(({ data }) => { if (data) setBaseRecipes(data.map(r => ({ id: r.id as string, name: r.name as string, unit: r.unit as string, yield_qty: r.total_yield as number, items: (r.ingredients ?? []) as BaseIngItem[] }))) })
-    supabase.from('recipe_menus').select('*').order('recipe_name')
+    supabase.from('cost_formulas').select('*').order('recipe_name')
       .then(({ data }) => { if (data) setFormulas(data.map(r => ({ id: r.id as string, recipe_id: r.menu_item_id as string, recipe_name: r.recipe_name as string, price_lak: r.price_lak as number, target_margin: r.target_margin as number, items: (r.components ?? []) as FormulaItem[] }))) })
     supabase.from('recipes').select('id, product_name, price_lak').eq('is_active', true).order('product_name')
       .then(({ data }) => setMenuItems((data ?? []) as { id: string; product_name: string; price_lak: number }[]))
@@ -39,28 +39,43 @@ export default function RecipeCostTab() {
 
   async function upsertIngredient(ing: Ingredient): Promise<Ingredient> {
     const row = { name: ing.name, unit: ing.unit, package_size: ing.pkg_size, package_cost: ing.pkg_cost }
-    if (ing.id) { await supabase.from('recipe_ingredients').upsert({ id: ing.id, ...row }); return ing }
-    const { data } = await supabase.from('recipe_ingredients').insert(row).select('id').single()
+    if (ing.id) {
+      const { error } = await supabase.from('cost_ingredients').upsert({ id: ing.id, ...row })
+      if (error) throw new Error('ไม่สามารถบันทึกวัตถุดิบได้ กรุณาลองใหม่')
+      return ing
+    }
+    const { data, error } = await supabase.from('cost_ingredients').insert(row).select('id').single()
+    if (error) throw new Error('ไม่สามารถบันทึกวัตถุดิบได้ กรุณาลองใหม่')
     return { ...ing, id: (data as { id: string }).id }
   }
-  async function removeIngredient(id: string) { await supabase.from('recipe_ingredients').delete().eq('id', id) }
+  async function removeIngredient(id: string) { await supabase.from('cost_ingredients').delete().eq('id', id) }
 
   async function upsertBaseRecipe(b: BaseRecipe): Promise<BaseRecipe> {
     const yield_qty = b.items.reduce((s, i) => s + i.qty, 0)
     const row = { name: b.name, unit: b.unit, ingredients: b.items, total_yield: yield_qty }
-    if (b.id) { await supabase.from('recipe_base').upsert({ id: b.id, ...row }); return { ...b, yield_qty } }
-    const { data } = await supabase.from('recipe_base').insert(row).select('id').single()
+    if (b.id) {
+      const { error } = await supabase.from('cost_base_recipes').upsert({ id: b.id, ...row })
+      if (error) throw new Error('ไม่สามารถบันทึกสูตรฐานได้ กรุณาลองใหม่')
+      return { ...b, yield_qty }
+    }
+    const { data, error } = await supabase.from('cost_base_recipes').insert(row).select('id').single()
+    if (error) throw new Error('ไม่สามารถบันทึกสูตรฐานได้ กรุณาลองใหม่')
     return { ...b, id: (data as { id: string }).id, yield_qty }
   }
-  async function removeBaseRecipe(id: string) { await supabase.from('recipe_base').delete().eq('id', id) }
+  async function removeBaseRecipe(id: string) { await supabase.from('cost_base_recipes').delete().eq('id', id) }
 
   async function upsertFormula(f: RecipeFormula): Promise<RecipeFormula> {
     const row = { menu_item_id: f.recipe_id, recipe_name: f.recipe_name, price_lak: f.price_lak, target_margin: f.target_margin, components: f.items }
-    if (f.id) { await supabase.from('recipe_menus').upsert({ id: f.id, ...row }); return f }
-    const { data } = await supabase.from('recipe_menus').insert(row).select('id').single()
+    if (f.id) {
+      const { error } = await supabase.from('cost_formulas').upsert({ id: f.id, ...row })
+      if (error) throw new Error('ไม่สามารถบันทึกสูตรได้ กรุณาลองใหม่')
+      return f
+    }
+    const { data, error } = await supabase.from('cost_formulas').insert(row).select('id').single()
+    if (error) throw new Error('ไม่สามารถบันทึกสูตรได้ กรุณาลองใหม่')
     return { ...f, id: (data as { id: string }).id }
   }
-  async function removeFormula(id: string) { await supabase.from('recipe_menus').delete().eq('id', id) }
+  async function removeFormula(id: string) { await supabase.from('cost_formulas').delete().eq('id', id) }
 
   function calcBaseCost(base: BaseRecipe, ings: Ingredient[]): number {
     return base.items.reduce((s, item) => {
@@ -96,9 +111,13 @@ export default function RecipeCostTab() {
       const pkg_cost = parseFloat(form.pkg_cost) || 0
       if (!form.name || pkg_size <= 0 || pkg_cost <= 0) { setMsg('เกิดข้อผิดพลาด: กรอกข้อมูลให้ครบ'); return }
       const draft: Ingredient = { id: editing?.id ?? '', name: form.name, unit: form.unit, pkg_size, pkg_cost }
-      const saved = await upsertIngredient(draft)
-      setIngredients(prev => editing?.id ? prev.map(i => i.id === editing!.id ? saved : i) : [...prev, saved])
-      setEditing(null); setMsg('บันทึกแล้ว')
+      try {
+        const saved = await upsertIngredient(draft)
+        setIngredients(prev => editing?.id ? prev.map(i => i.id === editing!.id ? saved : i) : [...prev, saved])
+        setEditing(null); setMsg('บันทึกแล้ว')
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+      }
     }
 
     return (
@@ -183,9 +202,13 @@ export default function RecipeCostTab() {
     async function save() {
       if (!form.name) { setMsg('กรอกชื่อสูตรพื้นฐาน'); return }
       const draft: BaseRecipe = { id: editId === 'new' ? '' : editId!, name: form.name, unit: form.unit, yield_qty: 0, items: form.items }
-      const saved = await upsertBaseRecipe(draft)
-      setBaseRecipes(prev => editId === 'new' ? [...prev, saved] : prev.map(b => b.id === editId ? saved : b))
-      setEditId(null); setMsg('บันทึกแล้ว')
+      try {
+        const saved = await upsertBaseRecipe(draft)
+        setBaseRecipes(prev => editId === 'new' ? [...prev, saved] : prev.map(b => b.id === editId ? saved : b))
+        setEditId(null); setMsg('บันทึกแล้ว')
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+      }
     }
 
     const previewCost  = form.items.reduce((s, item) => {
@@ -331,12 +354,16 @@ export default function RecipeCostTab() {
       const menu = menuItems.find(m => m.id === form.recipe_id)
       if (!menu) { setMsg('เกิดข้อผิดพลาด: เลือกเมนูก่อน'); return }
       const draft: RecipeFormula = { id: editId === 'new' ? '' : editId!, recipe_id: form.recipe_id, recipe_name: menu.product_name, price_lak: menu.price_lak, items: form.items, target_margin: form.target_margin }
-      const saved = await upsertFormula(draft)
-      // Sync calculated cost back to the menu item in recipes table
-      const costNormal = calcCost(form.items, 'qty_normal', ingredients, baseRecipes)
-      await supabase.from('recipes').update({ cost_per_cup_lak: Math.round(costNormal) }).eq('id', form.recipe_id)
-      setFormulas(prev => editId === 'new' ? [...prev, saved] : prev.map(f => f.id === editId ? saved : f))
-      setEditId(null); setMsg('บันทึกแล้ว')
+      try {
+        const saved = await upsertFormula(draft)
+        // Sync calculated cost back to the menu item in recipes table
+        const costNormal = calcCost(form.items, 'qty_normal', ingredients, baseRecipes)
+        await supabase.from('recipes').update({ cost_per_cup_lak: Math.round(costNormal) }).eq('id', form.recipe_id)
+        setFormulas(prev => editId === 'new' ? [...prev, saved] : prev.map(f => f.id === editId ? saved : f))
+        setEditId(null); setMsg('บันทึกแล้ว')
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+      }
     }
 
     const sweetnessFields: { field: 'qty_less' | 'qty_normal' | 'qty_more'; label: string }[] = [

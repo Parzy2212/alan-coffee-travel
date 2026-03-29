@@ -1253,6 +1253,29 @@ export default function POSClient() {
     supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization')
       .eq('is_active', true).order('category')
       .then(({ data }) => { setRecipes((data as Recipe[]) ?? []); setLoading(false) })
+
+    const channel = supabase.channel('recipes-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => {
+        supabase.from('recipes')
+          .select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization')
+          .eq('is_active', true)
+          .order('category')
+          .then(({ data }) => {
+            if (data) setRecipes(data.map(r => ({
+              id: r.id as string,
+              product_name: r.product_name as string,
+              product_name_lo: r.product_name_lo as string | null,
+              category: r.category as string | null,
+              category_id: r.category_id as string | null,
+              price_lak: r.price_lak as number,
+              image_url: r.image_url as string | null,
+              requires_customization: r.requires_customization as boolean,
+            })))
+          })
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   // L1 / L2 categories

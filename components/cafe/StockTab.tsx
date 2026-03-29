@@ -60,8 +60,8 @@ function InventoryFormFields({ data, onChange, showQty }: {
 
 // ─── StockItemRow ─────────────────────────────────────────────────────────────
 
-function StockItemRow({ item, onReload, showMsg }: {
-  item: StockDetail; onReload: () => void; showMsg: (m: string) => void
+function StockItemRow({ item, onReload, showMsg, onDelete }: {
+  item: StockDetail; onReload: () => void; showMsg: (m: string) => void; onDelete: (item: StockDetail) => void
 }) {
   const [panel,       setPanel]       = useState<'detail' | 'add' | 'edit' | null>(null)
   const [addForm,     setAddForm]     = useState<AddStockForm>({ qty: '', cost: '', supplier: item.supplier ?? '', date: todayISO() })
@@ -216,6 +216,12 @@ function StockItemRow({ item, onReload, showMsg }: {
             <button onClick={() => { openPanel('add'); setAddForm({ qty: '', cost: '', supplier: item.supplier ?? '', date: todayISO() }) }} style={btnStyleSm(panel === 'add' ? GOLD + '33' : GOLD + '22', GOLD)}>+ เติม</button>
             <button onClick={() => openPanel('detail')} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.55)')}>ประวัติ</button>
             <button onClick={() => openPanel('edit')} style={btnStyleSm('rgba(255,255,255,0.05)', 'rgba(255,255,255,0.4)')}>แก้ไข</button>
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(item) }}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(255,77,77,0.3)', cursor: 'pointer', backgroundColor: 'rgba(255,77,77,0.08)', color: '#ff4d4d', fontSize: 11 }}
+            >
+              ลบ
+            </button>
           </div>
         </div>
 
@@ -355,16 +361,43 @@ function StockItemRow({ item, onReload, showMsg }: {
   )
 }
 
+// ─── ConfirmDeleteModal ───────────────────────────────────────────────────────
+
+function ConfirmDeleteModal({ item, onConfirm, onCancel, deleting }: { item: StockDetail; onConfirm: () => void; onCancel: () => void; deleting: boolean }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ backgroundColor: '#161616', borderRadius: 16, border: '1px solid rgba(201,168,76,0.15)', padding: 28, maxWidth: 380, width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>🗑️</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>ลบออกจากสต็อก?</div>
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', marginBottom: 24 }}>
+          ลบ <strong style={{ color: '#fff' }}>{item.name}</strong> ออกจากสต็อก?<br/>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>การดำเนินการนี้ไม่สามารถย้อนกลับได้</span>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onCancel} disabled={deleting} style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.12)', background: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 14 }}>
+            ยกเลิก
+          </button>
+          <button onClick={onConfirm} disabled={deleting} style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: 'none', backgroundColor: '#ff4d4d', color: '#fff', fontWeight: 700, fontSize: 14, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.7 : 1 }}>
+            {deleting ? 'กำลังลบ...' : 'ยืนยัน ลบ'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── StockTab ─────────────────────────────────────────────────────────────────
 
 export default function StockTab() {
-  const [items,    setItems]    = useState<StockDetail[]>([])
-  const [loading,  setLoading]  = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [newData,  setNewData]  = useState<InventoryForm>(emptyInventoryForm())
-  const [saving,   setSaving]   = useState(false)
-  const [msg,      setMsg]      = useState<string | null>(null)
-  const [search,   setSearch]   = useState('')
+  const [items,        setItems]        = useState<StockDetail[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [showForm,     setShowForm]     = useState(false)
+  const [newData,      setNewData]      = useState<InventoryForm>(emptyInventoryForm())
+  const [saving,       setSaving]       = useState(false)
+  const [msg,          setMsg]          = useState<string | null>(null)
+  const [search,       setSearch]       = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<StockDetail | null>(null)
+  const [deleting,     setDeleting]     = useState(false)
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
 
@@ -400,6 +433,14 @@ export default function StockTab() {
     if (!error) { showMsg('เพิ่มวัตถุดิบสำเร็จ'); setShowForm(false); setNewData(emptyInventoryForm()); await load() }
     else showMsg('Error: ' + error.message)
     setSaving(false)
+  }
+
+  async function deleteItem(id: string) {
+    setDeleting(true)
+    const { error } = await supabase.rpc('delete_inventory_item', { p_id: id })
+    if (!error) { setDeleteTarget(null); showMsg('ลบเรียบร้อย'); await load() }
+    else showMsg('ไม่สามารถลบได้: ' + error.message)
+    setDeleting(false)
   }
 
   if (loading) return <LoadingSpinner />
@@ -445,6 +486,15 @@ export default function StockTab() {
 
       <Toast msg={msg} />
 
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          item={deleteTarget}
+          onConfirm={() => void deleteItem(deleteTarget.id)}
+          onCancel={() => setDeleteTarget(null)}
+          deleting={deleting}
+        />
+      )}
+
       {/* Add form */}
       {showForm && (
         <div style={{ marginBottom: 20, padding: 20, backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderRadius: 12 }}>
@@ -460,7 +510,7 @@ export default function StockTab() {
       {/* Stock list */}
       <div>
         {filtered.map(item => (
-          <StockItemRow key={item.id} item={item} onReload={load} showMsg={showMsg} />
+          <StockItemRow key={item.id} item={item} onReload={load} showMsg={showMsg} onDelete={setDeleteTarget} />
         ))}
         {filtered.length === 0 && (
           <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.2)', padding: 48, fontSize: 14 }}>

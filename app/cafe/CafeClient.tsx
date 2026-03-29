@@ -2528,21 +2528,38 @@ function AuditTab() {
 
 // ─── Nav + Main Layout ─────────────────────────────────────────────────────────
 
-const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'dashboard',  label: 'Dashboard',   icon: '📊' },
-  { id: 'menu',       label: 'เมนู',         icon: '🍽️' },
-  { id: 'categories', label: 'หมวดหมู่',    icon: '🗂️' },
-  { id: 'stock',      label: 'สต็อก',       icon: '📦' },
-  { id: 'settings',   label: 'ตั้งค่า',     icon: '⚙️' },
-  { id: 'staff',      label: 'พนักงาน',     icon: '👥' },
-  { id: 'schedule',   label: 'ตารางงาน',    icon: '📅' },
-  { id: 'customers',  label: 'ลูกค้า',      icon: '🧑‍🤝‍🧑' },
-  { id: 'purchase',   label: 'การซื้อ',     icon: '🧾' },
-  { id: 'finance',    label: 'การเงิน',     icon: '💰' },
-  { id: 'ai',          label: 'AI Analyst',  icon: '✨' },
-  { id: 'audit',       label: 'Audit Log',   icon: '🔍' },
-  { id: 'recipe-cost', label: 'ต้นทุนสูตร',  icon: '🧮' },
+type NavGroup = { label: string; items: { id: Tab; label: string; icon: string }[] }
+
+const NAV_GROUPS: NavGroup[] = [
+  { label: 'ภาพรวม', items: [
+    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+  ]},
+  { label: 'เมนูและสูตร', items: [
+    { id: 'menu',        label: 'เมนู',        icon: '🍽️' },
+    { id: 'categories',  label: 'หมวดหมู่',    icon: '🗂️' },
+    { id: 'recipe-cost', label: 'ต้นทุนสูตร',  icon: '🧮' },
+  ]},
+  { label: 'คลังสินค้า', items: [
+    { id: 'stock',    label: 'สต็อก',  icon: '📦' },
+    { id: 'purchase', label: 'การซื้อ', icon: '🧾' },
+  ]},
+  { label: 'ทีมงาน', items: [
+    { id: 'staff',    label: 'พนักงาน',  icon: '👥' },
+    { id: 'schedule', label: 'ตารางงาน', icon: '📅' },
+  ]},
+  { label: 'ลูกค้าและการเงิน', items: [
+    { id: 'customers', label: 'ลูกค้า',  icon: '🧑‍🤝‍🧑' },
+    { id: 'finance',   label: 'การเงิน', icon: '💰' },
+  ]},
+  { label: 'ระบบ', items: [
+    { id: 'settings', label: 'ตั้งค่า',    icon: '⚙️' },
+    { id: 'ai',       label: 'AI Analyst', icon: '✨' },
+    { id: 'audit',    label: 'Audit Log',  icon: '🔍' },
+  ]},
 ]
+
+// Flat list for lookup
+const NAV_ITEMS = NAV_GROUPS.flatMap(g => g.items)
 
 export default function CafeClient() {
   const [tab,     setTab]     = useState<Tab>('dashboard')
@@ -2566,12 +2583,27 @@ export default function CafeClient() {
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: 22, color: '#fff', letterSpacing: '-0.5px' }}>ALAN</div>
           <div style={{ fontSize: 11, color: GOLD, letterSpacing: '4px', textTransform: 'uppercase' }}>CAFE OS</div>
         </div>
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px' }}>
-          {NAV_ITEMS.map(item => (
-            <button key={item.id} onClick={() => switchTab(item.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 9, border: 'none', cursor: 'pointer', backgroundColor: tab === item.id ? `${GOLD}18` : 'transparent', color: tab === item.id ? GOLD : 'rgba(255,255,255,0.42)', fontSize: 14, fontWeight: tab === item.id ? 600 : 400, textAlign: 'left', transition: 'all .15s' }}>
-              <span style={{ fontSize: 16 }}>{item.icon}</span>
-              {item.label}
-            </button>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 0, padding: '0 12px', overflowY: 'auto' }}>
+          {NAV_GROUPS.map((group, gi) => (
+            <div key={gi}>
+              {gi > 0 && <div style={{ height: 1, backgroundColor: `${GOLD}20`, margin: '6px 2px 4px' }} />}
+              <div style={{ fontSize: 9, color: `${GOLD}66`, textTransform: 'uppercase', letterSpacing: '1.5px', padding: '6px 14px 2px', fontWeight: 600, userSelect: 'none' }}>
+                {group.label}
+              </div>
+              {group.items.map(item => (
+                <button key={item.id} onClick={() => switchTab(item.id)} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '9px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  backgroundColor: tab === item.id ? `${GOLD}18` : 'transparent',
+                  color: tab === item.id ? GOLD : 'rgba(255,255,255,0.42)',
+                  fontSize: 13, fontWeight: tab === item.id ? 600 : 400,
+                  textAlign: 'left', transition: 'all .15s', width: '100%',
+                }}>
+                  <span style={{ fontSize: 15 }}>{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div style={{ marginTop: 'auto', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
