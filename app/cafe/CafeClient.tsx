@@ -1539,24 +1539,24 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', marginBottom: 8 }}>{emptyHint}</div>
         )}
         {items.map(item => (
-          <div key={item.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+          <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 28px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
             <input
               value={item.name}
               onChange={e => updateItem(item.id, { name: e.target.value })}
-              style={{ ...inputStyle, flex: 1, minWidth: 0, fontSize: 13 }}
+              style={{ ...inputStyle, fontSize: 13 }}
               placeholder="ชื่อรายการ..."
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <MoneyInput
                 value={item.amount || ''}
                 onChange={raw => updateItem(item.id, { amount: parseInt(raw) || 0 })}
-                style={{ ...inputStyle, width: 110, textAlign: 'right' as const }}
+                style={{ ...inputStyle, textAlign: 'right' as const, fontSize: 13 }}
                 placeholder="0"
               />
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>₭</span>
             </div>
             <button onClick={() => removeItem(item.id)}
-              style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0 }}>
+              style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0, justifySelf: 'center' }}>
               ✕
             </button>
           </div>
