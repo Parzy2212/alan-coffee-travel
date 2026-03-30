@@ -1499,8 +1499,11 @@ function ItemizedList({ items, onUpdate, emptyHint }: { items: ExpenseItem[]; on
 
 // ─── CostManagementSection ────────────────────────────────────────────────────
 
+type SalaryBreakdownItem = { name: string; monthly: number; note: string }
+
 function CostManagementSection({ settings, onChange }: { settings: FullSettings; onChange: (s: FullSettings) => void }) {
-  const [loadingSalary, setLoadingSalary] = useState(false)
+  const [loadingSalary,    setLoadingSalary]    = useState(false)
+  const [salaryBreakdown,  setSalaryBreakdown]  = useState<SalaryBreakdownItem[]>([])
   const set = (k: keyof FullSettings) =>
     (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...settings, [k]: e.target.value })
   const n = (k: keyof FullSettings, def = 0) => parseFloat(settings[k] as string) || def
@@ -1537,15 +1540,17 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
     setLoadingSalary(true)
     const { data } = await supabase.rpc('get_all_staff')
     if (data) {
-      type StaffRow = { salary?: number | null; salary_type?: string | null; is_active?: boolean }
-      const total = (data as StaffRow[])
-        .filter(st => st.is_active !== false)           // active staff only
-        .reduce((s, st) => {
-          const amount = st.salary ?? 0
-          if (st.salary_type === 'daily')   return s + amount * 26   // ~26 working days/month
-          if (st.salary_type === 'hourly')  return s                  // can't auto-calc without hours data
-          return s + amount                                            // 'monthly' or null
-        }, 0)
+      type StaffRow = { name?: string; name_th?: string | null; salary?: number | null; salary_type?: string | null; is_active?: boolean }
+      const active = (data as StaffRow[]).filter(st => st.is_active !== false)
+      const breakdown: SalaryBreakdownItem[] = active.map(st => {
+        const amount = st.salary ?? 0
+        const displayName = st.name_th || st.name || '?'
+        if (st.salary_type === 'daily')  return { name: displayName, monthly: amount * 26, note: `${amount.toLocaleString()}×26วัน` }
+        if (st.salary_type === 'hourly') return { name: displayName, monthly: 0,           note: 'รายชั่วโมง (ข้าม)' }
+        return                                  { name: displayName, monthly: amount,       note: 'รายเดือน' }
+      })
+      const total = breakdown.reduce((s, b) => s + b.monthly, 0)
+      setSalaryBreakdown(breakdown)
       onChange({ ...settings, overhead_salary: String(total) })
     }
     setLoadingSalary(false)
@@ -1750,6 +1755,26 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
           </div>
         </div>
+
+        {/* Salary breakdown */}
+        {salaryBreakdown.length > 0 && (
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 14, lineHeight: 1.8, paddingLeft: 4 }}>
+            <span style={{ color: GOLD, fontWeight: 600 }}>{salaryBreakdown.length} คน: </span>
+            {salaryBreakdown.map((b, i) => (
+              <span key={i}>
+                {i > 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}> + </span>}
+                <span style={{ color: b.monthly === 0 ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.6)' }}>
+                  {b.name} <span style={{ color: b.monthly === 0 ? 'rgba(255,255,255,0.2)' : GOLD }}>{b.monthly.toLocaleString()}₭</span>
+                  <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}> ({b.note})</span>
+                </span>
+              </span>
+            ))}
+            <span style={{ color: 'rgba(255,255,255,0.25)' }}> = รวม </span>
+            <span style={{ color: GOLD, fontWeight: 700 }}>
+              {salaryBreakdown.reduce((s, b) => s + b.monthly, 0).toLocaleString()} ₭
+            </span>
+          </div>
+        )}
 
         <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 14 }} />
 
