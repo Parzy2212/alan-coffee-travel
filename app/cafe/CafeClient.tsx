@@ -1758,10 +1758,14 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
 }
 
 function SettingsTab() {
-  const [settings, setSettings] = useState<FullSettings>({ ...DEFAULT_SETTINGS })
-  const [loading,  setLoading]  = useState(true)
-  const [saving,   setSaving]   = useState(false)
-  const [saved,    setSaved]    = useState(false)
+  const [settings,       setSettings]       = useState<FullSettings>({ ...DEFAULT_SETTINGS })
+  const [loading,        setLoading]        = useState(true)
+  const [saving,         setSaving]         = useState(false)
+  const [saved,          setSaved]          = useState(false)
+  const [importPreview,  setImportPreview]  = useState<Record<string, string> | null>(null)
+  const [importError,    setImportError]    = useState<string | null>(null)
+  const [importing,      setImporting]      = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     supabase.rpc('get_site_settings').then(({ data }) => {
@@ -1778,6 +1782,47 @@ function SettingsTab() {
       )
     )
     setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  function exportSettings() {
+    const date = new Date().toISOString().slice(0, 10)
+    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `alan-cafe-settings-${date}.json`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; e.target.value = ''; if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string)
+        if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+          setImportError('ไฟล์ไม่ถูกต้อง — ต้องเป็น JSON object'); return
+        }
+        const preview: Record<string, string> = {}
+        for (const [k, v] of Object.entries(parsed)) preview[k] = String(v ?? '')
+        setImportPreview(preview); setImportError(null)
+      } catch {
+        setImportError('JSON ไม่ถูกต้อง — ไม่สามารถอ่านไฟล์ได้')
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  async function confirmImport() {
+    if (!importPreview) return
+    setImporting(true)
+    await Promise.all(
+      Object.entries(importPreview).map(([k, v]) =>
+        supabase.rpc('update_site_setting', { p_key: k, p_value: v })
+      )
+    )
+    setSettings(s => ({ ...s, ...(importPreview as Partial<FullSettings>) }))
+    setImportPreview(null); setImporting(false); setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
 
@@ -1807,6 +1852,58 @@ function SettingsTab() {
 
   return (
     <div style={{ maxWidth: 700 }}>
+
+      {/* ── Export / Import bar ── */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 20, padding: '12px 16px', backgroundColor: CARD, borderRadius: 10, border: `1px solid ${BORDER}` }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>สำรองข้อมูลตั้งค่า</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>Export/Import การตั้งค่าทั้งหมดเป็น JSON</div>
+        </div>
+        <button onClick={exportSettings} style={btnStyleSm(GOLD + '22', GOLD)}>⬇ Export JSON</button>
+        <button onClick={() => fileRef.current?.click()} style={btnStyleSm('rgba(255,255,255,0.08)', 'rgba(255,255,255,0.65)')}>⬆ Import JSON</button>
+        <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
+      </div>
+
+      {/* ── Import error ── */}
+      {importError && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', backgroundColor: RED + '12', border: `1px solid ${RED}33`, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: RED }}>
+          {importError}
+          <button onClick={() => setImportError(null)} style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
+        </div>
+      )}
+
+      {/* ── Import preview ── */}
+      {importPreview && (
+        <div style={{ marginBottom: 20, backgroundColor: CARD, border: `1px solid ${GOLD}33`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: GOLD }}>ตัวอย่างข้อมูลที่จะนำเข้า</span>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginLeft: 8 }}>{Object.keys(importPreview).length} รายการ</span>
+              <span style={{ fontSize: 11, color: ORANGE, marginLeft: 8 }}>
+                ({Object.entries(importPreview).filter(([k, v]) => v !== settings[k as keyof FullSettings]).length} รายการเปลี่ยน)
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={confirmImport} disabled={importing} style={{ ...btnStyleSm(GOLD, BLACK), fontWeight: 700 }}>
+                {importing ? 'กำลังบันทึก...' : '✓ ยืนยันนำเข้า'}
+              </button>
+              <button onClick={() => setImportPreview(null)} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.4)')}>ยกเลิก</button>
+            </div>
+          </div>
+          <div style={{ maxHeight: 220, overflowY: 'auto', padding: '6px 0' }}>
+            {Object.entries(importPreview).map(([k, v]) => {
+              const changed = v !== String(settings[k as keyof FullSettings] ?? '')
+              return (
+                <div key={k} style={{ display: 'grid', gridTemplateColumns: '220px 1fr 50px', gap: 8, padding: '5px 16px', borderBottom: `1px solid rgba(255,255,255,0.04)`, fontSize: 12 }}>
+                  <span style={{ color: GOLD, fontFamily: 'monospace', fontSize: 11 }}>{k}</span>
+                  <span style={{ color: changed ? '#fff' : 'rgba(255,255,255,0.35)', wordBreak: 'break-all' }}>{v || '(ว่าง)'}</span>
+                  {changed && <span style={{ color: ORANGE, fontSize: 10, fontWeight: 700, textAlign: 'right' }}>เปลี่ยน</span>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── 1. ข้อมูลร้าน ── */}
       <SettingSection icon="🏪" title="ข้อมูลร้าน">

@@ -1442,7 +1442,32 @@ export default function StaffTab() {
               {s.label}
             </button>
           ))}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={async () => {
+                const { data } = await supabase.rpc('get_all_staff')
+                const staff = (data ?? []) as StaffWithRole[]
+                const date  = new Date().toISOString().slice(0, 10)
+                const csvCell = (v: unknown) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s }
+                const rows = [
+                  ['ชื่อ', 'ชื่อไทย', 'บทบาท', 'เงินเดือน (₭)', 'ประเภท', 'วันเริ่มงาน', 'โทรศัพท์', 'สถานะ'],
+                  ...staff.map(s => [
+                    s.name, s.name_th || '', s.role || '', s.salary || 0,
+                    s.salary_type || '', s.start_date || '', s.phone || '',
+                    s.is_active ? 'ทำงาน' : 'ไม่ได้ทำงาน',
+                  ]),
+                ]
+                const content = rows.map(r => r.map(csvCell).join(',')).join('\n')
+                const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' })
+                const url  = URL.createObjectURL(blob)
+                const a    = document.createElement('a')
+                a.href = url; a.download = `alan-staff-${date}.csv`; a.click()
+                URL.revokeObjectURL(url)
+              }}
+              style={{ fontSize: 11, color: GREEN, background: 'none', border: `1px solid ${GREEN}44`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+            >
+              ⬇ CSV
+            </button>
             <a href="/staff"
               style={{ fontSize: 11, color: GOLD, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${GOLD}44`, borderRadius: 6 }}>
               Kiosk →

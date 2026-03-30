@@ -670,7 +670,35 @@ export default function RecipeCostTab() {
         {/* ── Existing Formulas List ── */}
         {formulas.length > 0 && (
           <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>สูตรทั้งหมด ({formulas.length})</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '2px', textTransform: 'uppercase' }}>สูตรทั้งหมด ({formulas.length})</div>
+              <button
+                onClick={() => {
+                  const date = new Date().toISOString().slice(0, 10)
+                  const csvCell = (v: unknown) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s }
+                  const rows = [
+                    ['ชื่อเมนู', 'ราคาขาย (₭)', 'ต้นทุนวัตถุดิบ (₭)', 'Packaging (₭)', 'Overhead (₭)', 'ต้นทุนรวม (₭)', 'Margin %'],
+                    ...formulas.map(f => {
+                      const ingCost   = Math.round(calcCost(f.items, 'qty_normal', ingredients, baseRecipes))
+                      const isCold    = /เย็น|cold|iced/i.test(f.recipe_name)
+                      const fixedCost = packagingPerCup + (isCold ? icePerCup : 0) + overheadPerCup
+                      const total     = ingCost + fixedCost
+                      const margin    = f.price_lak > 0 ? Math.round(((f.price_lak - total) / f.price_lak) * 100) : 0
+                      return [f.recipe_name, f.price_lak, ingCost, packagingPerCup, overheadPerCup, total, margin + '%']
+                    }),
+                  ]
+                  const content = rows.map(r => r.map(csvCell).join(',')).join('\n')
+                  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' })
+                  const url  = URL.createObjectURL(blob)
+                  const a    = document.createElement('a')
+                  a.href = url; a.download = `alan-cost-${date}.csv`; a.click()
+                  URL.revokeObjectURL(url)
+                }}
+                style={{ fontSize: 11, color: GREEN, background: 'none', border: `1px solid ${GREEN}44`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+              >
+                ⬇ Export CSV
+              </button>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {formulas.map(f => {
                 const cost    = calcCost(f.items, 'qty_normal', ingredients, baseRecipes)

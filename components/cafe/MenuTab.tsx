@@ -17,6 +17,22 @@ import {
 } from '@/components/cafe/shared'
 void BLACK
 
+// ─── CSV download helper ──────────────────────────────────────────────────────
+
+function csvCell(v: unknown): string {
+  const s = String(v ?? '')
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function downloadCsv(rows: string[][], filename: string) {
+  const content = rows.map(r => r.map(csvCell).join(',')).join('\n')
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ─── AllergenToggle ───────────────────────────────────────────────────────────
 
 function AllergenToggle({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
@@ -998,6 +1014,27 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="ค้นหา..." style={{ ...inputStyle, width: 180, padding: '6px 12px' }}
           />
+          <button
+            onClick={() => {
+              const date = new Date().toISOString().slice(0, 10)
+              downloadCsv([
+                ['ชื่อ (TH)', 'ชื่อ (EN)', 'หมวดหมู่', 'ราคา (₭)', 'ต้นทุน (₭)', 'Margin %', 'สถานะ'],
+                ...activeRecipes.map(r => [
+                  r.product_name_th || '',
+                  r.product_name,
+                  r.category || '',
+                  String(r.price_lak),
+                  String(r.cost_per_cup_lak ?? ''),
+                  String(r.margin_pct),
+                  r.is_active ? 'เปิด' : 'ปิด',
+                ]),
+              ], `alan-menu-${date}.csv`)
+            }}
+            style={btnStyleSm(GREEN + '18', GREEN)}
+            title="Export เมนูเป็น CSV"
+          >
+            ⬇ CSV
+          </button>
           <button onClick={() => { setShowForm(!showForm); setNewData(emptyEdit()) }} style={btnStyle(GOLD)}>
             {showForm ? '✕ ปิด' : '+ เพิ่มเมนู'}
           </button>
