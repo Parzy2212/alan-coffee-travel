@@ -1441,6 +1441,55 @@ function parseItems(json: string, defaults: ExpenseItem[]): ExpenseItem[] {
   return defaults
 }
 
+// ─── ItemizedList (module-scope so React never remounts it on parent re-render) ─
+
+function ItemizedList({ items, onUpdate, emptyHint }: { items: ExpenseItem[]; onUpdate: (items: ExpenseItem[]) => void; emptyHint?: string }) {
+  function updateItem(id: string, patch: Partial<ExpenseItem>) {
+    onUpdate(items.map(i => i.id === id ? { ...i, ...patch } : i))
+  }
+  function removeItem(id: string) { onUpdate(items.filter(i => i.id !== id)) }
+  function addItem() { onUpdate([...items, { id: Date.now().toString(), name: '', amount: 0 }]) }
+  const total = items.reduce((s, i) => s + i.amount, 0)
+  return (
+    <div>
+      {items.length === 0 && emptyHint && (
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', marginBottom: 8 }}>{emptyHint}</div>
+      )}
+      {items.map(item => (
+        <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 28px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+          <input
+            value={item.name}
+            onChange={e => updateItem(item.id, { name: e.target.value })}
+            style={{ ...inputStyle, fontSize: 13 }}
+            placeholder="ชื่อรายการ..."
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <MoneyInput
+              value={item.amount || ''}
+              onChange={raw => updateItem(item.id, { amount: parseInt(raw) || 0 })}
+              style={{ ...inputStyle, textAlign: 'right' as const, fontSize: 13 }}
+              placeholder="0"
+            />
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>₭</span>
+          </div>
+          <button onClick={() => removeItem(item.id)}
+            style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0, justifySelf: 'center' }}>
+            ✕
+          </button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+        <button onClick={addItem} style={{ ...btnStyleSm(GOLD + '22', GOLD) }}>+ เพิ่มรายการ</button>
+        {total > 0 && (
+          <span style={{ fontSize: 13, color: GOLD, fontWeight: 600 }}>
+            รวม {total.toLocaleString()} ₭/เดือน
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── CostManagementSection ────────────────────────────────────────────────────
 
 function CostManagementSection({ settings, onChange }: { settings: FullSettings; onChange: (s: FullSettings) => void }) {
@@ -1521,53 +1570,6 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
             onChange={raw => onChange({ ...settings, [fieldKey]: raw })}
             style={{ ...inputStyle, flex: 1 }} placeholder={placeholder ?? '0'} />
           <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
-        </div>
-      </div>
-    )
-  }
-
-  function ItemizedList({ items, onUpdate, emptyHint }: { items: ExpenseItem[]; onUpdate: (items: ExpenseItem[]) => void; emptyHint?: string }) {
-    function updateItem(id: string, patch: Partial<ExpenseItem>) {
-      onUpdate(items.map(i => i.id === id ? { ...i, ...patch } : i))
-    }
-    function removeItem(id: string) { onUpdate(items.filter(i => i.id !== id)) }
-    function addItem() { onUpdate([...items, { id: Date.now().toString(), name: '', amount: 0 }]) }
-    const total = items.reduce((s, i) => s + i.amount, 0)
-    return (
-      <div>
-        {items.length === 0 && emptyHint && (
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', marginBottom: 8 }}>{emptyHint}</div>
-        )}
-        {items.map(item => (
-          <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 28px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-            <input
-              value={item.name}
-              onChange={e => updateItem(item.id, { name: e.target.value })}
-              style={{ ...inputStyle, fontSize: 13 }}
-              placeholder="ชื่อรายการ..."
-            />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <MoneyInput
-                value={item.amount || ''}
-                onChange={raw => updateItem(item.id, { amount: parseInt(raw) || 0 })}
-                style={{ ...inputStyle, textAlign: 'right' as const, fontSize: 13 }}
-                placeholder="0"
-              />
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>₭</span>
-            </div>
-            <button onClick={() => removeItem(item.id)}
-              style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0, justifySelf: 'center' }}>
-              ✕
-            </button>
-          </div>
-        ))}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-          <button onClick={addItem} style={{ ...btnStyleSm(GOLD + '22', GOLD) }}>+ เพิ่มรายการ</button>
-          {total > 0 && (
-            <span style={{ fontSize: 13, color: GOLD, fontWeight: 600 }}>
-              รวม {total.toLocaleString()} ₭/เดือน
-            </span>
-          )}
         </div>
       </div>
     )
