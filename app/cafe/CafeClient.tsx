@@ -1521,7 +1521,7 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
   const totalConsumables = consumables.reduce((s, i) => s + i.amount, 0)
   const totalOther       = otherItems.reduce((s, i) => s + i.amount, 0)
   const totalOverhead    = totalFixed + totalConsumables + totalOther
-  const targetCups       = n('target_cups_month', 500) || 500
+  const targetCups       = Math.max(n('target_cups_month', 500) || 500, 1)
   const overheadPerCup   = Math.round(totalOverhead / targetCups)
   const fixedPerCup      = packagingPerCup + overheadPerCup
   const breakEvenPerDay  = Math.ceil(targetCups / 30)
@@ -1723,6 +1723,11 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
             <span>100</span><span>3,000 แก้ว</span>
           </div>
         </div>
+        {overheadPerCup > 20000 && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', backgroundColor: RED + '12', borderRadius: 8, border: `1px solid ${RED}22`, fontSize: 12, color: RED }}>
+            ⚠️ Overhead ต่อแก้ว = {overheadPerCup.toLocaleString()} ₭ สูงผิดปกติ — เพิ่มจำนวนเป้าหมายแก้ว/เดือน หรือลดค่าใช้จ่ายรายเดือน
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
           {[
             { label: 'Overhead ต่อแก้ว', value: overheadPerCup, color: '#ff9f43' },

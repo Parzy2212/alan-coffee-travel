@@ -23,7 +23,8 @@ export default function RecipeCostTab() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [baseRecipes, setBaseRecipes] = useState<BaseRecipe[]>([])
   const [formulas, setFormulas]       = useState<RecipeFormula[]>([])
-  const [menuItems, setMenuItems]     = useState<{ id: string; product_name: string; price_lak: number }[]>([])
+  const [menuItems, setMenuItems]     = useState<{ id: string; product_name: string; product_name_th: string | null; price_lak: number }[]>([])
+  const [settingsStale, setSettingsStale] = useState(false)
   const [msg, setMsg]                 = useState<string | null>(null)
 
   // ── Overhead settings loaded from site_settings ─────────────────────────
@@ -38,9 +39,20 @@ export default function RecipeCostTab() {
       .then(({ data }) => { if (data) setBaseRecipes(data.map(r => ({ id: r.id as string, name: r.name as string, unit: r.unit as string, yield_qty: r.total_yield as number, items: (r.ingredients ?? []) as BaseIngItem[] }))) })
     supabase.from('cost_formulas').select('*').order('recipe_name')
       .then(({ data }) => { if (data) setFormulas(data.map(r => ({ id: r.id as string, recipe_id: r.menu_item_id as string, recipe_name: r.recipe_name as string, price_lak: r.price_lak as number, target_margin: r.target_margin as number, items: (r.components ?? []) as FormulaItem[] }))) })
-    supabase.from('recipes').select('id, product_name, price_lak').eq('is_active', true).order('product_name')
-      .then(({ data }) => setMenuItems((data ?? []) as { id: string; product_name: string; price_lak: number }[]))
-    // Load overhead settings
+    loadMenuItems()
+    loadOverheadSettings()
+  }, [])
+
+  function loadMenuItems() {
+    supabase.from('recipes')
+      .select('id, product_name, product_name_th, price_lak')
+      .eq('is_active', true)
+      .neq('is_archived', true)
+      .order('product_name_th')
+      .then(({ data }) => setMenuItems((data ?? []) as { id: string; product_name: string; product_name_th: string | null; price_lak: number }[]))
+  }
+
+  function loadOverheadSettings() {
     supabase.rpc('get_site_settings').then(({ data }) => {
       if (!data) return
       const s = data as Record<string, string>
@@ -51,19 +63,20 @@ export default function RecipeCostTab() {
       const usableKg      = 30 * (1 - n('cost_ice_melt_pct', 30) / 100)
       const cpg           = usableKg > 0 ? n('cost_ice_bag_price', 20000) / (usableKg * 1000) : 0
       const ice           = Math.round(cpg * n('cost_ice_per_cup_g', 175))
-      // parse itemized lists
       const consumables = (() => { try { const p = JSON.parse(s['overhead_consumables_json'] ?? ''); if (Array.isArray(p)) return p } catch {} return [] })()
       const others      = (() => { try { const p = JSON.parse(s['overhead_other_json'] ?? '');      if (Array.isArray(p)) return p } catch {} return [] })()
       const totalItemized = [...consumables, ...others].reduce((a: number, i: { amount?: number }) => a + (i.amount ?? 0), 0)
       const totalOH       = n('overhead_rent') + n('overhead_electric') + n('overhead_water') +
         n('overhead_internet') + n('overhead_salary') + totalItemized
-      const targetCups    = n('target_cups_month', 500) || 500
+      // Math.max guards against target_cups manually set to 0 or very low in DB
+      const targetCups    = Math.max(n('target_cups_month', 500) || 500, 1)
       const oh            = Math.round(totalOH / targetCups)
       setPackagingPerCup(pkg)
       setIcePerCup(ice)
       setOverheadPerCup(oh)
+      setSettingsStale(false)
     })
-  }, [])
+  }
 
   async function upsertIngredient(ing: Ingredient): Promise<Ingredient> {
     const row = { name: ing.name, unit: ing.unit, package_size: ing.pkg_size, package_cost: ing.pkg_cost }
@@ -399,7 +412,9 @@ export default function RecipeCostTab() {
     }
 
     const menu         = menuItems.find(m => m.id === recipeId)
-    const isColdDrink  = menu ? /เย็น|cold|iced/i.test(menu.product_name) : false
+    const isColdDrink  = menu
+      ? /เย็น|cold|iced/i.test(menu.product_name) || /เย็น/i.test(menu.product_name_th ?? '')
+      : false
     const sliderColor  = targetMargin >= 60 ? GREEN : targetMargin >= 40 ? ORANGE : RED
     const levels: { key: 'qty_less' | 'qty_normal' | 'qty_more'; label: string; color: string }[] = [
       { key: 'qty_less',   label: 'หวานน้อย', color: '#4a9eff' },
@@ -418,7 +433,26 @@ export default function RecipeCostTab() {
 
         {/* ── Menu Selector ── */}
         <div style={{ backgroundColor: CARD2, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 10 }}>เลือกเมนู</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>เลือกเมนู</div>
+            <button
+              onClick={() => { loadMenuItems(); loadOverheadSettings(); setSettingsStale(false) }}
+              style={{ ...btnStyleSm(GOLD + '18', GOLD), fontSize: 11 }}
+              title="โหลดเมนูและค่า overhead ใหม่"
+            >
+              ↺ รีเฟรช
+            </button>
+          </div>
+          {settingsStale && (
+            <div style={{ marginBottom: 10, padding: '8px 12px', backgroundColor: ORANGE + '18', borderRadius: 8, border: `1px solid ${ORANGE}33`, fontSize: 12, color: ORANGE }}>
+              ⚠️ ค่าตั้งค่าถูกเปลี่ยน — กด ↺ รีเฟรช เพื่ออัปเดตการคำนวณ
+            </div>
+          )}
+          {overheadPerCup > 20000 && (
+            <div style={{ marginBottom: 10, padding: '8px 12px', backgroundColor: RED + '12', borderRadius: 8, border: `1px solid ${RED}22`, fontSize: 12, color: RED }}>
+              ⚠️ Overhead ต่อแก้ว = {overheadPerCup.toLocaleString()} ₭ สูงผิดปกติ — ตรวจสอบจำนวนแก้ว/เดือนในตั้งค่า (ตั้งค่า &rsaquo; ค่าใช้จ่ายรายเดือน)
+            </div>
+          )}
           {menuItems.length === 0 ? (
             <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>ยังไม่มีเมนูที่เปิดใช้งาน — ไปแท็บ &ldquo;เมนู&rdquo; แล้วเปิดใช้งานเมนูก่อน</div>
           ) : (
@@ -428,7 +462,9 @@ export default function RecipeCostTab() {
               onChange={e => setRecipeId(e.target.value)}
             >
               {menuItems.map(m => (
-                <option key={m.id} value={m.id}>{m.product_name} · {m.price_lak.toLocaleString()} ₭</option>
+                <option key={m.id} value={m.id}>
+                  {m.product_name_th || m.product_name} · {m.price_lak.toLocaleString()} ₭
+                </option>
               ))}
             </select>
           )}
