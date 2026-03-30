@@ -445,11 +445,12 @@ function MenuWizard({
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
 
 function RecipeCard({
-  r, categories, onReload, onSwitchToRecipeCost,
+  r, categories, onReload, onDelete, onSwitchToRecipeCost,
 }: {
   r: RecipeFull
   categories: Category[]
   onReload: () => void
+  onDelete: (id: string) => void
   onSwitchToRecipeCost?: (menuId: string) => void
 }) {
   const [open,         setOpen]         = useState(false)
@@ -521,14 +522,24 @@ function RecipeCard({
       showMsg('ชื่อไม่ตรงกัน'); return
     }
     setDeleting(true)
-    const { error } = await supabase.from('recipes').delete().eq('id', r.id)
-    if (!error) {
-      onReload()
-    } else {
-      showMsg('Error: ' + error.message)
+    const { data: deleted, error } = await supabase
+      .from('recipes')
+      .delete()
+      .eq('id', r.id)
+      .select('id')
+    if (error) {
+      showMsg('เกิดข้อผิดพลาด: ' + error.message)
       setDeleting(false)
-      setDeleteStep(0)
+      return
     }
+    if (!deleted || deleted.length === 0) {
+      showMsg('ไม่สามารถลบได้ — อาจไม่มีสิทธิ์ (RLS) หรือไม่พบรายการนี้')
+      setDeleting(false)
+      return
+    }
+    // Success: remove immediately from parent state, then reload for consistency
+    onDelete(r.id)
+    onReload()
   }
 
   const marginColor = r.margin_pct >= 60 ? GREEN : r.margin_pct >= 40 ? GOLD : RED
@@ -951,6 +962,10 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
             r={r}
             categories={categories}
             onReload={load}
+            onDelete={(id) => {
+              setRecipes(prev => prev.filter(x => x.id !== id))
+              showMsg('ลบเมนูเรียบร้อยแล้ว')
+            }}
             onSwitchToRecipeCost={onSwitchToRecipeCost}
           />
         ))}
