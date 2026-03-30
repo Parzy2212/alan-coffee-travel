@@ -1537,11 +1537,15 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
     setLoadingSalary(true)
     const { data } = await supabase.rpc('get_all_staff')
     if (data) {
-      const total = (data as { salary?: number; salary_type?: string | null }[]).reduce((s, st) => {
-        const amount = st.salary ?? 0
-        // Daily-rate staff: multiply by 30 to get monthly equivalent
-        return s + (st.salary_type === 'daily' ? amount * 30 : amount)
-      }, 0)
+      type StaffRow = { salary?: number | null; salary_type?: string | null; is_active?: boolean }
+      const total = (data as StaffRow[])
+        .filter(st => st.is_active !== false)           // active staff only
+        .reduce((s, st) => {
+          const amount = st.salary ?? 0
+          if (st.salary_type === 'daily')   return s + amount * 26   // ~26 working days/month
+          if (st.salary_type === 'hourly')  return s                  // can't auto-calc without hours data
+          return s + amount                                            // 'monthly' or null
+        }, 0)
       onChange({ ...settings, overhead_salary: String(total) })
     }
     setLoadingSalary(false)
