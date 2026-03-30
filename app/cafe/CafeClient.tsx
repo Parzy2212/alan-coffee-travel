@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
+import { MoneyInput } from '@/components/MoneyInput'
 
 const LazyMenuTab        = lazy(() => import('@/components/cafe/MenuTab'))
 const LazyStockTab       = lazy(() => import('@/components/cafe/StockTab'))
@@ -1516,7 +1517,8 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{label}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="number" min="0" value={settings[fieldKey] as string} onChange={set(fieldKey)}
+          <MoneyInput value={settings[fieldKey] as string}
+            onChange={raw => onChange({ ...settings, [fieldKey]: raw })}
             style={{ ...inputStyle, flex: 1 }} placeholder={placeholder ?? '0'} />
           <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
         </div>
@@ -1537,25 +1539,24 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', marginBottom: 8 }}>{emptyHint}</div>
         )}
         {items.map(item => (
-          <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 28px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+          <div key={item.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
             <input
               value={item.name}
               onChange={e => updateItem(item.id, { name: e.target.value })}
-              style={{ ...inputStyle, fontSize: 13 }}
+              style={{ ...inputStyle, flex: 1, minWidth: 0, fontSize: 13 }}
               placeholder="ชื่อรายการ..."
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <input
-                type="number" min="0"
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <MoneyInput
                 value={item.amount || ''}
-                onChange={e => updateItem(item.id, { amount: parseInt(e.target.value) || 0 })}
-                style={{ ...inputStyle, flex: 1, textAlign: 'right' as const }}
+                onChange={raw => updateItem(item.id, { amount: parseInt(raw) || 0 })}
+                style={{ ...inputStyle, width: 110, textAlign: 'right' as const }}
                 placeholder="0"
               />
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>₭</span>
             </div>
             <button onClick={() => removeItem(item.id)}
-              style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>
+              style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0 }}>
               ✕
             </button>
           </div>
@@ -1583,7 +1584,8 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
           <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>ถุงกลับบ้าน</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="number" min="0" value={settings.cost_bag} onChange={set('cost_bag')}
+            <MoneyInput value={settings.cost_bag}
+              onChange={raw => onChange({ ...settings, cost_bag: raw })}
               style={{ ...inputStyle, flex: 1 }} placeholder="500" />
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭/ถุง</span>
           </div>
@@ -1644,8 +1646,8 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
           <div key={row.key} style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{row.icon} {row.label}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="number" min="0" value={settings[row.key] as string}
-                onChange={e => onChange({ ...settings, [row.key]: e.target.value })}
+              <MoneyInput value={settings[row.key] as string}
+                onChange={raw => onChange({ ...settings, [row.key]: raw })}
                 style={{ ...inputStyle, flex: 1 }} placeholder="0" />
               <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
             </div>
@@ -1661,7 +1663,8 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
             </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="number" min="0" value={settings.overhead_salary} onChange={set('overhead_salary')}
+            <MoneyInput value={settings.overhead_salary}
+              onChange={raw => onChange({ ...settings, overhead_salary: raw })}
               style={{ ...inputStyle, flex: 1 }} placeholder="0" />
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
           </div>
