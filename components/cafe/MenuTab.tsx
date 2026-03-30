@@ -62,7 +62,7 @@ function Toggle({ on, onChange, label, icon }: { on: boolean; onChange: (v: bool
 // ─── MenuWizard ───────────────────────────────────────────────────────────────
 
 function MenuWizard({
-  data, onChange, categories, saving, onSave, onCancel, costPerCup,
+  data, onChange, categories, saving, onSave, onCancel, costPerCup, onSwitchToRecipeCost,
 }: {
   data: RecipeFullEdit
   onChange: (d: RecipeFullEdit) => void
@@ -71,6 +71,7 @@ function MenuWizard({
   onSave: () => void
   onCancel: () => void
   costPerCup?: number
+  onSwitchToRecipeCost?: (menuId: string) => void
 }) {
   const [step,           setStep]          = useState(1)
   const [showAltNames,   setShowAltNames]  = useState(!!(data.product_name || data.product_name_lo))
@@ -287,11 +288,22 @@ function MenuWizard({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ padding: '12px 16px', backgroundColor: CARD, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 16 }}>💡</span>
-                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>
-                      ยังไม่มีสูตรต้นทุน — ไปที่แท็บ <span style={{ color: GOLD }}>&ldquo;ต้นทุนสูตร&rdquo;</span> เพื่อสร้าง
+                  <div style={{ padding: '12px 16px', backgroundColor: GOLD + '0d', borderRadius: 10, border: `1px solid ${GOLD}22`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 16 }}>💡</span>
+                      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+                        ยังไม่มีสูตรต้นทุน
+                      </div>
                     </div>
+                    {onSwitchToRecipeCost && (
+                      <button
+                        type="button"
+                        onClick={() => onSwitchToRecipeCost('')}
+                        style={{ ...btnStyleSm(GOLD + '22', GOLD), whiteSpace: 'nowrap', flexShrink: 0 }}
+                      >
+                        🧮 สร้างสูตร
+                      </button>
+                    )}
                   </div>
                   <div>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>หรือกรอกต้นทุนเองชั่วคราว</div>
@@ -432,16 +444,29 @@ function MenuWizard({
 
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
 
-function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Category[]; onReload: () => void }) {
-  const [open,        setOpen]        = useState(false)
-  const [editing,     setEditing]     = useState(false)
-  const [editData,    setEditData]    = useState<RecipeFullEdit>(toEdit(r))
-  const [saving,      setSaving]      = useState(false)
-  const [history,     setHistory]     = useState<DaySale[] | null>(null)
-  const [histLoading, setHistLoading] = useState(false)
-  const [msg,         setMsg]         = useState<string | null>(null)
+function RecipeCard({
+  r, categories, onReload, onSwitchToRecipeCost,
+}: {
+  r: RecipeFull
+  categories: Category[]
+  onReload: () => void
+  onSwitchToRecipeCost?: (menuId: string) => void
+}) {
+  const [open,         setOpen]         = useState(false)
+  const [editing,      setEditing]      = useState(false)
+  const [editData,     setEditData]     = useState<RecipeFullEdit>(toEdit(r))
+  const [saving,       setSaving]       = useState(false)
+  const [history,      setHistory]      = useState<DaySale[] | null>(null)
+  const [histLoading,  setHistLoading]  = useState(false)
+  const [msg,          setMsg]          = useState<string | null>(null)
+  // Delete flow
+  const [deleteStep,   setDeleteStep]   = useState<0 | 1>(0)
+  const [deleteInput,  setDeleteInput]  = useState('')
+  const [deleting,     setDeleting]     = useState(false)
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3000) }
+
+  const confirmName = r.product_name_th || r.product_name
 
   async function loadHistory() {
     if (history !== null) return
@@ -452,6 +477,7 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
   }
 
   function handleExpand() {
+    if (deleteStep === 1) return  // don't expand while in delete confirm
     const next = !open
     setOpen(next)
     if (next) loadHistory()
@@ -490,80 +516,192 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
     setSaving(false)
   }
 
+  async function handleDelete() {
+    if (deleteInput.trim() !== confirmName.trim()) {
+      showMsg('ชื่อไม่ตรงกัน'); return
+    }
+    setDeleting(true)
+    const { error } = await supabase.from('recipes').delete().eq('id', r.id)
+    if (!error) {
+      onReload()
+    } else {
+      showMsg('Error: ' + error.message)
+      setDeleting(false)
+      setDeleteStep(0)
+    }
+  }
+
   const marginColor = r.margin_pct >= 60 ? GREEN : r.margin_pct >= 40 ? GOLD : RED
   const histMax = history ? Math.max(...history.map(d => d.sales), 1) : 1
   void histMax
 
   return (
-    <div style={{ backgroundColor: CARD, border: `1px solid ${open ? GOLD + '44' : BORDER}`, borderRadius: 12, overflow: 'hidden', opacity: r.is_active ? 1 : 0.5, transition: 'border-color .2s' }}>
-      {/* Card header */}
-      <div onClick={handleExpand} style={{ padding: '16px 18px', cursor: 'pointer', userSelect: 'none' }}>
+    <div style={{
+      backgroundColor: CARD,
+      border: `1px solid ${deleteStep === 1 ? RED + '55' : open ? GOLD + '44' : BORDER}`,
+      borderRadius: 12, overflow: 'hidden',
+      opacity: r.is_active ? 1 : 0.55,
+      transition: 'border-color .2s',
+    }}>
+      {/* ── Card header (click to expand) ── */}
+      <div onClick={handleExpand} style={{ padding: '14px 16px', cursor: 'pointer', userSelect: 'none' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <button onClick={toggleActive} title={r.is_active ? 'ปิด' : 'เปิด'} style={{
-            width: 34, height: 19, borderRadius: 10, border: 'none', cursor: 'pointer', flexShrink: 0, marginTop: 2,
-            backgroundColor: r.is_active ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s',
-          }} />
+          {/* Status toggle */}
+          <button
+            onClick={toggleActive}
+            title={r.is_active ? 'ปิดเมนู' : 'เปิดเมนู'}
+            style={{
+              width: 34, height: 19, borderRadius: 10, border: 'none', cursor: 'pointer', flexShrink: 0, marginTop: 3,
+              backgroundColor: r.is_active ? GOLD : 'rgba(255,255,255,0.1)', transition: 'background .2s',
+            }}
+          />
+
+          {/* Image */}
           {r.image_url && (
-            <img src={r.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, flexShrink: 0, border: `1px solid ${BORDER}` }} />
+            <img src={r.image_url} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, flexShrink: 0, border: `1px solid ${BORDER}` }} />
           )}
+
+          {/* Name + badges */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{r.product_name_th || r.product_name}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{r.product_name_th || r.product_name}</span>
               {r.product_name_th && r.product_name && r.product_name !== r.product_name_th && (
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>{r.product_name}</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)' }}>{r.product_name}</span>
               )}
               {r.is_seasonal && <Badge label="Seasonal" bg={GOLD + '22'} color={GOLD} />}
               {!r.is_active && <Badge label="ปิด" bg="rgba(255,255,255,0.06)" color="rgba(255,255,255,0.3)" />}
             </div>
             {r.product_name_lo && (
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 2 }}>{r.product_name_lo}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', marginTop: 1 }}>{r.product_name_lo}</div>
+            )}
+            {r.category && (
+              <div style={{ marginTop: 4 }}>
+                <Badge label={r.category} bg={GOLD + '18'} color={GOLD} />
+              </div>
             )}
           </div>
-          {r.category && <Badge label={r.category} bg={GOLD + '18'} color={GOLD} />}
+
+          {/* Price + cost */}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: GOLD }}>{fmtLAK(r.price_lak)}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: GOLD }}>{fmtLAK(r.price_lak)}</div>
             {r.cost_per_cup_lak && (
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>
                 ต้นทุน {fmtLAK(r.cost_per_cup_lak)}
               </div>
             )}
           </div>
-          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 12, marginTop: 3, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+
+          <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 11, marginTop: 4, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
         </div>
 
-        <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px' }}>Margin</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: marginColor }}>{r.margin_pct}%</span>
+        {/* Stats row */}
+        <div style={{ display: 'flex', gap: 14, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px' }}>Margin</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: marginColor }}>{r.margin_pct}%</span>
           </div>
           {r.preparation_time && (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>⏱ {r.preparation_time} นาที</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>⏱ {r.preparation_time}m</div>
           )}
           {r.calories && (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{r.calories} kcal</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{r.calories} kcal</div>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, flexShrink: 0 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexShrink: 0 }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', letterSpacing: '1px' }}>30 วัน</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{r.total_qty_30d} แก้ว</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '1px' }}>30 วัน</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>{r.total_qty_30d} แก้ว</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', letterSpacing: '1px' }}>ยอดรวม</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: GOLD }}>{fmtK(r.total_sales_30d)}</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '1px' }}>ยอดรวม</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: GOLD }}>{fmtK(r.total_sales_30d)}</div>
             </div>
           </div>
         </div>
 
         {r.allergens && r.allergens.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
             {r.allergens.map(a => <Badge key={a} label={a} bg={ORANGE + '18'} color={ORANGE} />)}
           </div>
         )}
       </div>
 
-      {/* Expanded detail */}
+      {/* ── Action buttons row (always visible) ── */}
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ display: 'flex', gap: 6, padding: '0 16px 12px', alignItems: 'center' }}
+      >
+        {/* Edit */}
+        <button
+          onClick={e => { e.stopPropagation(); setEditing(true); setEditData(toEdit(r)); setOpen(true); loadHistory() }}
+          style={{ ...btnStyleSm(GOLD + '18', GOLD), fontSize: 12 }}
+        >
+          ✏️ แก้ไข
+        </button>
+
+        {/* Recipe Cost */}
+        {onSwitchToRecipeCost && (
+          <button
+            onClick={e => { e.stopPropagation(); onSwitchToRecipeCost(r.id) }}
+            style={{ ...btnStyleSm('rgba(76,186,127,0.12)', GREEN), fontSize: 12 }}
+          >
+            🧮 ต้นทุน
+          </button>
+        )}
+
+        <div style={{ flex: 1 }} />
+
+        {/* Delete */}
+        {deleteStep === 0 ? (
+          <button
+            onClick={e => { e.stopPropagation(); setDeleteStep(1); setDeleteInput(''); setOpen(false) }}
+            style={{ ...btnStyleSm(RED + '15', RED), fontSize: 12 }}
+          >
+            🗑️ ลบ
+          </button>
+        ) : (
+          <button
+            onClick={e => { e.stopPropagation(); setDeleteStep(0); setDeleteInput('') }}
+            style={{ ...btnStyleSm('rgba(255,255,255,0.06)', 'rgba(255,255,255,0.4)'), fontSize: 12 }}
+          >
+            ยกเลิก
+          </button>
+        )}
+      </div>
+
+      {/* ── Delete confirmation ── */}
+      {deleteStep === 1 && (
+        <div style={{ borderTop: `1px solid ${RED}33`, padding: '14px 16px', backgroundColor: RED + '08' }}>
+          {msg && <div style={{ marginBottom: 8 }}><Toast msg={msg} /></div>}
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 10 }}>
+            พิมพ์ <span style={{ color: RED, fontWeight: 700 }}>{confirmName}</span> เพื่อยืนยันการลบ
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              value={deleteInput}
+              onChange={e => setDeleteInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleDelete()}
+              style={{ ...inputStyle, flex: 1, borderColor: RED + '44' }}
+              placeholder="ชื่อเมนู..."
+              autoFocus
+            />
+            <button
+              onClick={handleDelete}
+              disabled={deleting || deleteInput.trim() !== confirmName.trim()}
+              style={{
+                ...btnStyleSm(RED + '22', RED),
+                opacity: (deleting || deleteInput.trim() !== confirmName.trim()) ? 0.4 : 1,
+                fontWeight: 700,
+              }}
+            >
+              {deleting ? '...' : 'ลบ'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Expanded detail ── */}
       {open && !editing && (
-        <div style={{ borderTop: `1px solid ${BORDER}`, padding: '16px 18px', backgroundColor: '#0d0d0d' }}>
+        <div style={{ borderTop: `1px solid ${BORDER}`, padding: '16px 16px', backgroundColor: '#0d0d0d' }}>
           {(r.description_en || r.description_th || r.description_lo) && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>คำอธิบาย</div>
@@ -597,7 +735,7 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
             </div>
           )}
 
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>ยอดขาย 7 วัน</div>
             {histLoading ? (
               <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -627,29 +765,21 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
-            {r.calc_cost > 0 && (
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
-                ต้นทุนจากสูตร: <span style={{ color: 'rgba(255,255,255,0.55)' }}>{fmtLAK(r.calc_cost)}</span>
-              </div>
-            )}
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
-              Gross Margin: <span style={{ color: marginColor, fontWeight: 700 }}>{r.margin_pct}%</span>
+          {r.calc_cost > 0 && (
+            <div style={{ marginBottom: 8, fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+              ต้นทุนจากสูตร: <span style={{ color: 'rgba(255,255,255,0.55)' }}>{fmtLAK(r.calc_cost)}</span>
+              &nbsp;&nbsp;Gross Margin: <span style={{ color: marginColor, fontWeight: 700 }}>{r.margin_pct}%</span>
             </div>
-          </div>
+          )}
 
           {msg && <Toast msg={msg} />}
-
-          <button onClick={() => { setEditing(true); setEditData(toEdit(r)) }} style={btnStyleSm(GOLD + '22', GOLD)}>
-            แก้ไขข้อมูล
-          </button>
         </div>
       )}
 
-      {/* Edit wizard */}
+      {/* ── Edit wizard ── */}
       {open && editing && (
         <div style={{ borderTop: `1px solid ${BORDER}` }}>
-          {msg && <div style={{ padding: '8px 18px' }}><Toast msg={msg} /></div>}
+          {msg && <div style={{ padding: '8px 16px' }}><Toast msg={msg} /></div>}
           <MenuWizard
             data={editData}
             onChange={setEditData}
@@ -658,6 +788,7 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
             onSave={saveEdit}
             onCancel={() => setEditing(false)}
             costPerCup={r.cost_per_cup_lak ?? undefined}
+            onSwitchToRecipeCost={onSwitchToRecipeCost}
           />
         </div>
       )}
@@ -667,15 +798,16 @@ function RecipeCard({ r, categories, onReload }: { r: RecipeFull; categories: Ca
 
 // ─── MenuTab ──────────────────────────────────────────────────────────────────
 
-export default function MenuTab() {
-  const [recipes,    setRecipes]    = useState<RecipeFull[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [showForm,   setShowForm]   = useState(false)
-  const [newData,    setNewData]    = useState<RecipeFullEdit>(emptyEdit())
-  const [saving,     setSaving]     = useState(false)
-  const [msg,        setMsg]        = useState<string | null>(null)
-  const [search,     setSearch]     = useState('')
+export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost?: (menuId: string) => void }) {
+  const [recipes,      setRecipes]      = useState<RecipeFull[]>([])
+  const [categories,   setCategories]   = useState<Category[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [showForm,     setShowForm]     = useState(false)
+  const [newData,      setNewData]      = useState<RecipeFullEdit>(emptyEdit())
+  const [saving,       setSaving]       = useState(false)
+  const [msg,          setMsg]          = useState<string | null>(null)
+  const [search,       setSearch]       = useState('')
+  const [filterCatId,  setFilterCatId]  = useState<string | null>(null)  // null = all
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
 
@@ -693,7 +825,6 @@ export default function MenuTab() {
   useEffect(() => { load() }, [load])
 
   async function createRecipe() {
-    // Fallback: use TH name if EN name is empty
     const name = newData.product_name.trim() || newData.product_name_th.trim()
     if (!name) { showMsg('กรุณาระบุชื่อเมนู'); return }
     const price = parseFloat(newData.price_str)
@@ -727,17 +858,27 @@ export default function MenuTab() {
     setSaving(false)
   }
 
-  const filtered = recipes.filter(r =>
-    !search || (r.product_name_th ?? '').includes(search) ||
-    r.product_name.toLowerCase().includes(search.toLowerCase()) ||
-    (r.category ?? '').toLowerCase().includes(search.toLowerCase())
-  )
+  // Category filter counts
+  const catCounts = categories.reduce<Record<string, number>>((acc, c) => {
+    acc[c.id] = recipes.filter(r => r.category_id === c.id).length
+    return acc
+  }, {})
+
+  const filtered = recipes.filter(r => {
+    const matchSearch = !search ||
+      (r.product_name_th ?? '').includes(search) ||
+      r.product_name.toLowerCase().includes(search.toLowerCase()) ||
+      (r.category ?? '').toLowerCase().includes(search.toLowerCase())
+    const matchCat = filterCatId === null || r.category_id === filterCatId
+    return matchSearch && matchCat
+  })
 
   if (loading) return <LoadingSpinner />
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>
           เมนูทั้งหมด ({recipes.length})
         </div>
@@ -752,8 +893,42 @@ export default function MenuTab() {
         </div>
       </div>
 
+      {/* ── Category filter pills ── */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        <button
+          onClick={() => setFilterCatId(null)}
+          style={{
+            padding: '5px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', transition: 'all .15s',
+            border: `1px solid ${filterCatId === null ? GOLD : 'rgba(255,255,255,0.12)'}`,
+            backgroundColor: filterCatId === null ? GOLD + '22' : 'transparent',
+            color: filterCatId === null ? GOLD : 'rgba(255,255,255,0.4)',
+          }}
+        >
+          ทั้งหมด ({recipes.length})
+        </button>
+        {categories.map(c => {
+          const sel = filterCatId === c.id
+          const cnt = catCounts[c.id] ?? 0
+          return (
+            <button
+              key={c.id}
+              onClick={() => setFilterCatId(sel ? null : c.id)}
+              style={{
+                padding: '5px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', transition: 'all .15s',
+                border: `1px solid ${sel ? GOLD : 'rgba(255,255,255,0.12)'}`,
+                backgroundColor: sel ? GOLD + '22' : 'transparent',
+                color: sel ? GOLD : 'rgba(255,255,255,0.4)',
+              }}
+            >
+              {c.name_th || c.name} ({cnt})
+            </button>
+          )
+        })}
+      </div>
+
       <Toast msg={msg} />
 
+      {/* ── Add wizard ── */}
       {showForm && (
         <div style={{ marginBottom: 20 }}>
           <MenuWizard
@@ -763,13 +938,21 @@ export default function MenuTab() {
             saving={saving}
             onSave={createRecipe}
             onCancel={() => setShowForm(false)}
+            onSwitchToRecipeCost={onSwitchToRecipeCost}
           />
         </div>
       )}
 
+      {/* ── Grid ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
         {filtered.map(r => (
-          <RecipeCard key={r.id} r={r} categories={categories} onReload={load} />
+          <RecipeCard
+            key={r.id}
+            r={r}
+            categories={categories}
+            onReload={load}
+            onSwitchToRecipeCost={onSwitchToRecipeCost}
+          />
         ))}
         {filtered.length === 0 && (
           <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'rgba(255,255,255,0.2)', padding: 40, fontSize: 14 }}>

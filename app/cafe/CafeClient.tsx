@@ -2970,7 +2970,7 @@ export default function CafeClient() {
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', marginTop: 6 }}>Alan Cafe OS — Admin</div>
         </div>
         {tabWrap('dashboard',   <DashboardTab />)}
-        {tabWrap('menu',        <Suspense fallback={<LoadingSpinner />}><LazyMenuTab /></Suspense>)}
+        {tabWrap('menu',        <Suspense fallback={<LoadingSpinner />}><LazyMenuTab onSwitchToRecipeCost={() => switchTab('recipe-cost')} /></Suspense>)}
         {tabWrap('categories',  <CategoriesTab />)}
         {tabWrap('stock',       <Suspense fallback={<LoadingSpinner />}><LazyStockTab /></Suspense>)}
         {tabWrap('settings',    <SettingsTab />)}
