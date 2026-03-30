@@ -12,35 +12,47 @@ interface MoneyInputProps {
 }
 
 export function MoneyInput({ value, onChange, style, placeholder, disabled, autoFocus }: MoneyInputProps) {
-  const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, '')) || 0
-  const isFocused = useRef(false)
-  const [display, setDisplay] = useState(num > 0 ? Math.round(num).toLocaleString('en-US') : '')
+  const toNum = (v: string | number) => {
+    const n = typeof v === 'number' ? v : parseInt(String(v).replace(/[^0-9]/g, ''), 10)
+    return isNaN(n) ? 0 : n
+  }
+  const fmt = (n: number) => n > 0 ? n.toLocaleString('en-US') : ''
 
+  const focused = useRef(false)
+  const [display, setDisplay] = useState(() => fmt(toNum(value)))
+
+  // Sync formatted display when value changes externally (not while user is typing)
   useEffect(() => {
-    if (!isFocused.current) {
-      setDisplay(num > 0 ? Math.round(num).toLocaleString('en-US') : '')
+    if (!focused.current) {
+      setDisplay(fmt(toNum(value)))
     }
-  }, [num])
+  }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
+    focused.current = true
+    const raw = String(toNum(value) || '')
+    setDisplay(raw === '0' ? '' : raw)
+    // Select all so user can type immediately without backspacing
+    setTimeout(() => e.target.select(), 0)
+  }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    // Strip everything except digits — no formatting while typing
     const raw = e.target.value.replace(/[^0-9]/g, '')
-    const n = parseInt(raw, 10) || 0
-    setDisplay(raw === '' ? '' : n.toLocaleString('en-US'))
+    setDisplay(raw)
     onChange(raw)
   }
 
-  function handleFocus() {
-    isFocused.current = true
-    setDisplay(num > 0 ? String(Math.round(num)) : '')
-  }
-
   function handleBlur() {
-    isFocused.current = false
-    setDisplay(num > 0 ? Math.round(num).toLocaleString('en-US') : '')
+    focused.current = false
+    const n = parseInt(display.replace(/[^0-9]/g, ''), 10) || 0
+    setDisplay(fmt(n))
   }
 
   return (
     <input
+      type="text"
+      inputMode="numeric"
       value={display}
       onChange={handleChange}
       onFocus={handleFocus}
@@ -49,7 +61,6 @@ export function MoneyInput({ value, onChange, style, placeholder, disabled, auto
       placeholder={placeholder}
       disabled={disabled}
       autoFocus={autoFocus}
-      inputMode="numeric"
     />
   )
 }
