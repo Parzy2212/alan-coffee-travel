@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 
 interface MoneyInputProps {
   value: string | number
@@ -12,41 +12,50 @@ interface MoneyInputProps {
 }
 
 export function MoneyInput({ value, onChange, style, placeholder, disabled, autoFocus }: MoneyInputProps) {
-  const toNum = (v: string | number) => {
+  const parseNum = (v: string | number) => {
     const n = typeof v === 'number' ? v : parseInt(String(v).replace(/[^0-9]/g, ''), 10)
-    return isNaN(n) ? 0 : n
+    return isNaN(n) || n <= 0 ? 0 : n
   }
-  const fmt = (n: number) => n > 0 ? n.toLocaleString('en-US') : ''
 
-  const focused = useRef(false)
-  const [display, setDisplay] = useState(() => fmt(toNum(value)))
+  const [isFocused, setIsFocused] = useState(false)
+  // raw = pure digit string, no commas
+  const [raw, setRaw] = useState(() => {
+    const n = parseNum(value)
+    return n > 0 ? String(n) : ''
+  })
 
-  // Sync formatted display when value changes externally (not while user is typing)
+  // Sync from parent only when not focused (external value changes)
   useEffect(() => {
-    if (!focused.current) {
-      setDisplay(fmt(toNum(value)))
+    if (!isFocused) {
+      const n = parseNum(value)
+      setRaw(n > 0 ? String(n) : '')
     }
-  }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  // While focused show raw digits; on blur show formatted
+  const display = isFocused
+    ? raw
+    : raw ? parseInt(raw, 10).toLocaleString('en-US') : ''
 
   function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
-    focused.current = true
-    const raw = String(toNum(value) || '')
-    setDisplay(raw === '0' ? '' : raw)
-    // Select all so user can type immediately without backspacing
+    setIsFocused(true)
+    // Select all so user can type immediately
     setTimeout(() => e.target.select(), 0)
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    // Strip everything except digits — no formatting while typing
-    const raw = e.target.value.replace(/[^0-9]/g, '')
-    setDisplay(raw)
-    onChange(raw)
+    // Only allow digits — no formatting, no parent update → no re-render → no focus loss
+    const digits = e.target.value.replace(/[^0-9]/g, '')
+    setRaw(digits)
   }
 
   function handleBlur() {
-    focused.current = false
-    const n = parseInt(display.replace(/[^0-9]/g, ''), 10) || 0
-    setDisplay(fmt(n))
+    setIsFocused(false)
+    const n = parseNum(raw)
+    const digits = n > 0 ? String(n) : ''
+    setRaw(digits)
+    onChange(digits)  // parent only updates here, not during typing
   }
 
   return (
