@@ -189,6 +189,7 @@ export type RecipeIngredient = {
 export type RecipeFull = {
   id: string; product_name: string; product_name_th: string | null; product_name_lo: string | null
   price_lak: number; is_active: boolean; is_seasonal: boolean; seasonal_note: string | null
+  is_archived: boolean
   category: string | null; category_id: string | null
   description_en: string | null; description_th: string | null; description_lo: string | null
   preparation_time: number | null; calories: number | null

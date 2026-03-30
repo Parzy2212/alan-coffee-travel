@@ -445,25 +445,22 @@ function MenuWizard({
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
 
 function RecipeCard({
-  r, categories, onReload, onDelete, onSwitchToRecipeCost,
+  r, categories, onReload, onArchive, onSwitchToRecipeCost,
 }: {
   r: RecipeFull
   categories: Category[]
   onReload: () => void
-  onDelete: (id: string) => void
+  onArchive: (id: string) => void
   onSwitchToRecipeCost?: (menuId: string) => void
 }) {
-  const [open,         setOpen]         = useState(false)
-  const [editing,      setEditing]      = useState(false)
-  const [editData,     setEditData]     = useState<RecipeFullEdit>(toEdit(r))
-  const [saving,       setSaving]       = useState(false)
-  const [history,      setHistory]      = useState<DaySale[] | null>(null)
-  const [histLoading,  setHistLoading]  = useState(false)
-  const [msg,          setMsg]          = useState<string | null>(null)
-  // Delete flow
-  const [deleteStep,   setDeleteStep]   = useState<0 | 1>(0)
-  const [deleteInput,  setDeleteInput]  = useState('')
-  const [deleting,     setDeleting]     = useState(false)
+  const [open,       setOpen]       = useState(false)
+  const [editing,    setEditing]    = useState(false)
+  const [editData,   setEditData]   = useState<RecipeFullEdit>(toEdit(r))
+  const [saving,     setSaving]     = useState(false)
+  const [history,    setHistory]    = useState<DaySale[] | null>(null)
+  const [histLoading,setHistLoading]= useState(false)
+  const [msg,        setMsg]        = useState<string | null>(null)
+  const [archiving,  setArchiving]  = useState(false)
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3000) }
 
@@ -478,7 +475,6 @@ function RecipeCard({
   }
 
   function handleExpand() {
-    if (deleteStep === 1) return  // don't expand while in delete confirm
     const next = !open
     setOpen(next)
     if (next) loadHistory()
@@ -517,29 +513,19 @@ function RecipeCard({
     setSaving(false)
   }
 
-  async function handleDelete() {
-    if (deleteInput.trim() !== confirmName.trim()) {
-      showMsg('ชื่อไม่ตรงกัน'); return
-    }
-    setDeleting(true)
-    const { data: deleted, error } = await supabase
+  async function archiveMenu(e: React.MouseEvent) {
+    e.stopPropagation()
+    setArchiving(true)
+    const { error } = await supabase
       .from('recipes')
-      .delete()
+      .update({ is_active: false, is_archived: true })
       .eq('id', r.id)
-      .select('id')
-    if (error) {
+    if (!error) {
+      onArchive(r.id)
+    } else {
       showMsg('เกิดข้อผิดพลาด: ' + error.message)
-      setDeleting(false)
-      return
+      setArchiving(false)
     }
-    if (!deleted || deleted.length === 0) {
-      showMsg('ไม่สามารถลบได้ — อาจไม่มีสิทธิ์ (RLS) หรือไม่พบรายการนี้')
-      setDeleting(false)
-      return
-    }
-    // Success: remove immediately from parent state, then reload for consistency
-    onDelete(r.id)
-    onReload()
   }
 
   const marginColor = r.margin_pct >= 60 ? GREEN : r.margin_pct >= 40 ? GOLD : RED
@@ -549,7 +535,7 @@ function RecipeCard({
   return (
     <div style={{
       backgroundColor: CARD,
-      border: `1px solid ${deleteStep === 1 ? RED + '55' : open ? GOLD + '44' : BORDER}`,
+      border: `1px solid ${open ? GOLD + '44' : BORDER}`,
       borderRadius: 12, overflow: 'hidden',
       opacity: r.is_active ? 1 : 0.55,
       transition: 'border-color .2s',
@@ -637,19 +623,17 @@ function RecipeCard({
       </div>
 
       {/* ── Action buttons row (always visible) ── */}
+      {/* ── Action buttons row (always visible) ── */}
       <div
         onClick={e => e.stopPropagation()}
         style={{ display: 'flex', gap: 6, padding: '0 16px 12px', alignItems: 'center' }}
       >
-        {/* Edit */}
         <button
           onClick={e => { e.stopPropagation(); setEditing(true); setEditData(toEdit(r)); setOpen(true); loadHistory() }}
           style={{ ...btnStyleSm(GOLD + '18', GOLD), fontSize: 12 }}
         >
           ✏️ แก้ไข
         </button>
-
-        {/* Recipe Cost */}
         {onSwitchToRecipeCost && (
           <button
             onClick={e => { e.stopPropagation(); onSwitchToRecipeCost(r.id) }}
@@ -658,57 +642,16 @@ function RecipeCard({
             🧮 ต้นทุน
           </button>
         )}
-
         <div style={{ flex: 1 }} />
-
-        {/* Delete */}
-        {deleteStep === 0 ? (
-          <button
-            onClick={e => { e.stopPropagation(); setDeleteStep(1); setDeleteInput(''); setOpen(false) }}
-            style={{ ...btnStyleSm(RED + '15', RED), fontSize: 12 }}
-          >
-            🗑️ ลบ
-          </button>
-        ) : (
-          <button
-            onClick={e => { e.stopPropagation(); setDeleteStep(0); setDeleteInput('') }}
-            style={{ ...btnStyleSm('rgba(255,255,255,0.06)', 'rgba(255,255,255,0.4)'), fontSize: 12 }}
-          >
-            ยกเลิก
-          </button>
-        )}
+        {msg && <span style={{ fontSize: 11, color: RED }}>{msg}</span>}
+        <button
+          onClick={archiveMenu}
+          disabled={archiving}
+          style={{ ...btnStyleSm('rgba(255,165,0,0.1)', ORANGE), fontSize: 12, opacity: archiving ? 0.5 : 1 }}
+        >
+          {archiving ? '...' : '🗑️ ซ่อนเมนู'}
+        </button>
       </div>
-
-      {/* ── Delete confirmation ── */}
-      {deleteStep === 1 && (
-        <div style={{ borderTop: `1px solid ${RED}33`, padding: '14px 16px', backgroundColor: RED + '08' }}>
-          {msg && <div style={{ marginBottom: 8 }}><Toast msg={msg} /></div>}
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 10 }}>
-            พิมพ์ <span style={{ color: RED, fontWeight: 700 }}>{confirmName}</span> เพื่อยืนยันการลบ
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              value={deleteInput}
-              onChange={e => setDeleteInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleDelete()}
-              style={{ ...inputStyle, flex: 1, borderColor: RED + '44' }}
-              placeholder="ชื่อเมนู..."
-              autoFocus
-            />
-            <button
-              onClick={handleDelete}
-              disabled={deleting || deleteInput.trim() !== confirmName.trim()}
-              style={{
-                ...btnStyleSm(RED + '22', RED),
-                opacity: (deleting || deleteInput.trim() !== confirmName.trim()) ? 0.4 : 1,
-                fontWeight: 700,
-              }}
-            >
-              {deleting ? '...' : 'ลบ'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ── Expanded detail ── */}
       {open && !editing && (
@@ -807,6 +750,159 @@ function RecipeCard({
   )
 }
 
+// ─── ArchivedCard ────────────────────────────────────────────────────────────
+
+function ArchivedCard({
+  r, onRestore, onHardDelete,
+}: {
+  r: RecipeFull
+  onRestore: (id: string) => void
+  onHardDelete: (id: string) => void
+}) {
+  const [step,         setStep]         = useState<0 | 1 | 2>(0)
+  const [nameInput,    setNameInput]    = useState('')
+  const [orderCount,   setOrderCount]   = useState<number | null>(null)
+  const [working,      setWorking]      = useState(false)
+  const [msg,          setMsg]          = useState<string | null>(null)
+
+  const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
+  const displayName = r.product_name_th || r.product_name
+
+  async function startHardDelete() {
+    setWorking(true)
+    const { count } = await supabase
+      .from('order_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipe_id', r.id)
+    setOrderCount(count ?? 0)
+    setStep(1)
+    setWorking(false)
+  }
+
+  async function restore() {
+    setWorking(true)
+    const { error } = await supabase
+      .from('recipes')
+      .update({ is_archived: false, is_active: true })
+      .eq('id', r.id)
+    if (!error) {
+      onRestore(r.id)
+    } else {
+      showMsg('เกิดข้อผิดพลาด: ' + error.message)
+      setWorking(false)
+    }
+  }
+
+  async function confirmHardDelete() {
+    if (nameInput.trim() !== displayName.trim()) { showMsg('ชื่อไม่ตรงกัน'); return }
+    setWorking(true)
+    // Delete order_items first to satisfy FK, then delete recipe
+    const { error: e1 } = await supabase.from('order_items').delete().eq('recipe_id', r.id)
+    if (e1) { showMsg('ลบ order_items ล้มเหลว: ' + e1.message); setWorking(false); return }
+    const { data: deleted, error: e2 } = await supabase.from('recipes').delete().eq('id', r.id).select('id')
+    if (e2) { showMsg('ลบเมนูล้มเหลว: ' + e2.message); setWorking(false); return }
+    if (!deleted || deleted.length === 0) { showMsg('ไม่มีสิทธิ์ลบ (RLS) — โปรดตรวจสอบ policy'); setWorking(false); return }
+    onHardDelete(r.id)
+  }
+
+  return (
+    <div style={{
+      backgroundColor: CARD,
+      border: `1px solid ${step >= 1 ? RED + '44' : BORDER}`,
+      borderRadius: 10, overflow: 'hidden', opacity: 0.75,
+    }}>
+      {/* Row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+        {r.image_url && (
+          <img src={r.image_url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.55)' }}>{displayName}</div>
+          {r.category && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 1 }}>{r.category}</div>}
+        </div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
+          {r.price_lak.toLocaleString()} ₭
+        </div>
+        <button
+          onClick={restore}
+          disabled={working}
+          style={{ ...btnStyleSm(GREEN + '18', GREEN), fontSize: 12, flexShrink: 0 }}
+        >
+          ♻️ คืนค่า
+        </button>
+        <button
+          onClick={startHardDelete}
+          disabled={working || step >= 1}
+          style={{ ...btnStyleSm(RED + '15', RED), fontSize: 12, flexShrink: 0 }}
+        >
+          🗑️ ลบถาวร
+        </button>
+      </div>
+
+      {/* Step 1: warning + order count */}
+      {step === 1 && (
+        <div style={{ borderTop: `1px solid ${RED}33`, padding: '12px 14px', backgroundColor: RED + '0a' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: RED, marginBottom: 6 }}>
+            ⚠️ ยืนยันการลบถาวร
+          </div>
+          {(orderCount ?? 0) > 0 ? (
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 10, lineHeight: 1.6 }}>
+              เมนูนี้มีประวัติการขาย <span style={{ color: ORANGE, fontWeight: 700 }}>{orderCount} รายการ</span>
+              <br />การลบถาวรจะทำให้รายงานไม่สมบูรณ์และข้อมูลหายถาวร
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginBottom: 10 }}>
+              ไม่มีประวัติการขาย — การลบจะไม่กระทบรายงาน
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setStep(2)} style={{ ...btnStyleSm(RED + '22', RED), fontWeight: 700 }}>
+              ยืนยัน ลบถาวร →
+            </button>
+            <button onClick={() => setStep(0)} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.4)')}>
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: type name to confirm */}
+      {step === 2 && (
+        <div style={{ borderTop: `1px solid ${RED}44`, padding: '12px 14px', backgroundColor: RED + '0f' }}>
+          {msg && <div style={{ marginBottom: 8 }}><Toast msg={msg} /></div>}
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 8 }}>
+            พิมพ์ <span style={{ color: RED, fontWeight: 700 }}>{displayName}</span> เพื่อยืนยัน
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmHardDelete()}
+              style={{ ...inputStyle, flex: 1, fontSize: 13, borderColor: RED + '55' }}
+              placeholder="ชื่อเมนู..."
+              autoFocus
+            />
+            <button
+              onClick={confirmHardDelete}
+              disabled={working || nameInput.trim() !== displayName.trim()}
+              style={{
+                ...btnStyleSm(RED, '#000'),
+                fontWeight: 800, fontSize: 13,
+                opacity: (working || nameInput.trim() !== displayName.trim()) ? 0.35 : 1,
+              }}
+            >
+              {working ? '...' : 'ลบเดี๋ยวนี้'}
+            </button>
+            <button onClick={() => { setStep(0); setNameInput('') }} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.4)')}>
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── MenuTab ──────────────────────────────────────────────────────────────────
 
 export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost?: (menuId: string) => void }) {
@@ -817,8 +913,9 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
   const [newData,      setNewData]      = useState<RecipeFullEdit>(emptyEdit())
   const [saving,       setSaving]       = useState(false)
   const [msg,          setMsg]          = useState<string | null>(null)
-  const [search,       setSearch]       = useState('')
-  const [filterCatId,  setFilterCatId]  = useState<string | null>(null)  // null = all
+  const [search,           setSearch]           = useState('')
+  const [filterCatId,      setFilterCatId]      = useState<string | null>(null)
+  const [archivedExpanded, setArchivedExpanded] = useState(false)
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
 
@@ -869,13 +966,16 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
     setSaving(false)
   }
 
-  // Category filter counts
+  const activeRecipes   = recipes.filter(r => !r.is_archived)
+  const archivedRecipes = recipes.filter(r => r.is_archived)
+
+  // Category filter counts — only active recipes
   const catCounts = categories.reduce<Record<string, number>>((acc, c) => {
-    acc[c.id] = recipes.filter(r => r.category_id === c.id).length
+    acc[c.id] = activeRecipes.filter(r => r.category_id === c.id).length
     return acc
   }, {})
 
-  const filtered = recipes.filter(r => {
+  const filtered = activeRecipes.filter(r => {
     const matchSearch = !search ||
       (r.product_name_th ?? '').includes(search) ||
       r.product_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -891,7 +991,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
       {/* ── Header bar ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>
-          เมนูทั้งหมด ({recipes.length})
+          เมนูทั้งหมด ({activeRecipes.length})
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <input
@@ -915,7 +1015,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
             color: filterCatId === null ? GOLD : 'rgba(255,255,255,0.4)',
           }}
         >
-          ทั้งหมด ({recipes.length})
+          ทั้งหมด ({activeRecipes.length})
         </button>
         {categories.map(c => {
           const sel = filterCatId === c.id
@@ -962,9 +1062,9 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
             r={r}
             categories={categories}
             onReload={load}
-            onDelete={(id) => {
-              setRecipes(prev => prev.filter(x => x.id !== id))
-              showMsg('ลบเมนูเรียบร้อยแล้ว')
+            onArchive={(id) => {
+              setRecipes(prev => prev.map(x => x.id === id ? { ...x, is_active: false, is_archived: true } : x))
+              showMsg('ซ่อนเมนูเรียบร้อยแล้ว — ดูได้ในส่วน "เมนูที่ซ่อนไว้"')
             }}
             onSwitchToRecipeCost={onSwitchToRecipeCost}
           />
@@ -975,6 +1075,52 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
           </div>
         )}
       </div>
+
+      {/* ── Archived section ── */}
+      {archivedRecipes.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <button
+            onClick={() => setArchivedExpanded(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+              background: 'none', border: `1px solid ${BORDER}`, borderRadius: 10,
+              padding: '10px 16px', cursor: 'pointer', color: 'rgba(255,255,255,0.4)',
+              fontSize: 13, marginBottom: archivedExpanded ? 10 : 0,
+            }}
+          >
+            <span style={{ fontSize: 15 }}>{archivedExpanded ? '▼' : '▶'}</span>
+            <span>เมนูที่ซ่อนไว้</span>
+            <span style={{
+              marginLeft: 6, padding: '2px 9px', borderRadius: 10, fontSize: 11,
+              backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)',
+            }}>
+              {archivedRecipes.length}
+            </span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
+              สามารถคืนค่าหรือลบถาวรได้
+            </span>
+          </button>
+
+          {archivedExpanded && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {archivedRecipes.map(r => (
+                <ArchivedCard
+                  key={r.id}
+                  r={r}
+                  onRestore={(id) => {
+                    setRecipes(prev => prev.map(x => x.id === id ? { ...x, is_archived: false, is_active: true } : x))
+                    showMsg('คืนค่าเมนูเรียบร้อยแล้ว')
+                  }}
+                  onHardDelete={(id) => {
+                    setRecipes(prev => prev.filter(x => x.id !== id))
+                    showMsg('ลบเมนูถาวรเรียบร้อยแล้ว')
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
