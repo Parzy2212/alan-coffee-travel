@@ -147,7 +147,9 @@ type FullSettings = {
   cost_other_pkg: string; cost_waste_pct: string
   cost_ice_bag_price: string; cost_ice_melt_pct: string; cost_ice_per_cup_g: string
   overhead_rent: string; overhead_electric: string; overhead_water: string
-  overhead_salary: string; overhead_supplies: string; overhead_other: string
+  overhead_salary: string; overhead_internet: string
+  overhead_consumables_json: string   // JSON: ExpenseItem[]
+  overhead_other_json: string         // JSON: ExpenseItem[]
   target_cups_month: string
 }
 
@@ -171,7 +173,8 @@ const DEFAULT_SETTINGS: FullSettings = {
   cost_other_pkg: '0', cost_waste_pct: '15',
   cost_ice_bag_price: '20000', cost_ice_melt_pct: '30', cost_ice_per_cup_g: '175',
   overhead_rent: '0', overhead_electric: '0', overhead_water: '0',
-  overhead_salary: '0', overhead_supplies: '0', overhead_other: '0',
+  overhead_salary: '0', overhead_internet: '0',
+  overhead_consumables_json: '', overhead_other_json: '',
   target_cups_month: '500',
 }
 
@@ -1418,6 +1421,25 @@ function SettingsToggle({ value, onChange, label, sub }: { value: boolean; onCha
   )
 }
 
+// ─── Expense item type + defaults ────────────────────────────────────────────
+
+type ExpenseItem = { id: string; name: string; amount: number }
+
+const DEFAULT_CONSUMABLES: ExpenseItem[] = [
+  { id: 'c1', name: 'น้ำยาถูพื้น',          amount: 50000 },
+  { id: 'c2', name: 'น้ำยาล้างจาน (ซันไลต์)', amount: 30000 },
+  { id: 'c3', name: 'ผ้าสก๊อตไบรท์',        amount: 20000 },
+  { id: 'c4', name: 'น้ำยาเช็ดกระจก',        amount: 15000 },
+  { id: 'c5', name: 'ถุงขยะ',                amount: 10000 },
+  { id: 'c6', name: 'กระดาษทิชชู่',          amount: 20000 },
+]
+
+function parseItems(json: string, defaults: ExpenseItem[]): ExpenseItem[] {
+  if (!json) return defaults
+  try { const p = JSON.parse(json); if (Array.isArray(p)) return p } catch {}
+  return defaults
+}
+
 // ─── CostManagementSection ────────────────────────────────────────────────────
 
 function CostManagementSection({ settings, onChange }: { settings: FullSettings; onChange: (s: FullSettings) => void }) {
@@ -1426,21 +1448,33 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
     (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...settings, [k]: e.target.value })
   const n = (k: keyof FullSettings, def = 0) => parseFloat(settings[k] as string) || def
 
-  // ── Derived calculations ──────────────────────────────────────────────────
+  // ── Parse itemized lists ─────────────────────────────────────────────────
+  const consumables = parseItems(settings.overhead_consumables_json, DEFAULT_CONSUMABLES)
+  const otherItems  = parseItems(settings.overhead_other_json, [])
+
+  const setConsumables = (items: ExpenseItem[]) =>
+    onChange({ ...settings, overhead_consumables_json: JSON.stringify(items) })
+  const setOtherItems = (items: ExpenseItem[]) =>
+    onChange({ ...settings, overhead_other_json: JSON.stringify(items) })
+
+  // ── Derived calculations ─────────────────────────────────────────────────
   const bagContrib    = n('cost_bag') * (n('cost_bag_pct') / 100)
   const basePackaging = n('cost_cup_lid') + n('cost_straw') + bagContrib + n('cost_other_pkg')
   const packagingPerCup = Math.round(basePackaging * (1 + n('cost_waste_pct') / 100))
 
-  const usableKg      = 30 * (1 - n('cost_ice_melt_pct') / 100)
-  const costPerGram   = usableKg > 0 ? n('cost_ice_bag_price') / (usableKg * 1000) : 0
-  const icePerCup     = Math.round(costPerGram * n('cost_ice_per_cup_g'))
+  const usableKg    = 30 * (1 - n('cost_ice_melt_pct') / 100)
+  const costPerGram = usableKg > 0 ? n('cost_ice_bag_price') / (usableKg * 1000) : 0
+  const icePerCup   = Math.round(costPerGram * n('cost_ice_per_cup_g'))
 
-  const totalOverhead = n('overhead_rent') + n('overhead_electric') + n('overhead_water') +
-    n('overhead_salary') + n('overhead_supplies') + n('overhead_other')
-  const targetCups    = n('target_cups_month', 500) || 500
-  const overheadPerCup = Math.round(totalOverhead / targetCups)
-  const fixedPerCup   = packagingPerCup + overheadPerCup
-  const breakEvenCupsDay = totalOverhead > 0 ? Math.ceil(targetCups / 30) : 0
+  const totalFixed       = n('overhead_rent') + n('overhead_electric') + n('overhead_water') +
+    n('overhead_salary') + n('overhead_internet')
+  const totalConsumables = consumables.reduce((s, i) => s + i.amount, 0)
+  const totalOther       = otherItems.reduce((s, i) => s + i.amount, 0)
+  const totalOverhead    = totalFixed + totalConsumables + totalOther
+  const targetCups       = n('target_cups_month', 500) || 500
+  const overheadPerCup   = Math.round(totalOverhead / targetCups)
+  const fixedPerCup      = packagingPerCup + overheadPerCup
+  const breakEvenPerDay  = Math.ceil(targetCups / 30)
 
   async function loadSalaries() {
     setLoadingSalary(true)
@@ -1452,14 +1486,15 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
     setLoadingSalary(false)
   }
 
-  const cardS: React.CSSProperties = { backgroundColor: CARD2, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}`, marginBottom: 12 }
-  const labelS: React.CSSProperties = { fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 10 }
-  const dimS: React.CSSProperties = { fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4, lineHeight: 1.5 }
+  const cardS: React.CSSProperties  = { backgroundColor: CARD2, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}`, marginBottom: 12 }
+  const labelS: React.CSSProperties = { fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }
+  const dimS: React.CSSProperties   = { fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4, lineHeight: 1.5 }
   const calcRow: React.CSSProperties = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '10px 14px', backgroundColor: `${GOLD}10`, borderRadius: 8,
     border: `1px solid ${GOLD}22`, marginTop: 12,
   }
+
   function SliderField({ label, fieldKey, min, max, unit, hint }: { label: string; fieldKey: keyof FullSettings; min: number; max: number; unit: string; hint?: string }) {
     const val = n(fieldKey)
     const sliderColor = val <= max * 0.4 ? GREEN : val <= max * 0.7 ? ORANGE : RED
@@ -1484,6 +1519,54 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
           <input type="number" min="0" value={settings[fieldKey] as string} onChange={set(fieldKey)}
             style={{ ...inputStyle, flex: 1 }} placeholder={placeholder ?? '0'} />
           <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
+        </div>
+      </div>
+    )
+  }
+
+  function ItemizedList({ items, onUpdate, emptyHint }: { items: ExpenseItem[]; onUpdate: (items: ExpenseItem[]) => void; emptyHint?: string }) {
+    function updateItem(id: string, patch: Partial<ExpenseItem>) {
+      onUpdate(items.map(i => i.id === id ? { ...i, ...patch } : i))
+    }
+    function removeItem(id: string) { onUpdate(items.filter(i => i.id !== id)) }
+    function addItem() { onUpdate([...items, { id: Date.now().toString(), name: '', amount: 0 }]) }
+    const total = items.reduce((s, i) => s + i.amount, 0)
+    return (
+      <div>
+        {items.length === 0 && emptyHint && (
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', marginBottom: 8 }}>{emptyHint}</div>
+        )}
+        {items.map(item => (
+          <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 28px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+            <input
+              value={item.name}
+              onChange={e => updateItem(item.id, { name: e.target.value })}
+              style={{ ...inputStyle, fontSize: 13 }}
+              placeholder="ชื่อรายการ..."
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="number" min="0"
+                value={item.amount || ''}
+                onChange={e => updateItem(item.id, { amount: parseInt(e.target.value) || 0 })}
+                style={{ ...inputStyle, flex: 1, textAlign: 'right' as const }}
+                placeholder="0"
+              />
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>₭</span>
+            </div>
+            <button onClick={() => removeItem(item.id)}
+              style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>
+              ✕
+            </button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <button onClick={addItem} style={{ ...btnStyleSm(GOLD + '22', GOLD) }}>+ เพิ่มรายการ</button>
+          {total > 0 && (
+            <span style={{ fontSize: 13, color: GOLD, fontWeight: 600 }}>
+              รวม {total.toLocaleString()} ₭/เดือน
+            </span>
+          )}
         </div>
       </div>
     )
@@ -1544,15 +1627,19 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
         <div style={dimS}>= {n('cost_ice_per_cup_g')}g × (ราคา/30kg ÷ {Math.round(usableKg*1000).toLocaleString()}g usable)</div>
       </div>
 
-      {/* ── Section 3: Monthly Overhead ── */}
+      {/* ── Section 3: Monthly Overhead (Itemized) ── */}
       <div style={cardS}>
         <div style={labelS}>3. ค่าใช้จ่ายประจำเดือน</div>
+
+        {/* Fixed expenses */}
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 10 }}>
+          ค่าใช้จ่ายคงที่
+        </div>
         {([
-          { icon: '🏠', label: 'ค่าเช่า', key: 'overhead_rent' },
-          { icon: '⚡', label: 'ค่าไฟ', key: 'overhead_electric' },
-          { icon: '💧', label: 'ค่าน้ำ', key: 'overhead_water' },
-          { icon: '🧴', label: 'วัสดุสิ้นเปลือง (น้ำยา, ผ้า, ฯลฯ)', key: 'overhead_supplies' },
-          { icon: '📦', label: 'อื่นๆ', key: 'overhead_other' },
+          { icon: '🏠', label: 'ค่าเช่า',          key: 'overhead_rent'      },
+          { icon: '⚡', label: 'ค่าไฟ',             key: 'overhead_electric'  },
+          { icon: '💧', label: 'ค่าน้ำ',            key: 'overhead_water'     },
+          { icon: '🌐', label: 'อินเทอร์เน็ต',      key: 'overhead_internet'  },
         ] as { icon: string; label: string; key: keyof FullSettings }[]).map(row => (
           <div key={row.key} style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{row.icon} {row.label}</span>
@@ -1564,8 +1651,8 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
             </div>
           </div>
         ))}
-        {/* Salary row with auto-fill button */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+        {/* Salary auto-fill */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>👥 เงินเดือนรวม</span>
             <button type="button" onClick={loadSalaries} disabled={loadingSalary}
@@ -1574,15 +1661,45 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
             </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="number" min="0" value={settings.overhead_salary}
-              onChange={set('overhead_salary')}
+            <input type="number" min="0" value={settings.overhead_salary} onChange={set('overhead_salary')}
               style={{ ...inputStyle, flex: 1 }} placeholder="0" />
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>₭</span>
           </div>
         </div>
-        <div style={{ ...calcRow, marginTop: 14 }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>รวม overhead ต่อเดือน</span>
-          <span style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{totalOverhead.toLocaleString()} ₭</span>
+
+        <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 14 }} />
+
+        {/* Consumables */}
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 10 }}>
+          วัสดุสิ้นเปลือง (ค่าใช้จ่ายผันแปร)
+        </div>
+        <ItemizedList items={consumables} onUpdate={setConsumables} emptyHint="กด + เพิ่มรายการ เพื่อเพิ่มวัสดุสิ้นเปลือง" />
+
+        <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.08)', margin: '16px 0' }} />
+
+        {/* Other expenses */}
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 10 }}>
+          ค่าใช้จ่ายอื่นๆ
+        </div>
+        <ItemizedList items={otherItems} onUpdate={setOtherItems} emptyHint="เช่น ค่าการตลาด, ซ่อมบำรุง, ฯลฯ" />
+
+        {/* Summary box */}
+        <div style={{ marginTop: 16, backgroundColor: CARD, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+          {[
+            { label: 'ค่าใช้จ่ายคงที่',      value: totalFixed       },
+            { label: 'วัสดุสิ้นเปลือง',       value: totalConsumables },
+            { label: 'อื่นๆ',                  value: totalOther       },
+          ].map(row => (
+            <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>{row.label}</span>
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>{row.value.toLocaleString()} ₭</span>
+            </div>
+          ))}
+          <div style={{ height: 1, backgroundColor: `${GOLD}33`, margin: '10px 0' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 14, color: GOLD, fontWeight: 700 }}>รวมทั้งหมด</span>
+            <span style={{ fontSize: 22, fontWeight: 900, color: GOLD }}>{totalOverhead.toLocaleString()} ₭/เดือน</span>
+          </div>
         </div>
       </div>
 
@@ -1621,7 +1738,7 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>+ ต้นทุนวัตถุดิบ (คำนวณในแท็บ ต้นทุนสูตร)</div>
           {totalOverhead > 0 && (
             <div style={{ marginTop: 10, padding: '8px 12px', backgroundColor: `${GOLD}18`, borderRadius: 8, fontSize: 13, color: GOLD, fontWeight: 600 }}>
-              💡 ต้องขายอย่างน้อย {breakEvenCupsDay} แก้ว/วัน เพื่อคุ้มทุน overhead
+              💡 ต้องขายอย่างน้อย {breakEvenPerDay} แก้ว/วัน เพื่อคุ้มทุน overhead
             </div>
           )}
         </div>

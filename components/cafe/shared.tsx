@@ -141,13 +141,14 @@ export type FullSettings = {
   cost_ice_bag_price: string // ₭ per 30 kg bag of ice (default 20000)
   cost_ice_melt_pct: string  // % that melts before use (default 30)
   cost_ice_per_cup_g: string // grams of ice per cold cup (default 175)
-  overhead_rent: string      // ₭/month
-  overhead_electric: string  // ₭/month
-  overhead_water: string     // ₭/month
-  overhead_salary: string    // ₭/month (sum of staff salaries)
-  overhead_supplies: string  // ₭/month consumables
-  overhead_other: string     // ₭/month other
-  target_cups_month: string  // target cups/month for overhead-per-cup calc (default 500)
+  overhead_rent: string              // ₭/month
+  overhead_electric: string          // ₭/month
+  overhead_water: string             // ₭/month
+  overhead_internet: string          // ₭/month
+  overhead_salary: string            // ₭/month (sum of staff salaries)
+  overhead_consumables_json: string  // JSON: { id, name, amount }[]
+  overhead_other_json: string        // JSON: { id, name, amount }[]
+  target_cups_month: string          // target cups/month for overhead-per-cup calc (default 500)
 }
 
 export type RecipeEdit = {
@@ -293,7 +294,8 @@ export const DEFAULT_SETTINGS: FullSettings = {
   cost_other_pkg: '0', cost_waste_pct: '15',
   cost_ice_bag_price: '20000', cost_ice_melt_pct: '30', cost_ice_per_cup_g: '175',
   overhead_rent: '0', overhead_electric: '0', overhead_water: '0',
-  overhead_salary: '0', overhead_supplies: '0', overhead_other: '0',
+  overhead_internet: '0', overhead_salary: '0',
+  overhead_consumables_json: '', overhead_other_json: '',
   target_cups_month: '500',
 }
 

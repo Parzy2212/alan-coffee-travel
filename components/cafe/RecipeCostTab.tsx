@@ -51,8 +51,12 @@ export default function RecipeCostTab() {
       const usableKg      = 30 * (1 - n('cost_ice_melt_pct', 30) / 100)
       const cpg           = usableKg > 0 ? n('cost_ice_bag_price', 20000) / (usableKg * 1000) : 0
       const ice           = Math.round(cpg * n('cost_ice_per_cup_g', 175))
+      // parse itemized lists
+      const consumables = (() => { try { const p = JSON.parse(s['overhead_consumables_json'] ?? ''); if (Array.isArray(p)) return p } catch {} return [] })()
+      const others      = (() => { try { const p = JSON.parse(s['overhead_other_json'] ?? '');      if (Array.isArray(p)) return p } catch {} return [] })()
+      const totalItemized = [...consumables, ...others].reduce((a: number, i: { amount?: number }) => a + (i.amount ?? 0), 0)
       const totalOH       = n('overhead_rent') + n('overhead_electric') + n('overhead_water') +
-        n('overhead_salary') + n('overhead_supplies') + n('overhead_other')
+        n('overhead_internet') + n('overhead_salary') + totalItemized
       const targetCups    = n('target_cups_month', 500) || 500
       const oh            = Math.round(totalOH / targetCups)
       setPackagingPerCup(pkg)
