@@ -258,6 +258,7 @@ export type AttendanceRow = {
 export type StaffForm = {
   name: string; name_th: string; name_lo: string
   phone: string; salary: string; salary_type: string
+  role: string
   start_date: string; scheduled_start_time: string
   skills: string; notes: string; pin: string
 }
@@ -371,7 +372,7 @@ export function emptyInventoryForm(): InventoryForm {
 export function emptyStaffForm(): StaffForm {
   return {
     name: '', name_th: '', name_lo: '', phone: '',
-    salary: '', salary_type: 'monthly',
+    salary: '', salary_type: 'monthly', role: 'barista',
     start_date: new Date().toISOString().slice(0, 10),
     scheduled_start_time: '08:00',
     skills: '', notes: '', pin: '',

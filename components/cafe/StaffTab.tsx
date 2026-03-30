@@ -33,6 +33,16 @@ type StaffPerf = {
   total_hours: number
 }
 
+type PerfMapEntry = {
+  days_present: number
+  punctuality_pct: number
+}
+
+type ScheduledShift = {
+  date: string
+  shift: string
+}
+
 // ─── StaffAvatar ──────────────────────────────────────────────────────────────
 
 function StaffAvatar({ name, avatarUrl, size = 40 }: { name: string; avatarUrl: string | null | undefined; size?: number }) {
@@ -68,6 +78,7 @@ function staffStatusLabel(s: string): string {
 }
 
 function roleLabel(role: string | null): string {
+  if (role === 'owner')   return 'เจ้าของ'
   if (role === 'barista')  return 'บาริสต้า'
   if (role === 'cashier')  return 'แคชเชียร์'
   if (role === 'manager')  return 'ผู้จัดการ'
@@ -430,20 +441,30 @@ function LeavesView() {
 function StaffCardGrid({ onProfile, onAdd }: { onProfile: (s: StaffWithRole) => void; onAdd: () => void }) {
   const [staffList, setStaffList] = useState<StaffWithRole[]>([])
   const [todayMap,  setTodayMap]  = useState<Record<string, StaffToday>>({})
+  const [perfMap,   setPerfMap]   = useState<Record<string, PerfMapEntry>>({})
   const [loading,   setLoading]   = useState(true)
+  const [inactiveExpanded, setInactiveExpanded] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [staffRes, todayRes] = await Promise.all([
+    const [staffRes, todayRes, perfRes] = await Promise.all([
       supabase.rpc('get_all_staff'),
       supabase.rpc('get_staff_today_status'),
+      supabase.rpc('get_staff_analytics'),
     ])
     const staff = (staffRes.data ?? []) as StaffWithRole[]
     const today = (todayRes.data ?? []) as StaffToday[]
-    const map: Record<string, StaffToday> = {}
-    today.forEach(t => { map[t.id] = t })
+    const perf  = (perfRes.data ?? []) as StaffAnalytics[]
+
+    const todayMapBuilt: Record<string, StaffToday> = {}
+    today.forEach(t => { todayMapBuilt[t.id] = t })
+
+    const perfMapBuilt: Record<string, PerfMapEntry> = {}
+    perf.forEach(p => { perfMapBuilt[p.id] = { days_present: p.days_present, punctuality_pct: p.punctuality_pct } })
+
     setStaffList(staff)
-    setTodayMap(map)
+    setTodayMap(todayMapBuilt)
+    setPerfMap(perfMapBuilt)
     setLoading(false)
   }, [])
 
@@ -458,80 +479,123 @@ function StaffCardGrid({ onProfile, onAdd }: { onProfile: (s: StaffWithRole) => 
     return '#f0a500'
   }
 
+  function renderCard(s: StaffWithRole) {
+    const t = todayMap[s.id]
+    const barColor = cardBarColor(s, t)
+    const inactive = !s.is_active
+    const pEntry = perfMap[s.id]
+
+    let statusBadgeLabel = 'ยังไม่มา'
+    let statusBadgeColor = 'rgba(255,255,255,0.3)'
+    if (!s.is_active) {
+      statusBadgeLabel = 'ปิดใช้งาน'
+      statusBadgeColor = RED
+    } else if (t) {
+      statusBadgeLabel = staffStatusLabel(t.status)
+      statusBadgeColor = staffStatusColor(t.status)
+    }
+
+    return (
+      <div
+        key={s.id}
+        onClick={() => onProfile(s)}
+        style={{
+          backgroundColor: CARD,
+          borderRadius: 12,
+          border: `1px solid ${BORDER}`,
+          padding: '14px 14px 14px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          cursor: 'pointer',
+          opacity: inactive ? 0.4 : 1,
+          overflow: 'hidden',
+          position: 'relative',
+          transition: 'border-color .15s',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+          {/* Left color bar */}
+          <div style={{
+            position: 'absolute', left: 0, top: 0, bottom: 0,
+            width: 4, backgroundColor: barColor, borderRadius: '12px 0 0 12px',
+          }} />
+          <div style={{ width: 14, flexShrink: 0 }} />
+          <StaffAvatar name={s.name} avatarUrl={s.avatar_url ?? s.photo_url} size={56} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {s.name_th ?? s.name}
+            </div>
+            <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{
+                fontSize: 10, padding: '2px 7px', borderRadius: 99,
+                backgroundColor: `${GOLD}18`, color: GOLD, fontWeight: 600,
+              }}>
+                {roleLabel(s.role)}
+              </span>
+              <span style={{
+                fontSize: 10, padding: '2px 7px', borderRadius: 99,
+                color: statusBadgeColor, backgroundColor: `${statusBadgeColor}18`,
+              }}>
+                {statusBadgeLabel}
+              </span>
+            </div>
+            {t?.clock_in && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
+                เข้า {new Date(t.clock_in).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Stats row */}
+        <div style={{
+          width: '100%', paddingLeft: 18, paddingRight: 4,
+          display: 'flex', alignItems: 'center', gap: 8,
+          fontSize: 11, color: 'rgba(255,255,255,0.28)',
+        }}>
+          <span>{pEntry ? pEntry.days_present : 0} วัน</span>
+          <span>·</span>
+          <span>{pEntry ? pEntry.punctuality_pct.toFixed(0) : 0}% ตรงเวลา</span>
+        </div>
+      </div>
+    )
+  }
+
   if (loading) return <LoadingSpinner />
+
+  const activeStaff   = staffList.filter(s => s.is_active)
+  const inactiveStaff = staffList.filter(s => !s.is_active)
 
   return (
     <div>
+      {/* Active staff */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 16 }}>
-        {staffList.map(s => {
-          const t = todayMap[s.id]
-          const barColor = cardBarColor(s, t)
-          const inactive = !s.is_active
-
-          let statusBadgeLabel = 'ยังไม่มา'
-          let statusBadgeColor = 'rgba(255,255,255,0.3)'
-          if (!s.is_active) {
-            statusBadgeLabel = 'ปิดใช้งาน'
-            statusBadgeColor = RED
-          } else if (t) {
-            statusBadgeLabel = staffStatusLabel(t.status)
-            statusBadgeColor = staffStatusColor(t.status)
-          }
-
-          return (
-            <div
-              key={s.id}
-              onClick={() => onProfile(s)}
-              style={{
-                backgroundColor: CARD,
-                borderRadius: 12,
-                border: `1px solid ${BORDER}`,
-                padding: '14px 14px 14px 0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                cursor: 'pointer',
-                opacity: inactive ? 0.4 : 1,
-                overflow: 'hidden',
-                position: 'relative',
-                transition: 'border-color .15s',
-              }}
-            >
-              {/* Left color bar */}
-              <div style={{
-                position: 'absolute', left: 0, top: 0, bottom: 0,
-                width: 4, backgroundColor: barColor, borderRadius: '12px 0 0 12px',
-              }} />
-              <div style={{ width: 14, flexShrink: 0 }} />
-              <StaffAvatar name={s.name} avatarUrl={s.avatar_url ?? s.photo_url} size={56} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {s.name_th ?? s.name}
-                </div>
-                <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{
-                    fontSize: 10, padding: '2px 7px', borderRadius: 99,
-                    backgroundColor: `${GOLD}18`, color: GOLD, fontWeight: 600,
-                  }}>
-                    {roleLabel(s.role)}
-                  </span>
-                  <span style={{
-                    fontSize: 10, padding: '2px 7px', borderRadius: 99,
-                    color: statusBadgeColor, backgroundColor: `${statusBadgeColor}18`,
-                  }}>
-                    {statusBadgeLabel}
-                  </span>
-                </div>
-                {t?.clock_in && (
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
-                    เข้า {new Date(t.clock_in).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
+        {activeStaff.map(s => renderCard(s))}
       </div>
+
+      {/* Inactive staff collapsible section */}
+      {inactiveStaff.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <button
+            onClick={() => setInactiveExpanded(e => !e)}
+            style={{
+              width: '100%', padding: '10px 14px', borderRadius: 10,
+              border: `1px solid ${RED}22`, background: `${RED}06`,
+              color: 'rgba(255,255,255,0.4)', fontWeight: 600, fontSize: 13,
+              cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}
+          >
+            <span>พนักงานปิดใช้งาน ({inactiveStaff.length} คน)</span>
+            <span style={{ fontSize: 11 }}>{inactiveExpanded ? '▲' : '▼'}</span>
+          </button>
+          {inactiveExpanded && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginTop: 10 }}>
+              {inactiveStaff.map(s => renderCard(s))}
+            </div>
+          )}
+        </div>
+      )}
 
       <button
         onClick={onAdd}
@@ -558,21 +622,42 @@ function StaffProfileView({
   onEnroll: () => void
   onRefresh: () => void
 }) {
-  const [perf,       setPerf]       = useState<StaffPerf | null>(null)
-  const [attendance, setAttendance] = useState<AttendanceLog[]>([])
-  const [loadingPerf, setLoadingPerf] = useState(true)
-  const [showEdit,   setShowEdit]   = useState(false)
-  const [form,       setForm]       = useState<StaffForm>(emptyStaffForm())
-  const [saving,     setSaving]     = useState(false)
-  const [errMsg,     setErrMsg]     = useState('')
-  const [showPin,    setShowPin]    = useState(false)
-  const [toggling,   setToggling]   = useState(false)
+  const [perf,         setPerf]         = useState<StaffPerf | null>(null)
+  const [attendance,   setAttendance]   = useState<AttendanceLog[]>([])
+  const [loadingPerf,  setLoadingPerf]  = useState(true)
+  const [showEdit,     setShowEdit]     = useState(false)
+  const [form,         setForm]         = useState<StaffForm>(emptyStaffForm())
+  const [saving,       setSaving]       = useState(false)
+  const [errMsg,       setErrMsg]       = useState('')
+  const [showPin,      setShowPin]      = useState(false)
+  const [toggling,     setToggling]     = useState(false)
+  const [leaveBalance, setLeaveBalance] = useState<number | null>(null)
+  const [leaveDaysUsed, setLeaveDaysUsed] = useState<number>(0)
+  const [weekShifts,   setWeekShifts]   = useState<ScheduledShift[]>([])
+  const [deleteStep,   setDeleteStep]   = useState<0 | 1 | 2 | 3>(0)
+  const [deleteNameInput, setDeleteNameInput] = useState('')
+  const [deleting,     setDeleting]     = useState(false)
 
   useEffect(() => {
+    // Compute current week Monday–Sunday
+    const now = new Date()
+    const day = now.getDay()
+    const mondayOffset = day === 0 ? -6 : 1 - day
+    const monday = new Date(now)
+    monday.setDate(now.getDate() + mondayOffset)
+    monday.setHours(0, 0, 0, 0)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    const mondayStr = monday.toISOString().slice(0, 10)
+    const sundayStr = sunday.toISOString().slice(0, 10)
+    const currentYear = now.getFullYear()
+
     Promise.all([
       supabase.rpc('get_staff_performance', { p_staff_id: staff.id, p_days: 30 }),
       supabase.from('attendance').select('*').eq('staff_id', staff.id).order('date', { ascending: false }).limit(7),
-    ]).then(([perfRes, attRes]) => {
+      supabase.from('leave_requests').select('start_date, end_date').eq('staff_id', staff.id).eq('status', 'approved'),
+      supabase.from('staff_schedules').select('date, shift').eq('staff_id', staff.id).gte('date', mondayStr).lte('date', sundayStr),
+    ]).then(([perfRes, attRes, leaveRes, shiftsRes]) => {
       const d = perfRes.data
       if (d && typeof d === 'object' && !Array.isArray(d)) {
         setPerf(d as StaffPerf)
@@ -580,6 +665,28 @@ function StaffProfileView({
         setPerf(d[0] as StaffPerf)
       }
       setAttendance((attRes.data ?? []) as AttendanceLog[])
+
+      // Calculate leave balance
+      const leaveRows = (leaveRes.data ?? []) as { start_date: string; end_date: string }[]
+      let daysUsed = 0
+      for (const lv of leaveRows) {
+        const start = new Date(lv.start_date + 'T00:00:00')
+        const end   = new Date(lv.end_date   + 'T00:00:00')
+        if (start.getFullYear() === currentYear || end.getFullYear() === currentYear) {
+          const yearStart = new Date(`${currentYear}-01-01T00:00:00`)
+          const yearEnd   = new Date(`${currentYear}-12-31T00:00:00`)
+          const clampedStart = start < yearStart ? yearStart : start
+          const clampedEnd   = end   > yearEnd   ? yearEnd   : end
+          if (clampedEnd >= clampedStart) {
+            const diffMs = clampedEnd.getTime() - clampedStart.getTime()
+            daysUsed += Math.round(diffMs / 86400000) + 1
+          }
+        }
+      }
+      setLeaveDaysUsed(daysUsed)
+      setLeaveBalance(30 - daysUsed)
+
+      setWeekShifts((shiftsRes.data ?? []) as ScheduledShift[])
       setLoadingPerf(false)
     })
   }, [staff.id])
@@ -592,6 +699,7 @@ function StaffProfileView({
       phone: staff.phone ?? '',
       salary: String(staff.salary ?? ''),
       salary_type: staff.salary_type ?? 'monthly',
+      role: staff.role ?? 'barista',
       start_date: staff.start_date ?? new Date().toISOString().slice(0, 10),
       scheduled_start_time: staff.scheduled_start_time ?? '08:00',
       skills: (staff.skills ?? []).join(', '),
@@ -612,6 +720,7 @@ function StaffProfileView({
         name: form.name || null,
         name_th: form.name_th || null,
         phone: form.phone || null,
+        role: form.role || null,
         salary: form.salary ? parseFloat(form.salary) : null,
         salary_type: form.salary_type || null,
         start_date: form.start_date || null,
@@ -632,8 +741,25 @@ function StaffProfileView({
   async function toggleActive() {
     setToggling(true)
     await supabase.rpc('toggle_staff_active', { p_id: staff.id })
+    // If deactivating, remove from all future schedule slots
+    if (staff.is_active) {
+      const today = new Date().toISOString().slice(0, 10)
+      await supabase.from('staff_schedules').delete()
+        .eq('staff_id', staff.id).gte('date', today)
+    }
     setToggling(false)
     onRefresh()
+  }
+
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      await supabase.from('staff_schedules').delete().eq('staff_id', staff.id)
+      await supabase.from('staff').delete().eq('id', staff.id)
+      onRefresh()
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const fld = (k: keyof StaffForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -647,6 +773,13 @@ function StaffProfileView({
 
   const salaryTypeLabel = (t: string | null) =>
     t === 'daily' ? 'รายวัน' : t === 'hourly' ? 'รายชั่วโมง' : 'รายเดือน'
+
+  function shiftLabel(shift: string): string {
+    if (shift === 'morning')   return 'เช้า☀️'
+    if (shift === 'afternoon') return 'บ่าย🌤️'
+    if (shift === 'evening')   return 'เย็น🌙'
+    return shift
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -703,6 +836,36 @@ function StaffProfileView({
         </div>
       </div>
 
+      {/* Leave balance */}
+      {!loadingPerf && (
+        <div style={{ backgroundColor: CARD, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>วันลาคงเหลือ</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: GREEN }}>{leaveBalance ?? '—'}</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>ใช้ไปแล้ว {leaveDaysUsed} / 30 วัน</div>
+        </div>
+      )}
+
+      {/* Scheduled shifts this week */}
+      {!loadingPerf && (
+        <div style={{ backgroundColor: CARD, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>กะสัปดาห์นี้</div>
+          {weekShifts.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)' }}>ไม่มีกะ</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {weekShifts.map((ws, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', minWidth: 90 }}>
+                    {new Date(ws.date + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'short', day: '2-digit', month: 'short' })}
+                  </span>
+                  <span style={{ fontSize: 12, color: GOLD }}>{shiftLabel(ws.shift)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Last 7 days attendance */}
       {attendance.length > 0 && (
         <div style={{ backgroundColor: CARD, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
@@ -735,6 +898,15 @@ function StaffProfileView({
             <div><div style={labelSt}>ชื่อ (EN) *</div><input value={form.name} onChange={fld('name')} style={fieldStyle} /></div>
             <div><div style={labelSt}>ชื่อ (ภาษาไทย)</div><input value={form.name_th} onChange={fld('name_th')} style={fieldStyle} /></div>
             <div><div style={labelSt}>เบอร์โทร</div><input value={form.phone} onChange={fld('phone')} style={fieldStyle} /></div>
+            <div>
+              <div style={labelSt}>ตำแหน่ง</div>
+              <select value={form.role} onChange={fld('role')} style={fieldStyle}>
+                <option value="owner">เจ้าของ</option>
+                <option value="manager">ผู้จัดการ</option>
+                <option value="barista">บาริสต้า</option>
+                <option value="cashier">แคชเชียร์</option>
+              </select>
+            </div>
             <div>
               <div style={labelSt}>ประเภทเงินเดือน</div>
               <select value={form.salary_type} onChange={fld('salary_type')} style={fieldStyle}>
@@ -802,6 +974,69 @@ function StaffProfileView({
             }}>
             {toggling ? '...' : staff.is_active ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}
           </button>
+
+          {/* Delete button — only for inactive staff */}
+          {!staff.is_active && deleteStep === 0 && (
+            <button
+              onClick={() => setDeleteStep(1)}
+              style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${RED}44`, background: `${RED}10`, color: RED, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              ลบพนักงาน
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Delete flow */}
+      {!showEdit && !staff.is_active && deleteStep === 1 && (
+        <div style={{ backgroundColor: CARD, borderRadius: 12, padding: '16px 18px', border: `2px solid ${RED}44` }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: RED, marginBottom: 8 }}>⚠️ ลบพนักงานถาวร</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 14 }}>
+            ข้อมูลและประวัติทั้งหมดจะถูกลบ ไม่สามารถกู้คืนได้
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={() => setDeleteStep(2)}
+              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', backgroundColor: RED, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              ยืนยัน
+            </button>
+            <button onClick={() => setDeleteStep(0)}
+              style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 13, cursor: 'pointer' }}>
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!showEdit && !staff.is_active && deleteStep === 2 && (
+        <div style={{ backgroundColor: CARD, borderRadius: 12, padding: '16px 18px', border: `2px solid ${RED}` }}>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 10 }}>
+            พิมพ์ชื่อพนักงาน เพื่อยืนยัน:
+            <span style={{ color: RED, fontWeight: 700, marginLeft: 6 }}>{staff.name_th ?? staff.name}</span>
+          </div>
+          <input
+            value={deleteNameInput}
+            onChange={e => setDeleteNameInput(e.target.value)}
+            placeholder="พิมพ์ชื่อเพื่อยืนยัน"
+            style={{ ...inputStyle, fontSize: 13, marginBottom: 12 }}
+          />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => { void handleDelete() }}
+              disabled={deleteNameInput !== (staff.name_th ?? staff.name) || deleting}
+              style={{
+                padding: '8px 18px', borderRadius: 8, border: 'none',
+                backgroundColor: deleteNameInput === (staff.name_th ?? staff.name) ? RED : 'rgba(255,255,255,0.1)',
+                color: deleteNameInput === (staff.name_th ?? staff.name) ? '#fff' : 'rgba(255,255,255,0.3)',
+                fontWeight: 700, fontSize: 13,
+                cursor: deleteNameInput === (staff.name_th ?? staff.name) && !deleting ? 'pointer' : 'not-allowed',
+                opacity: deleting ? 0.6 : 1,
+              }}>
+              {deleting ? 'กำลังลบ...' : 'ยืนยันการลบ'}
+            </button>
+            <button onClick={() => { setDeleteStep(0); setDeleteNameInput('') }}
+              style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 13, cursor: 'pointer' }}>
+              ยกเลิก
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -820,6 +1055,7 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
   const [role,        setRole]        = useState('barista')
   const [salary,      setSalary]      = useState('')
   const [salaryType,  setSalaryType]  = useState('monthly')
+  const [startDate,   setStartDate]   = useState(new Date().toISOString().slice(0, 10))
   const [pin,         setPin]         = useState('')
   const [showPin,     setShowPin]     = useState(false)
   const [step1Err,    setStep1Err]    = useState('')
@@ -893,7 +1129,6 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
   async function handleSave() {
     setSaving(true); setSaveErr('')
     try {
-      const today = new Date().toISOString().slice(0, 10)
       const { data: inserted, error: insertErr } = await supabase
         .from('staff')
         .insert({
@@ -904,7 +1139,7 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
           salary: salary ? parseFloat(salary) : null,
           salary_type: salaryType,
           pin_code: pin,
-          start_date: today,
+          start_date: startDate,
           is_active: true,
         })
         .select('id')
@@ -996,9 +1231,10 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
             <div>
               <div style={labelSt}>ตำแหน่ง *</div>
               <select value={role} onChange={e => setRole(e.target.value)} style={inputSt}>
+                <option value="owner">เจ้าของ</option>
+                <option value="manager">ผู้จัดการ</option>
                 <option value="barista">บาริสต้า</option>
                 <option value="cashier">แคชเชียร์</option>
-                <option value="manager">ผู้จัดการ</option>
               </select>
             </div>
             <div>
@@ -1012,6 +1248,10 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
                 <option value="daily">รายวัน</option>
                 <option value="hourly">รายชั่วโมง</option>
               </select>
+            </div>
+            <div>
+              <div style={labelSt}>วันที่เริ่มงาน</div>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputSt} />
             </div>
             <div style={{ gridColumn: 'span 2' }}>
               <div style={labelSt}>PIN * (4 หลัก)</div>
@@ -1101,6 +1341,7 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
               { label: 'ชื่อ',         value: nameTh || name },
               { label: 'ตำแหน่ง',      value: roleLabel(role) },
               { label: 'เบอร์โทร',     value: phone || '—' },
+              { label: 'วันที่เริ่มงาน', value: startDate },
               { label: 'เงินเดือน',    value: salary ? `${new Intl.NumberFormat('lo-LA').format(parseFloat(salary))} ₭` : '—' },
               { label: 'ประเภท',        value: salary ? (salaryType === 'daily' ? 'รายวัน' : salaryType === 'hourly' ? 'รายชั่วโมง' : 'รายเดือน') : '—' },
               { label: 'รูปถ่าย',      value: photoBlob ? 'มีรูปถ่าย' : 'ไม่มี (สามารถเพิ่มภายหลัง)' },
