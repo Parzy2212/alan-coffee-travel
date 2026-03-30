@@ -1437,7 +1437,14 @@ const DEFAULT_CONSUMABLES: ExpenseItem[] = [
 
 function parseItems(json: string, defaults: ExpenseItem[]): ExpenseItem[] {
   if (!json) return defaults
-  try { const p = JSON.parse(json); if (Array.isArray(p)) return p } catch {}
+  try {
+    const p = JSON.parse(json)
+    if (Array.isArray(p)) {
+      // Empty array or all-empty names → fall back to defaults (handles un-initialized DB state)
+      if (p.length === 0 || p.every((i: ExpenseItem) => !i.name)) return defaults
+      return p
+    }
+  } catch {}
   return defaults
 }
 
@@ -1530,13 +1537,73 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
     setLoadingSalary(true)
     const { data } = await supabase.rpc('get_all_staff')
     if (data) {
-      const total = (data as { salary?: number }[]).reduce((s, st) => s + (st.salary ?? 0), 0)
+      const total = (data as { salary?: number; salary_type?: string | null }[]).reduce((s, st) => {
+        const amount = st.salary ?? 0
+        // Daily-rate staff: multiply by 30 to get monthly equivalent
+        return s + (st.salary_type === 'daily' ? amount * 30 : amount)
+      }, 0)
       onChange({ ...settings, overhead_salary: String(total) })
     }
     setLoadingSalary(false)
   }
 
   const cardS: React.CSSProperties  = { backgroundColor: CARD2, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}`, marginBottom: 12 }
+
+  function exportCostCSV() {
+    const rows: string[][] = []
+    const h = (label: string) => rows.push([label])
+    const r = (label: string, val: string | number) => rows.push([label, String(val)])
+    const sep = () => rows.push([''])
+
+    h('=== 1. ต้นทุนบรรจุภัณฑ์ต่อแก้ว ===')
+    r('แก้ว + ฝา (₭)', n('cost_cup_lid'))
+    r('หลอด (₭)', n('cost_straw'))
+    r('ถุงกลับบ้าน ₭/ถุง', n('cost_bag'))
+    r('% ลูกค้าที่ขอถุง', n('cost_bag_pct') + '%')
+    r('บรรจุภัณฑ์อื่นๆ (₭)', n('cost_other_pkg'))
+    r('Waste & Loss Factor', n('cost_waste_pct') + '%')
+    r('ต้นทุน packaging จริงต่อแก้ว (₭)', packagingPerCup)
+    sep()
+
+    h('=== 2. ต้นทุนน้ำแข็งต่อแก้วเย็น ===')
+    r('ราคาน้ำแข็งต่อกระสอบ 30kg (₭)', n('cost_ice_bag_price'))
+    r('น้ำแข็งที่ละลายก่อนใช้', n('cost_ice_melt_pct') + '%')
+    r('น้ำแข็งต่อแก้ว (g)', n('cost_ice_per_cup_g'))
+    r('ต้นทุนน้ำแข็งต่อแก้วเย็น (₭)', icePerCup)
+    sep()
+
+    h('=== 3. ค่าใช้จ่ายประจำเดือน ===')
+    r('ค่าเช่า (₭)', n('overhead_rent'))
+    r('ค่าไฟ (₭)', n('overhead_electric'))
+    r('ค่าน้ำ (₭)', n('overhead_water'))
+    r('เงินเดือนรวม (₭)', n('overhead_salary'))
+    r('อินเตอร์เน็ต (₭)', n('overhead_internet'))
+    consumables.forEach(i => r(`  ${i.name} (₭)`, i.amount))
+    r('รวมของใช้สิ้นเปลือง (₭)', totalConsumables)
+    otherItems.forEach(i => r(`  ${i.name} (₭)`, i.amount))
+    r('รวมค่าใช้จ่ายอื่นๆ (₭)', totalOther)
+    r('รวมค่าใช้จ่ายทั้งหมด/เดือน (₭)', totalOverhead)
+    sep()
+
+    h('=== 4. ต้นทุนต่อแก้ว (ทุกหมวด) ===')
+    r('เป้าหมายแก้ว/เดือน', targetCups)
+    r('ต้นทุน packaging ต่อแก้ว (₭)', packagingPerCup)
+    r('ต้นทุนน้ำแข็งต่อแก้วเย็น (₭)', icePerCup)
+    r('ต้นทุน overhead ต่อแก้ว (₭)', overheadPerCup)
+    r('ต้นทุนรวมต่อแก้ว excl. น้ำแข็ง (₭)', fixedPerCup)
+    sep()
+
+    h('=== 5. Break-even Analysis ===')
+    r('เป้าหมายแก้ว/เดือน', targetCups)
+    r('แก้วที่ต้องขาย/วัน (เพื่อ cover overhead)', breakEvenPerDay)
+
+    const csvContent = '\uFEFF' + rows.map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `alan-cafe-cost-${new Date().toISOString().slice(0, 10)}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
   const labelS: React.CSSProperties = { fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }
   const dimS: React.CSSProperties   = { fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4, lineHeight: 1.5 }
   const calcRow: React.CSSProperties = {
@@ -1577,6 +1644,14 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
 
   return (
     <SettingSection icon="💰" title="ต้นทุนร้าน">
+
+      {/* ── Export CSV button ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button onClick={exportCostCSV}
+          style={{ ...btnStyleSm(GOLD + '22', GOLD), display: 'flex', alignItems: 'center', gap: 6 }}>
+          ⬇ Export CSV
+        </button>
+      </div>
 
       {/* ── Section 1: Packaging ── */}
       <div style={cardS}>
@@ -1769,7 +1844,13 @@ function SettingsTab() {
 
   useEffect(() => {
     supabase.rpc('get_site_settings').then(({ data }) => {
-      if (data) setSettings(s => ({ ...s, ...data }))
+      if (data) {
+        // Filter out null/undefined so they don't overwrite string defaults
+        const cleaned = Object.fromEntries(
+          Object.entries(data as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined)
+        )
+        setSettings(s => ({ ...s, ...cleaned }))
+      }
       setLoading(false)
     })
   }, [])
