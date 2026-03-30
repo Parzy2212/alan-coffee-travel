@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 interface MoneyInputProps {
   value: string | number
@@ -18,34 +18,25 @@ export function MoneyInput({ value, onChange, style, placeholder, disabled, auto
   }
 
   const [isFocused, setIsFocused] = useState(false)
-  // raw = pure digit string, no commas
-  const [raw, setRaw] = useState(() => {
-    const n = parseNum(value)
-    return n > 0 ? String(n) : ''
-  })
+  // raw is only used while the field is focused; otherwise display derives from value prop directly
+  const [raw, setRaw] = useState('')
 
-  // Sync from parent only when not focused (external value changes)
-  useEffect(() => {
-    if (!isFocused) {
-      const n = parseNum(value)
-      setRaw(n > 0 ? String(n) : '')
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
-
-  // While focused show raw digits; on blur show formatted
+  // When not focused: always reflect the current value prop (handles async-loaded parent state)
+  // When focused: show raw digits the user is typing
+  const numVal = parseNum(value)
   const display = isFocused
     ? raw
-    : raw ? parseInt(raw, 10).toLocaleString('en-US') : ''
+    : numVal > 0 ? numVal.toLocaleString('en-US') : ''
 
   function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
+    // Seed raw from the current prop value so editing starts from the right number
+    setRaw(numVal > 0 ? String(numVal) : '')
     setIsFocused(true)
-    // Select all so user can type immediately
     setTimeout(() => e.target.select(), 0)
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    // Only allow digits — no formatting, no parent update → no re-render → no focus loss
+    // Only allow digits — no parent update during typing, so no re-render/focus-loss
     const digits = e.target.value.replace(/[^0-9]/g, '')
     setRaw(digits)
   }
@@ -55,7 +46,7 @@ export function MoneyInput({ value, onChange, style, placeholder, disabled, auto
     const n = parseNum(raw)
     const digits = n > 0 ? String(n) : ''
     setRaw(digits)
-    onChange(digits)  // parent only updates here, not during typing
+    onChange(digits)
   }
 
   return (
