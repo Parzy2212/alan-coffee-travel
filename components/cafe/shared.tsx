@@ -232,7 +232,7 @@ export type PaymentBank = {
 export type StaffMember = {
   id: string; name: string; name_th: string | null; name_lo: string | null
   phone: string | null; avatar_url: string | null
-  salary: number | null; salary_type: string | null
+  salary: number | null; salary_type: string | null; hours_per_day: number | null
   start_date: string | null; is_active: boolean; is_verified: boolean
   scheduled_start_time: string | null; rating: number | null
   skills: string[] | null; notes: string | null
@@ -258,7 +258,7 @@ export type AttendanceRow = {
 
 export type StaffForm = {
   name: string; name_th: string; name_lo: string
-  phone: string; salary: string; salary_type: string
+  phone: string; salary: string; salary_type: string; hours_per_day: string
   role: string
   start_date: string; scheduled_start_time: string
   skills: string; notes: string; pin: string
@@ -373,7 +373,7 @@ export function emptyInventoryForm(): InventoryForm {
 export function emptyStaffForm(): StaffForm {
   return {
     name: '', name_th: '', name_lo: '', phone: '',
-    salary: '', salary_type: 'monthly', role: 'barista',
+    salary: '', salary_type: 'monthly', hours_per_day: '8', role: 'barista',
     start_date: new Date().toISOString().slice(0, 10),
     scheduled_start_time: '08:00',
     skills: '', notes: '', pin: '',

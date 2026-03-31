@@ -699,6 +699,7 @@ function StaffProfileView({
       phone: staff.phone ?? '',
       salary: String(staff.salary ?? ''),
       salary_type: staff.salary_type ?? 'monthly',
+      hours_per_day: String(staff.hours_per_day ?? 8),
       role: staff.role ?? 'barista',
       start_date: staff.start_date ?? new Date().toISOString().slice(0, 10),
       scheduled_start_time: staff.scheduled_start_time ?? '08:00',
@@ -723,6 +724,7 @@ function StaffProfileView({
         role: form.role || null,
         salary: form.salary ? parseFloat(form.salary) : null,
         salary_type: form.salary_type || null,
+        hours_per_day: form.salary_type === 'hourly' ? (parseFloat(form.hours_per_day) || 8) : null,
         start_date: form.start_date || null,
         scheduled_start_time: form.scheduled_start_time || null,
         skills: skillsArr.length ? skillsArr : null,
@@ -916,6 +918,13 @@ function StaffProfileView({
               </select>
             </div>
             <div><div style={labelSt}>เงินเดือน (LAK)</div><MoneyInput value={form.salary} onChange={fMoney('salary')} style={fieldStyle} placeholder="0" /></div>
+            {form.salary_type === 'hourly' && (
+              <div>
+                <div style={labelSt}>ชั่วโมงทำงาน/วัน</div>
+                <input type="number" min="1" max="24" value={form.hours_per_day}
+                  onChange={fld('hours_per_day')} style={fieldStyle} placeholder="8" />
+              </div>
+            )}
             <div><div style={labelSt}>เวลาเริ่มงาน</div><input type="time" value={form.scheduled_start_time} onChange={fld('scheduled_start_time')} style={fieldStyle} /></div>
             <div style={{ gridColumn: 'span 2' }}>
               <div style={labelSt}>PIN (เว้นว่าง = ไม่เปลี่ยน)</div>
@@ -1055,6 +1064,7 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
   const [role,        setRole]        = useState('barista')
   const [salary,      setSalary]      = useState('')
   const [salaryType,  setSalaryType]  = useState('monthly')
+  const [hoursPerDay, setHoursPerDay] = useState('8')
   const [startDate,   setStartDate]   = useState(new Date().toISOString().slice(0, 10))
   const [pin,         setPin]         = useState('')
   const [showPin,     setShowPin]     = useState(false)
@@ -1138,6 +1148,7 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
           role,
           salary: salary ? parseFloat(salary) : null,
           salary_type: salaryType,
+          hours_per_day: salaryType === 'hourly' ? (parseFloat(hoursPerDay) || 8) : null,
           pin_code: pin,
           start_date: startDate,
           is_active: true,
@@ -1249,6 +1260,13 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
                 <option value="hourly">รายชั่วโมง</option>
               </select>
             </div>
+            {salaryType === 'hourly' && (
+              <div>
+                <div style={labelSt}>ชั่วโมงทำงาน/วัน</div>
+                <input type="number" min="1" max="24" value={hoursPerDay}
+                  onChange={e => setHoursPerDay(e.target.value)} style={inputSt} placeholder="8" />
+              </div>
+            )}
             <div>
               <div style={labelSt}>วันที่เริ่มงาน</div>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputSt} />

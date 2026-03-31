@@ -1540,14 +1540,17 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
     setLoadingSalary(true)
     const { data } = await supabase.rpc('get_all_staff')
     if (data) {
-      type StaffRow = { name?: string; name_th?: string | null; salary?: number | null; salary_type?: string | null; is_active?: boolean }
+      type StaffRow = { name?: string; name_th?: string | null; salary?: number | null; salary_type?: string | null; hours_per_day?: number | null; is_active?: boolean }
       const active = (data as StaffRow[]).filter(st => st.is_active !== false)
       const breakdown: SalaryBreakdownItem[] = active.map(st => {
         const amount = st.salary ?? 0
         const displayName = st.name_th || st.name || '?'
         if (st.salary_type === 'daily')  return { name: displayName, monthly: amount * 26, note: `${amount.toLocaleString()}×26วัน` }
-        if (st.salary_type === 'hourly') return { name: displayName, monthly: 0,           note: 'รายชั่วโมง (ข้าม)' }
-        return                                  { name: displayName, monthly: amount,       note: 'รายเดือน' }
+        if (st.salary_type === 'hourly') {
+          const hrs = st.hours_per_day ?? 8
+          return { name: displayName, monthly: amount * hrs * 26, note: `${amount.toLocaleString()}₭/ชม×${hrs}ชม×26วัน` }
+        }
+        return { name: displayName, monthly: amount, note: 'รายเดือน' }
       })
       const total = breakdown.reduce((s, b) => s + b.monthly, 0)
       setSalaryBreakdown(breakdown)
