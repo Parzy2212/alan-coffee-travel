@@ -23,6 +23,7 @@ type Recipe = {
   price_lak: number
   image_url: string | null
   requires_customization: boolean | null
+  default_sweetness: string | null
 }
 
 type CartItem = {
@@ -30,6 +31,17 @@ type CartItem = {
   recipe: Recipe
   qty: number
   customization: string
+}
+
+type HeldOrder = {
+  id: string
+  table_number: string | null
+  customer_name: string | null
+  note: string | null
+  cart_items: CartItem[]
+  total_lak: number
+  created_at: string
+  expires_at: string
 }
 
 type ChargeStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -119,6 +131,18 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+function fmtTimeAgo(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 60) return `${mins}m ago`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
+function sweetnessFromDefault(ds: string | null): string {
+  if (ds === 'less') return 'หวานน้อย'
+  if (ds === 'none') return 'ไม่หวาน'
+  return 'หวานปกติ'
+}
+
 function translateError(msg: string): string {
   if (msg.includes('Insufficient stock')) {
     const match = msg.match(/"([^"]+)"/)
@@ -187,7 +211,7 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization }: {
   initialCustomization?: string
 }) {
   const initParts = initialCustomization?.split(' · ') ?? []
-  const [sweetness, setSweetness] = useState(() => SWEETNESS_OPTIONS.find(s => initParts.includes(s)) ?? 'หวานปกติ')
+  const [sweetness, setSweetness] = useState(() => SWEETNESS_OPTIONS.find(s => initParts.includes(s)) ?? sweetnessFromDefault(recipe.default_sweetness))
   const [temp, setTemp]           = useState(() => TEMP_OPTIONS.find(t => initParts.includes(t)) ?? 'ร้อน')
   const [note, setNote]           = useState(() => initParts.filter(p => !SWEETNESS_OPTIONS.includes(p) && !TEMP_OPTIONS.includes(p)).join(' · '))
   const overlayRef                = useRef<HTMLDivElement>(null)
@@ -1181,6 +1205,61 @@ function VoidRow({ order, onVoided }: { order: TodayOrder; onVoided: () => void 
   )
 }
 
+// ─── HoldModal ────────────────────────────────────────────────────────────────
+
+function HoldModal({ onConfirm, onClose }: {
+  onConfirm: (tableName: string, customerName: string) => void
+  onClose: () => void
+}) {
+  const [tableName,    setTableName]    = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  return (
+    <div ref={overlayRef} onClick={e => { if (e.target === overlayRef.current) onClose() }}
+      style={{ position: 'fixed', inset: 0, zIndex: 150, backgroundColor: 'rgba(0,0,0,0.7)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}44`, borderRadius: 14,
+        padding: 28, width: 340, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>พักออเดอร์</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>ออเดอร์จะถูกบันทึกไว้ 4 ชั่วโมง</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 22, cursor: 'pointer' }}>×</button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>หมายเลขโต๊ะ</div>
+            <input value={tableName} onChange={e => setTableName(e.target.value)}
+              placeholder="เช่น A1, B2" style={popupInput} autoFocus />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>ชื่อลูกค้า</div>
+            <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+              placeholder="(ไม่บังคับ)" style={popupInput} />
+          </div>
+        </div>
+        {!tableName.trim() && !customerName.trim() && (
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
+            กรอกโต๊ะหรือชื่อลูกค้าอย่างน้อย 1 อย่าง
+          </div>
+        )}
+        <button
+          onClick={() => { if (tableName.trim() || customerName.trim()) onConfirm(tableName.trim(), customerName.trim()) }}
+          disabled={!tableName.trim() && !customerName.trim()}
+          style={{ padding: '13px 0', borderRadius: 10, border: 'none',
+            backgroundColor: (tableName.trim() || customerName.trim()) ? GOLD : 'rgba(255,255,255,0.08)',
+            color: (tableName.trim() || customerName.trim()) ? BLACK : 'rgba(255,255,255,0.2)',
+            fontWeight: 800, fontSize: 15, cursor: (tableName.trim() || customerName.trim()) ? 'pointer' : 'not-allowed',
+            fontFamily: 'var(--font-heading)' }}>
+          พักออเดอร์
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function POSClient() {
@@ -1206,7 +1285,8 @@ export default function POSClient() {
   const [showCharge,     setShowCharge]    = useState(false)
   const [showSettings,   setShowSettings]  = useState(false)
   const [showShiftClose, setShowShiftClose] = useState(false)
-  const [bottomTab,      setBottomTab]     = useState<'queue' | 'orders'>('queue')
+  const [heldOrders,     setHeldOrders]    = useState<HeldOrder[]>([])
+  const [showHoldModal,  setShowHoldModal]  = useState(false)
 
   // Load cart from localStorage after mount (avoids SSR hydration mismatch)
   useEffect(() => {
@@ -1250,14 +1330,14 @@ export default function POSClient() {
 
   // Fetch menu
   useEffect(() => {
-    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization')
+    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization, default_sweetness')
       .eq('is_active', true).order('category')
       .then(({ data }) => { setRecipes((data as Recipe[]) ?? []); setLoading(false) })
 
     const channel = supabase.channel('recipes-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => {
         supabase.from('recipes')
-          .select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization')
+          .select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization, default_sweetness')
           .eq('is_active', true)
           .order('category')
           .then(({ data }) => {
@@ -1270,6 +1350,7 @@ export default function POSClient() {
               price_lak: r.price_lak as number,
               image_url: r.image_url as string | null,
               requires_customization: r.requires_customization as boolean,
+              default_sweetness: r.default_sweetness as string | null,
             })))
           })
       })
@@ -1393,7 +1474,43 @@ export default function POSClient() {
     setTodayOrders((data as TodayOrder[]) ?? [])
   }, [])
 
-  useEffect(() => { fetchTodayQueue(); loadTodayOrders() }, [fetchTodayQueue, loadTodayOrders])
+  const loadHeldOrders = useCallback(async () => {
+    const { data } = await supabase
+      .from('held_orders')
+      .select('*')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+    setHeldOrders((data as HeldOrder[]) ?? [])
+  }, [])
+
+  async function holdCart(tableName: string, customerName: string) {
+    if (cart.length === 0) return
+    await supabase.from('held_orders').insert({
+      table_number:  tableName  || null,
+      customer_name: customerName || null,
+      cart_items:    cart,
+      total_lak:     finalTotal,
+      expires_at:    new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+    })
+    setCart([])
+    setDiscount('')
+    setDiscountReason('')
+    setShowHoldModal(false)
+    loadHeldOrders()
+  }
+
+  async function resumeHeld(held: HeldOrder) {
+    setCart(held.cart_items)
+    await supabase.from('held_orders').delete().eq('id', held.id)
+    loadHeldOrders()
+  }
+
+  async function deleteHeld(id: string) {
+    await supabase.from('held_orders').delete().eq('id', id)
+    loadHeldOrders()
+  }
+
+  useEffect(() => { fetchTodayQueue(); loadTodayOrders(); loadHeldOrders() }, [fetchTodayQueue, loadTodayOrders, loadHeldOrders])
 
   useEffect(() => {
     const ch = supabase
@@ -1454,6 +1571,12 @@ export default function POSClient() {
       )}
 
       {showSettings && <SettingsPopup onClose={() => setShowSettings(false)} />}
+      {showHoldModal && (
+        <HoldModal
+          onConfirm={(t, c) => holdCart(t, c)}
+          onClose={() => setShowHoldModal(false)}
+        />
+      )}
       {showShiftClose && <ShiftClosePopup todayTotal={todayTotal} todayCount={todayCount} onClose={() => setShowShiftClose(false)} />}
       {chargeStatus === 'success' && successData && (
         <DigitalReceiptPopup data={successData} settings={posSettings} onClose={dismissSuccess} />
@@ -1589,13 +1712,15 @@ export default function POSClient() {
           </div>
         </div>
 
-        {/* ── RIGHT: CART ──────────────────────────────────────────────────── */}
-        <div style={{ width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column', backgroundColor: '#111', position: 'relative' }}>
+        {/* ── MIDDLE: CART + HELD ORDERS ──────────────────────────────────── */}
+        <div style={{ width: '30%', flexShrink: 0, display: 'flex', flexDirection: 'column', backgroundColor: '#111', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
+
+          {/* ── Section A: Cart ── */}
 
           {/* Cart header */}
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
-              Order{mounted && totalItems > 0 && <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>}
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <span style={{ fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>
+              🛒 ออเดอร์{mounted && totalItems > 0 && <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>}
             </span>
             {mounted && cart.length > 0 && chargeStatus === 'idle' && (
               confirmClear ? (
@@ -1607,175 +1732,243 @@ export default function POSClient() {
                     style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.12)', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}>ยกเลิก</button>
                 </div>
               ) : (
-                <button onClick={() => setConfirmClear(true)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', padding: '2px 6px' }}>Clear all</button>
+                <button onClick={() => setConfirmClear(true)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.2)', fontSize: 11, cursor: 'pointer' }}>ล้าง</button>
               )
             )}
           </div>
 
           {/* Cart items */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {!mounted || cart.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'rgba(255,255,255,0.18)' }}>
-                <span style={{ fontSize: 36 }}>☕</span>
-                <span style={{ fontSize: 13 }}>Tap an item to add</span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, color: 'rgba(255,255,255,0.15)' }}>
+                <span style={{ fontSize: 32 }}>☕</span>
+                <span style={{ fontSize: 12 }}>แตะเมนูเพื่อเพิ่ม</span>
               </div>
             ) : (
               cart.map(item => (
-                <div key={item.cartKey} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', backgroundColor: '#1a1a1a', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={item.cartKey} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', backgroundColor: '#1a1a1a', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {item.recipe.product_name}
                     </div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.customization}
-                    </div>
-                    <div style={{ fontSize: 12, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
+                    {item.customization && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+                        {item.customization}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: GOLD, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
                       {fmtLak(item.recipe.price_lak * item.qty)}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  {/* +/- controls */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     <QtyButton label="−" onClick={() => decrement(item.cartKey)} />
-                    <span style={{ fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{item.qty}</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, minWidth: 22, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{item.qty}</span>
                     <QtyButton label="+" onClick={() => addToCartWithCustomization(item.recipe, item.customization)} />
                   </div>
+                  {/* edit / remove */}
                   <button onClick={() => setEditingCartKey(item.cartKey)}
-                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.22)', fontSize: 13, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>✏️</button>
+                    style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.4)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✏️</button>
                   <button onClick={() => setCart(prev => prev.filter(i => i.cartKey !== item.cartKey))}
-                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.22)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
+                    style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid rgba(220,80,80,0.2)', backgroundColor: 'rgba(220,80,80,0.06)', color: '#e07070', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🗑️</button>
                 </div>
               ))
             )}
           </div>
 
           {/* Cart footer */}
-          <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: mounted && discountAmt > 0 ? 4 : 10 }}>
-              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase' }}>Total</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: mounted && discountAmt > 0 ? 'rgba(255,255,255,0.35)' : '#fff', fontVariantNumeric: 'tabular-nums', textDecoration: mounted && discountAmt > 0 ? 'line-through' : 'none' }}>{mounted ? fmtLak(subtotal) : '0 LAK'}</span>
+          <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+            {/* Total row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: '1px', textTransform: 'uppercase' }}>รวม</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: mounted && discountAmt > 0 ? 'rgba(255,255,255,0.3)' : '#fff', fontVariantNumeric: 'tabular-nums', textDecoration: mounted && discountAmt > 0 ? 'line-through' : 'none' }}>
+                {mounted ? fmtLak(subtotal) : '0 LAK'}
+              </span>
             </div>
             {/* Discount row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', textTransform: 'uppercase', flexShrink: 0 }}>ส่วนลด</span>
               <MoneyInput value={discount} onChange={v => setDiscount(v)}
-                style={{ flex: 1, padding: '5px 10px', borderRadius: 6, border: `1px solid ${discountAmt > 0 ? GOLD + '55' : 'rgba(255,255,255,0.1)'}`, backgroundColor: 'rgba(255,255,255,0.04)', color: discountAmt > 0 ? GOLD : '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const }}
+                style={{ flex: 1, padding: '5px 8px', borderRadius: 6, border: `1px solid ${discountAmt > 0 ? GOLD + '55' : 'rgba(255,255,255,0.1)'}`, backgroundColor: 'rgba(255,255,255,0.04)', color: discountAmt > 0 ? GOLD : '#fff', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }}
                 placeholder="0" />
               <input value={discountReason} onChange={e => setDiscountReason(e.target.value)}
-                style={{ flex: 2, padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }}
-                placeholder="เหตุผล (ไม่บังคับ)" />
+                style={{ flex: 2, padding: '5px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', fontSize: 11, outline: 'none', boxSizing: 'border-box' as const }}
+                placeholder="เหตุผล..." />
             </div>
             {mounted && discountAmt > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase' }}>ยอดสุทธิ</span>
-                <span style={{ fontSize: 22, fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</span>
+                <span style={{ fontSize: 11, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase' }}>ยอดสุทธิ</span>
+                <span style={{ fontSize: 20, fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</span>
               </div>
             )}
+            {/* พักออเดอร์ */}
+            <button
+              onClick={() => mounted && cart.length > 0 && setShowHoldModal(true)}
+              disabled={!mounted || cart.length === 0}
+              style={{
+                width: '100%', padding: '10px 0', borderRadius: 8, marginBottom: 6,
+                border: `1px solid ${mounted && cart.length > 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)'}`,
+                backgroundColor: 'transparent',
+                color: mounted && cart.length > 0 ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.15)',
+                fontWeight: 600, fontSize: 13, cursor: mounted && cart.length > 0 ? 'pointer' : 'not-allowed',
+              }}
+            >
+              📋 พักออเดอร์
+            </button>
+            {/* ชำระเงิน */}
             <button
               onClick={() => mounted && cart.length > 0 && setShowCharge(true)}
               disabled={!mounted || cart.length === 0}
               style={{
-                width: '100%', padding: '13px 0', borderRadius: 6, border: 'none',
+                width: '100%', padding: '14px 0', borderRadius: 8, border: 'none',
                 backgroundColor: mounted && cart.length > 0 ? GOLD : 'rgba(255,255,255,0.06)',
                 color: mounted && cart.length > 0 ? BLACK : 'rgba(255,255,255,0.18)',
-                fontWeight: 800, fontSize: 14, letterSpacing: '1.5px', textTransform: 'uppercase',
+                fontWeight: 800, fontSize: 15, letterSpacing: '1px',
                 cursor: mounted && cart.length > 0 ? 'pointer' : 'not-allowed',
                 fontFamily: 'var(--font-heading)', transition: 'all 0.2s',
               }}
             >
-              {mounted && cart.length > 0 ? `Charge ${fmtLak(finalTotal)}` : 'No Items'}
+              {mounted && cart.length > 0 ? `ชำระเงิน ${fmtLak(finalTotal)}` : 'ยังไม่มีรายการ'}
             </button>
           </div>
 
-          {/* ── BOTTOM TABS ─────────────────────────────────────────────── */}
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', borderTop: '2px solid rgba(255,255,255,0.07)', maxHeight: '40vh', backgroundColor: '#0e0e0e' }}>
-
-            {/* Tab bar */}
-            <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
-              {([
-                { key: 'queue',  label: 'คิวปัจจุบัน', badge: queueEntries.length },
-                { key: 'orders', label: 'ออเดอร์วันนี้', badge: todayCount },
-              ] as const).map(tab => (
-                <button key={tab.key} onClick={() => setBottomTab(tab.key)} style={{
-                  flex: 1, padding: '7px 0', border: 'none', cursor: 'pointer',
-                  backgroundColor: 'transparent',
-                  borderBottom: `2px solid ${bottomTab === tab.key ? GOLD : 'transparent'}`,
-                  color: bottomTab === tab.key ? GOLD : 'rgba(255,255,255,0.3)',
-                  fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s',
-                }}>
-                  {tab.label}
-                  {tab.badge > 0 && (
-                    <span style={{ fontSize: 10, backgroundColor: bottomTab === tab.key ? GOLD : 'rgba(255,255,255,0.1)', color: bottomTab === tab.key ? BLACK : 'rgba(255,255,255,0.5)', padding: '1px 6px', borderRadius: 999, fontWeight: 700 }}>
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
+          {/* ── Section B: Held Orders ── */}
+          <div style={{ flexShrink: 0, borderTop: '2px solid rgba(255,255,255,0.07)', backgroundColor: '#0e0e0e', maxHeight: '38%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: heldOrders.length > 0 ? '#f0c040' : 'rgba(255,255,255,0.25)' }}>
+                📋 ออเดอร์พัก
+                {heldOrders.length > 0 && (
+                  <span style={{ marginLeft: 6, backgroundColor: '#f0c04022', color: '#f0c040', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{heldOrders.length}</span>
+                )}
+              </span>
+              <button onClick={loadHeldOrders} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.2)', fontSize: 12, cursor: 'pointer' }}>↻</button>
             </div>
-
-            {/* Tab content */}
             <div style={{ overflowY: 'auto', flex: 1 }}>
-
-              {/* Queue tab */}
-              {bottomTab === 'queue' && (
-                queueEntries.length === 0 ? (
-                  <div style={{ padding: '12px 14px', textAlign: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 12 }}>ยังไม่มีคิว</div>
-                ) : (
-                  queueEntries.map(entry => (
-                    <div key={entry.order_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                      <div style={{ flexShrink: 0, minWidth: 44 }}>
-                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 13, fontVariantNumeric: 'tabular-nums', color: entry.queue_status === 'making' ? GOLD : 'rgba(255,255,255,0.45)' }}>
-                          {fmtQueue(entry.queue_number)}
-                        </div>
-                        <div style={{ fontSize: 9, letterSpacing: '0.5px', marginTop: 1, color: entry.queue_status === 'making' ? `${GOLD}99` : 'rgba(255,255,255,0.2)' }}>
-                          {entry.queue_status === 'making' ? 'กำลังทำ' : 'รอคิว'}
+              {heldOrders.length === 0 ? (
+                <div style={{ padding: '10px 14px', textAlign: 'center', color: 'rgba(255,255,255,0.13)', fontSize: 12 }}>ไม่มีออเดอร์พัก</div>
+              ) : (
+                heldOrders.map(held => {
+                  const label = held.table_number
+                    ? `โต๊ะ ${held.table_number}${held.customer_name ? ' · ' + held.customer_name : ''}`
+                    : held.customer_name ?? '—'
+                  const itemCount = held.cart_items.reduce((s, i) => s + i.qty, 0)
+                  return (
+                    <div key={held.id} style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)', backgroundColor: 'rgba(240,192,64,0.04)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                            {itemCount} รายการ · {fmtLak(held.total_lak)} · {fmtTimeAgo(held.created_at)}
+                          </div>
                         </div>
                       </div>
-                      <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'rgba(255,255,255,0.38)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {entry.summary || '—'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                        <button onClick={() => updateQueueStatus(entry.order_id, 'making')} disabled={entry.queue_status === 'making'} title="เริ่มทำ" style={{ width: 28, height: 28, borderRadius: 6, border: 'none', backgroundColor: entry.queue_status === 'making' ? 'rgba(255,255,255,0.03)' : `${GOLD}20`, color: entry.queue_status === 'making' ? 'rgba(255,255,255,0.12)' : GOLD, fontSize: 13, cursor: entry.queue_status === 'making' ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔄</button>
-                        <button onClick={() => updateQueueStatus(entry.order_id, 'ready')} title="พร้อมแล้ว" style={{ width: 28, height: 28, borderRadius: 6, border: 'none', backgroundColor: 'rgba(76,186,127,0.1)', color: GREEN, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✅</button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => resumeHeld(held)} style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}12`, color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          📂 เปิด
+                        </button>
+                        <button onClick={() => deleteHeld(held.id)} style={{ width: 36, height: 30, borderRadius: 6, border: '1px solid rgba(220,80,80,0.25)', backgroundColor: 'rgba(220,80,80,0.08)', color: '#e07070', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          🗑️
+                        </button>
                       </div>
                     </div>
-                  ))
-                )
+                  )
+                })
               )}
+            </div>
+          </div>
+        </div>
 
-              {/* Orders tab */}
-              {bottomTab === 'orders' && (
-                todayOrders.length === 0 ? (
-                  <div style={{ padding: '12px 14px', textAlign: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 12 }}>ยังไม่มีออเดอร์วันนี้</div>
-                ) : (
-                  todayOrders.map(order => {
-                    const isVoid = order.status === 'void'
-                    const payIcon = PAY_METHODS.find(m => m.value === order.payment_method)?.icon ?? '—'
-                    const summary = order.items.slice(0, 2).map(i => `${i.qty}x ${i.name}`).join(', ') + (order.items.length > 2 ? ` +${order.items.length - 2}` : '')
-                    return (
-                      <div key={order.id} style={{ padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: isVoid ? 0.45 : 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 12, color: isVoid ? 'rgba(255,255,255,0.3)' : GOLD, minWidth: 36, fontVariantNumeric: 'tabular-nums' }}>
-                            {fmtQueue(order.queue_number)}
-                          </span>
-                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', minWidth: 36 }}>{fmtTime(order.created_at_vt)}</span>
-                          <span style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</span>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: isVoid ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-                            {fmtLak(order.total_lak)}
-                          </span>
-                          <span title={order.payment_method ?? ''} style={{ fontSize: 13, flexShrink: 0 }}>{payIcon}</span>
-                          {isVoid ? (
-                            <span style={{ fontSize: 10, color: RED, flexShrink: 0 }}>VOID</span>
-                          ) : (
-                            <VoidRow order={order} onVoided={() => { fetchTodayQueue(); loadTodayOrders() }} />
-                          )}
+        {/* ── RIGHT: QUEUE + TODAY'S ORDERS ───────────────────────────────── */}
+        <div style={{ width: '35%', flexShrink: 0, display: 'flex', flexDirection: 'column', backgroundColor: '#0e0e0e' }}>
+
+          {/* ── Section A: Queue ── */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', borderBottom: '2px solid rgba(255,255,255,0.07)' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: queueEntries.length > 0 ? GOLD : 'rgba(255,255,255,0.25)' }}>
+                🔄 คิวปัจจุบัน
+                {queueEntries.length > 0 && (
+                  <span style={{ marginLeft: 6, backgroundColor: `${GOLD}22`, color: GOLD, padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{queueEntries.length}</span>
+                )}
+              </span>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {queueEntries.length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'rgba(255,255,255,0.13)', fontSize: 12 }}>ยังไม่มีคิว</div>
+              ) : (
+                queueEntries.map(entry => {
+                  const isMaking = entry.queue_status === 'making'
+                  const statusColor = isMaking ? GOLD : 'rgba(255,255,255,0.4)'
+                  return (
+                    <div key={entry.order_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', backgroundColor: isMaking ? `${GOLD}08` : 'transparent' }}>
+                      <div style={{ flexShrink: 0, textAlign: 'center', minWidth: 46 }}>
+                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: 15, fontVariantNumeric: 'tabular-nums', color: statusColor }}>
+                          {fmtQueue(entry.queue_number)}
                         </div>
-                        {isVoid && order.void_reason && (
-                          <div style={{ fontSize: 10, color: 'rgba(255,80,80,0.5)', marginTop: 2, paddingLeft: 44 }}>{order.void_reason}</div>
+                        <div style={{ fontSize: 9, color: isMaking ? `${GOLD}99` : 'rgba(255,255,255,0.2)', marginTop: 1 }}>
+                          {isMaking ? 'กำลังทำ' : 'รอคิว'}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'rgba(255,255,255,0.45)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.summary || '—'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => updateQueueStatus(entry.order_id, 'making')} disabled={isMaking}
+                          style={{ height: 34, padding: '0 10px', borderRadius: 7, border: 'none', backgroundColor: isMaking ? 'rgba(255,255,255,0.03)' : `${GOLD}20`, color: isMaking ? 'rgba(255,255,255,0.12)' : GOLD, fontSize: 12, fontWeight: 700, cursor: isMaking ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                          {isMaking ? 'กำลังทำ' : 'เริ่มทำ'}
+                        </button>
+                        <button onClick={() => updateQueueStatus(entry.order_id, 'ready')}
+                          style={{ height: 34, padding: '0 10px', borderRadius: 7, border: 'none', backgroundColor: 'rgba(76,186,127,0.12)', color: GREEN, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          พร้อม ✓
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+
+          {/* ── Section B: Today's Orders ── */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>
+                📊 ออเดอร์วันนี้
+                {todayCount > 0 && <span style={{ marginLeft: 6, color: GREEN, fontSize: 12, fontWeight: 800 }}>{fmtLak(todayTotal)}</span>}
+              </span>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{todayCount} รายการ</span>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {todayOrders.length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'rgba(255,255,255,0.13)', fontSize: 12 }}>ยังไม่มีออเดอร์วันนี้</div>
+              ) : (
+                todayOrders.map(order => {
+                  const isVoid = order.status === 'void'
+                  const payIcon = PAY_METHODS.find(m => m.value === order.payment_method)?.icon ?? '—'
+                  const summary = order.items.slice(0, 2).map(i => `${i.qty}× ${i.name}`).join(', ') + (order.items.length > 2 ? ` +${order.items.length - 2}` : '')
+                  return (
+                    <div key={order.id} style={{ padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: isVoid ? 0.4 : 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 13, color: isVoid ? 'rgba(255,255,255,0.25)' : GOLD, minWidth: 38, fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtQueue(order.queue_number)}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', minWidth: 36 }}>{fmtTime(order.created_at_vt)}</span>
+                        <span style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,0.38)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: isVoid ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                          {fmtLak(order.total_lak)}
+                        </span>
+                        <span title={order.payment_method ?? ''} style={{ fontSize: 13, flexShrink: 0 }}>{payIcon}</span>
+                        {isVoid ? (
+                          <span style={{ fontSize: 10, color: RED, flexShrink: 0, fontWeight: 700 }}>VOID</span>
+                        ) : (
+                          <VoidRow order={order} onVoided={() => { fetchTodayQueue(); loadTodayOrders() }} />
                         )}
                       </div>
-                    )
-                  })
-                )
+                      {isVoid && order.void_reason && (
+                        <div style={{ fontSize: 10, color: 'rgba(255,80,80,0.45)', marginTop: 2, paddingLeft: 44 }}>{order.void_reason}</div>
+                      )}
+                    </div>
+                  )
+                })
               )}
             </div>
           </div>
