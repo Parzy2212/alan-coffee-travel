@@ -113,7 +113,7 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
       p_purchased_at: addForm.date ? new Date(addForm.date + 'T12:00:00+07:00').toISOString() : new Date().toISOString(),
     })
     if (!error) { showMsg(`เติม ${item.name} +${qty} ${item.unit}`); setPanel(null); onReload() }
-    else showMsg('Error: ' + error.message)
+    else showMsg('เกิดข้อผิดพลาด: ' + error.message)
     setSaving(false)
   }
 
@@ -138,7 +138,7 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
       p_notes:                    editData.notes,
     })
     if (!error) { showMsg('บันทึกสำเร็จ'); setPanel(null); onReload() }
-    else showMsg('Error: ' + error.message)
+    else showMsg('เกิดข้อผิดพลาด: ' + error.message)
     setSaving(false)
   }
 
@@ -442,7 +442,7 @@ export default function StockTab() {
       p_notes:                    newData.notes,
     })
     if (!error) { showMsg('เพิ่มวัตถุดิบสำเร็จ'); setShowForm(false); setNewData(emptyInventoryForm()); await load() }
-    else showMsg('Error: ' + error.message)
+    else showMsg('เกิดข้อผิดพลาด: ' + error.message)
     setSaving(false)
   }
 
@@ -450,7 +450,7 @@ export default function StockTab() {
     setDeleting(true)
     const { error } = await supabase.rpc('delete_inventory_item', { p_id: id })
     if (!error) { setDeleteTarget(null); showMsg('ลบเรียบร้อย'); await load() }
-    else showMsg('ไม่สามารถลบได้: ' + error.message)
+    else showMsg('เกิดข้อผิดพลาด ลบไม่ได้: ' + error.message)
     setDeleting(false)
   }
 
