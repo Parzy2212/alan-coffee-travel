@@ -364,21 +364,32 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
 // ─── ConfirmDeleteModal ───────────────────────────────────────────────────────
 
 function ConfirmDeleteModal({ item, onConfirm, onCancel, deleting }: { item: StockDetail; onConfirm: () => void; onCancel: () => void; deleting: boolean }) {
+  const hasStock = item.current_qty > 0
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ backgroundColor: '#161616', borderRadius: 16, border: '1px solid rgba(201,168,76,0.15)', padding: 28, maxWidth: 380, width: '100%', textAlign: 'center' }}>
-        <div style={{ fontSize: 32, marginBottom: 12 }}>🗑️</div>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>ลบออกจากสต็อก?</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', marginBottom: 24 }}>
-          ลบ <strong style={{ color: '#fff' }}>{item.name}</strong> ออกจากสต็อก?<br/>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>การดำเนินการนี้ไม่สามารถย้อนกลับได้</span>
+      <div style={{ backgroundColor: '#161616', borderRadius: 16, border: `1px solid ${hasStock ? 'rgba(255,153,51,0.35)' : 'rgba(201,168,76,0.15)'}`, padding: 28, maxWidth: 400, width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>{hasStock ? '⚠️' : '🗑️'}</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>
+          ลบ {item.name_th || item.name} ออกจากสต็อก?
         </div>
+
+        {hasStock && (
+          <div style={{ margin: '0 0 16px', padding: '12px 16px', backgroundColor: 'rgba(255,153,51,0.1)', borderRadius: 10, border: '1px solid rgba(255,153,51,0.3)' }}>
+            <div style={{ fontSize: 13, color: '#ff9933', fontWeight: 700 }}>สต็อกยังเหลืออยู่ {item.current_qty} {item.unit}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,153,51,0.7)', marginTop: 4 }}>ควรใช้จนหมดก่อนลบ</div>
+          </div>
+        )}
+
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginBottom: 24 }}>
+          การดำเนินการนี้ไม่สามารถย้อนกลับได้
+        </div>
+
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onCancel} disabled={deleting} style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.12)', background: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 14 }}>
             ยกเลิก
           </button>
           <button onClick={onConfirm} disabled={deleting} style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: 'none', backgroundColor: '#ff4d4d', color: '#fff', fontWeight: 700, fontSize: 14, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.7 : 1 }}>
-            {deleting ? 'กำลังลบ...' : 'ยืนยัน ลบ'}
+            {deleting ? 'กำลังลบ...' : hasStock ? 'ยืนยัน ลบทิ้ง' : 'ยืนยัน ลบ'}
           </button>
         </div>
       </div>
