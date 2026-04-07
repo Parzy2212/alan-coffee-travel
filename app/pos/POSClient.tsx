@@ -62,6 +62,7 @@ type SuccessData = {
   customer: string
   table: string
   discountAmt: number
+  discountReason: string
   received: number
   cartSnapshot: CartItem[]
   subtotal: number
@@ -321,7 +322,48 @@ function DigitalReceiptPopup({
 
   const payLabel = data.method === 'cash' ? 'เงินสด' : data.method === 'qr' ? 'QR Code' : 'โอนเงิน'
 
-  function handlePrint() { window.print() }
+  const [printState, setPrintState] = useState<'idle' | 'printing' | 'done' | 'error'>('idle')
+
+  async function handleThermalPrint() {
+    setPrintState('printing')
+    try {
+      const payload = {
+        shop_name:       settings.shop_name || 'ALAN COFFEE & TRAVEL',
+        queue:           data.queue,
+        receipt:         data.receipt,
+        table:           data.table,
+        customer:        data.customer,
+        cartSnapshot:    data.cartSnapshot,
+        subtotal:        data.subtotal,
+        discountAmt:     data.discountAmt,
+        discount_reason: data.discountReason || '',
+        finalTotal:      data.finalTotal,
+        method:          data.method,
+        received:        data.received,
+        change:          data.change,
+        vat_percent:     settings.vat_percent,
+      }
+      const res = await fetch('http://localhost:12345/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(6000),
+      })
+      if (res.ok) {
+        setPrintState('done')
+        setTimeout(() => setPrintState('idle'), 3000)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+    } catch {
+      setPrintState('error')
+      setTimeout(() => {
+        setPrintState('idle')
+        window.print()
+      }, 1500)
+    }
+  }
 
   return (
     <div style={{
@@ -356,12 +398,21 @@ function DigitalReceiptPopup({
             ใบเสร็จ / Receipt
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handlePrint} style={{
-              padding: '5px 14px', borderRadius: 6,
-              border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`,
-              color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>
-              🖨️ พิมพ์
+            <button
+              onClick={handleThermalPrint}
+              disabled={printState === 'printing'}
+              style={{
+                padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: printState === 'printing' ? 'wait' : 'pointer',
+                border: `1px solid ${printState === 'done' ? GREEN + '88' : printState === 'error' ? RED + '88' : GOLD + '55'}`,
+                backgroundColor: printState === 'done' ? `${GREEN}18` : printState === 'error' ? `${RED}14` : `${GOLD}14`,
+                color: printState === 'done' ? GREEN : printState === 'error' ? '#e07070' : GOLD,
+                minWidth: 120,
+              }}
+            >
+              {printState === 'printing' ? 'กำลังพิมพ์...'
+               : printState === 'done'    ? 'พิมพ์เรียบร้อย ✓'
+               : printState === 'error'   ? 'ไม่พบเครื่องพิมพ์'
+               : '🖨️ พิมพ์ใบเสร็จ'}
             </button>
             <button onClick={onClose} style={{
               padding: '5px 14px', borderRadius: 6,
@@ -579,7 +630,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
   discount: string
   discountReason: string
-  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number) => void
+  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string) => void
   onClose: () => void
 }) {
   const isSmall = useIsSmall()
@@ -662,7 +713,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
     })
 
     const finalReceipt = err2 ? '—' : ((receipt as string) ?? '—')
-    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customer, table, discountAmt, method === 'cash' ? receivedNum : 0)
+    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customer, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason)
     setLoading(false)
   }
 
@@ -918,24 +969,45 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
 // ─── SettingsPopup ────────────────────────────────────────────────────────────
 
 function SettingsPopup({ onClose }: { onClose: () => void }) {
-  const [printerIp,   setPrinterIp]   = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_printer_ip')   ?? '' : '')
-  const [printerPort, setPrinterPort] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_printer_port') ?? '9100' : '9100')
-  const [currency,    setCurrency]    = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_currency')     ?? 'LAK' : 'LAK')
-  const [testDone,    setTestDone]    = useState(false)
+  const [currency,       setCurrency]       = useState(() => typeof window !== 'undefined' ? localStorage.getItem('pos_currency') ?? 'LAK' : 'LAK')
+  const [printerStatus,  setPrinterStatus]  = useState<'idle' | 'checking' | 'online' | 'offline'>('idle')
   const overlayRef = useRef<HTMLDivElement>(null)
 
   function save() {
-    try {
-      localStorage.setItem('pos_printer_ip',   printerIp)
-      localStorage.setItem('pos_printer_port', printerPort)
-      localStorage.setItem('pos_currency',     currency)
-    } catch { /* ignore */ }
+    try { localStorage.setItem('pos_currency', currency) } catch { /* ignore */ }
     onClose()
   }
 
-  function testPrint() {
-    setTestDone(true)
-    setTimeout(() => setTestDone(false), 2500)
+  async function checkPrinter() {
+    setPrinterStatus('checking')
+    try {
+      const res = await fetch('http://localhost:12345/status', { signal: AbortSignal.timeout(3000) })
+      const body = await res.json()
+      setPrinterStatus(body.connected ? 'online' : 'offline')
+    } catch {
+      setPrinterStatus('offline')
+    }
+  }
+
+  async function testPrint() {
+    setPrinterStatus('checking')
+    try {
+      const res = await fetch('http://localhost:12345/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shop_name: 'ALAN COFFEE & TRAVEL',
+          queue: 0, receipt: 'TEST', table: '—', customer: '',
+          cartSnapshot: [{ qty: 1, recipe: { product_name: 'Test Print', price_lak: 0 }, customization: 'printer check' }],
+          subtotal: 0, discountAmt: 0, discount_reason: '', finalTotal: 0,
+          method: 'cash', received: 0, change: 0, vat_percent: 0,
+        }),
+        signal: AbortSignal.timeout(6000),
+      })
+      setPrinterStatus(res.ok ? 'online' : 'offline')
+    } catch {
+      setPrinterStatus('offline')
+    }
   }
 
   return (
@@ -957,23 +1029,32 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
         {/* Printer */}
         <div>
           <div style={{ fontSize: 11, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>เครื่องพิมพ์ใบเสร็จ</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 8, marginBottom: 10 }}>
-            <div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>IP Address</div>
-              <input value={printerIp} onChange={e => setPrinterIp(e.target.value)} style={{ ...popupInput, fontFamily: 'monospace' }} placeholder="192.168.1.100" />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>Port</div>
-              <input value={printerPort} onChange={e => setPrinterPort(e.target.value)} style={{ ...popupInput, fontFamily: 'monospace' }} />
-            </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 10, lineHeight: 1.5 }}>
+            Print server: <span style={{ fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)' }}>localhost:12345</span><br />
+            ตั้งค่าชื่อเครื่องพิมพ์ใน <span style={{ fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)' }}>print-server/server.js</span>
           </div>
-          <button onClick={testPrint} style={{
-            padding: '7px 16px', borderRadius: 6, border: `1px solid ${GOLD}44`,
-            backgroundColor: 'transparent', color: testDone ? GREEN : GOLD,
-            fontSize: 12, cursor: 'pointer',
-          }}>
-            {testDone ? '✓ ส่งสัญญาณแล้ว' : '🖨️ ทดสอบพิมพ์'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={checkPrinter} disabled={printerStatus === 'checking'} style={{
+              padding: '7px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)',
+              backgroundColor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)',
+              fontSize: 12, cursor: printerStatus === 'checking' ? 'wait' : 'pointer',
+            }}>
+              {printerStatus === 'checking' ? 'กำลังตรวจสอบ...' : 'ตรวจสอบการเชื่อมต่อ'}
+            </button>
+            <button onClick={testPrint} disabled={printerStatus === 'checking'} style={{
+              padding: '7px 14px', borderRadius: 6, border: `1px solid ${GOLD}44`,
+              backgroundColor: 'transparent', color: GOLD,
+              fontSize: 12, cursor: printerStatus === 'checking' ? 'wait' : 'pointer',
+            }}>
+              🖨️ ทดสอบพิมพ์
+            </button>
+          </div>
+          {printerStatus !== 'idle' && printerStatus !== 'checking' && (
+            <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600,
+              color: printerStatus === 'online' ? GREEN : '#e07070' }}>
+              {printerStatus === 'online' ? '🟢 เชื่อมต่อแล้ว' : '🔴 ไม่พบเครื่องพิมพ์ — ตรวจสอบ print server'}
+            </div>
+          )}
         </div>
 
         {/* Currency */}
@@ -1624,13 +1705,14 @@ export default function POSClient() {
   // Charge success handler (called from ChargePopup)
   function handleChargeSuccess(
     queueNum: number, receipt: string, change: number, method: PaymentMethod,
-    customer: string, table: string, discAmt: number, received: number,
+    customer: string, table: string, discAmt: number, received: number, discReason: string,
   ) {
     const cartSnapshot = [...cart]
     setSuccessData({
       queue: queueNum, receipt, change, method,
       customer, table,
       discountAmt: discAmt,
+      discountReason: discReason,
       received,
       cartSnapshot,
       subtotal,
