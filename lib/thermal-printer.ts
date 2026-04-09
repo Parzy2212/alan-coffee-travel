@@ -114,10 +114,10 @@ function line(str: string): Uint8Array {
 // We declare just enough of the WebUSB API types to avoid importing a package.
 // Browsers that support WebUSB expose navigator.usb.
 
-interface UsbEndpoint      { direction: string; type: string; endpointNumber: number }
-interface UsbAlternate     { interfaceClass: number; endpoints: UsbEndpoint[] }
+interface UsbEndpoint      { direction: string; type: string; endpointNumber: number; packetSize?: number }
+interface UsbAlternate     { interfaceClass?: number; interfaceSubclass?: number; interfaceProtocol?: number; alternateSetting?: number; endpoints: UsbEndpoint[] }
 interface UsbInterface     { interfaceNumber: number; alternates: UsbAlternate[] }
-interface UsbConfiguration { interfaces: UsbInterface[] }
+interface UsbConfiguration { configurationValue?: number; interfaces: UsbInterface[] }
 interface UsbDevice {
   vendorId:         number
   productId:        number
@@ -160,9 +160,24 @@ function clearPersisted(): void {
   try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
 }
 
-// Scan all interfaces for an OUT endpoint.
-// Pass 1: bulk-OUT (ideal for ESC/POS)
-// Pass 2: any OUT endpoint (interrupt-OUT, some cheap printers)
+// Log the full USB descriptor structure so we can diagnose CDC/vendor devices.
+function logDeviceStructure(device: UsbDevice): void {
+  console.log(`[thermal-printer] Device structure — vendorId: 0x${device.vendorId.toString(16).toUpperCase().padStart(4,'0')} productId: 0x${device.productId.toString(16).toUpperCase().padStart(4,'0')}`)
+  for (const cfg of device.configurations) {
+    console.log(`  configuration ${cfg.configurationValue ?? '?'} (${cfg.interfaces.length} interfaces)`)
+    for (const iface of cfg.interfaces) {
+      for (const alt of iface.alternates) {
+        console.log(`    interface ${iface.interfaceNumber} alt ${alt.alternateSetting} class 0x${(alt.interfaceClass ?? 0).toString(16).toUpperCase()} sub 0x${(alt.interfaceSubclass ?? 0).toString(16).toUpperCase()} proto 0x${(alt.interfaceProtocol ?? 0).toString(16).toUpperCase()}`)
+        for (const ep of alt.endpoints) {
+          console.log(`      endpoint ${ep.endpointNumber} dir=${ep.direction} type=${ep.type} pktSize=${ep.packetSize ?? '?'}`)
+        }
+      }
+    }
+  }
+}
+
+// Scan all configurations/interfaces/alternates for any OUT endpoint.
+// Pass 1: bulk-OUT (standard ESC/POS), Pass 2: any OUT (CDC/interrupt-OUT).
 function findEndpoint(device: UsbDevice): { interfaceNumber: number; endpointNumber: number } | null {
   for (const wantBulk of [true, false]) {
     for (const cfg of device.configurations) {
@@ -171,6 +186,7 @@ function findEndpoint(device: UsbDevice): { interfaceNumber: number; endpointNum
           for (const ep of alt.endpoints) {
             if (ep.direction !== 'out') continue
             if (wantBulk && ep.type !== 'bulk') continue
+            console.log(`[thermal-printer] Using endpoint ${ep.endpointNumber} (${ep.type}-OUT) on interface ${iface.interfaceNumber}`)
             return { interfaceNumber: iface.interfaceNumber, endpointNumber: ep.endpointNumber }
           }
         }
@@ -184,22 +200,34 @@ async function openDevice(device: UsbDevice): Promise<void> {
   await device.open()
   try { await device.selectConfiguration(1) } catch { /* already at config 1 */ }
 
-  // Try every interface until one claims successfully — some printers
-  // expose multiple interfaces and only one is claimable from a browser.
+  logDeviceStructure(device)
+
+  // Try every interface across every configuration — log results so we can
+  // diagnose which interfaces Windows allows vs. blocks.
   const claimed: number[] = []
   for (const cfg of device.configurations) {
     for (const iface of cfg.interfaces) {
       try {
         await device.claimInterface(iface.interfaceNumber)
         claimed.push(iface.interfaceNumber)
-      } catch { /* interface busy or kernel-claimed — skip */ }
+        console.log(`[thermal-printer] Claimed interface ${iface.interfaceNumber}`)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn(`[thermal-printer] Could not claim interface ${iface.interfaceNumber}: ${msg}`)
+        // Surface Windows driver conflict clearly
+        if (msg.toLowerCase().includes('unable to claim interface')) {
+          throw new Error(
+            'Windows กำลังใช้ printer นี้อยู่ — กรุณาลอง: Device Manager → USB Printer Port → Disable device แล้วลอง เชื่อมต่อใหม่'
+          )
+        }
+      }
     }
   }
 
   const ep = findEndpoint(device)
   if (!ep) throw new Error('No OUT endpoint found on this device. Is it a printer?')
 
-  // Release any interfaces we claimed that are NOT the one we need
+  // Release interfaces we do not need
   for (const n of claimed) {
     if (n !== ep.interfaceNumber) {
       await device.releaseInterface(n).catch(() => {/* ignore */})
@@ -254,8 +282,8 @@ export async function connectPrinter(): Promise<string> {
   const api = usb()
   if (!api) throw new Error('WebUSB not supported. Use Chrome or Edge.')
 
-  // filters: [] = show every USB device — user picks Xprinter manually
-  const device = await api.requestDevice({ filters: [] })
+  // Filter to Xprinter XP-58 (vendorId 0x0483, productId 0x5743)
+  const device = await api.requestDevice({ filters: [{ vendorId: 0x0483, productId: 0x5743 }] })
 
   // Log IDs so user can confirm which device was selected
   console.log(
