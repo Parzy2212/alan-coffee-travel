@@ -11,7 +11,10 @@
       "Bash(npx skills:*)",
       "Bash(find /c/Users/Parzy/Desktop/alan-coffee-travel -name \"*.sql\" 2>/dev/null | head -30)",
       "Bash(npx tsc:*)",
-      "Bash(cd \"C:\\\\Users\\\\Parzy\\\\Desktop\\\\alan-coffee-travel\" && python scripts/patch_aitab.py)"
+      "Bash(cd \"C:\\\\Users\\\\Parzy\\\\Desktop\\\\alan-coffee-travel\" && python scripts/patch_aitab.py)",
+      "Bash(grep -h \"CREATE OR REPLACE FUNCTION\" /c/Users/Parzy/Desktop/alan-coffee-travel/supabase/migrations/*.sql)",
+      "Bash(grep -A 20 \"CREATE OR REPLACE FUNCTION get_customers\" /c/Users/Parzy/Desktop/alan-coffee-travel/supabase/migrations/*.sql)",
+      "Bash(grep -A 20 \"CREATE OR REPLACE FUNCTION upsert_customer\" /c/Users/Parzy/Desktop/alan-coffee-travel/supabase/migrations/*.sql)"
     ]
   }
 }
