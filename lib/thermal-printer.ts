@@ -160,17 +160,18 @@ function clearPersisted(): void {
   try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
 }
 
-// Return first bulk-OUT endpoint, preferring printer class (7) then vendor (255) then any
+// Scan all interfaces for an OUT endpoint.
+// Pass 1: bulk-OUT (ideal for ESC/POS)
+// Pass 2: any OUT endpoint (interrupt-OUT, some cheap printers)
 function findEndpoint(device: UsbDevice): { interfaceNumber: number; endpointNumber: number } | null {
-  for (const classFilter of [7, 255, -1]) {
+  for (const wantBulk of [true, false]) {
     for (const cfg of device.configurations) {
       for (const iface of cfg.interfaces) {
         for (const alt of iface.alternates) {
-          if (classFilter !== -1 && alt.interfaceClass !== classFilter) continue
           for (const ep of alt.endpoints) {
-            if (ep.direction === 'out' && ep.type === 'bulk') {
-              return { interfaceNumber: iface.interfaceNumber, endpointNumber: ep.endpointNumber }
-            }
+            if (ep.direction !== 'out') continue
+            if (wantBulk && ep.type !== 'bulk') continue
+            return { interfaceNumber: iface.interfaceNumber, endpointNumber: ep.endpointNumber }
           }
         }
       }
@@ -181,10 +182,34 @@ function findEndpoint(device: UsbDevice): { interfaceNumber: number; endpointNum
 
 async function openDevice(device: UsbDevice): Promise<void> {
   await device.open()
-  try { await device.selectConfiguration(1) } catch { /* already configured */ }
+  try { await device.selectConfiguration(1) } catch { /* already at config 1 */ }
+
+  // Try every interface until one claims successfully — some printers
+  // expose multiple interfaces and only one is claimable from a browser.
+  const claimed: number[] = []
+  for (const cfg of device.configurations) {
+    for (const iface of cfg.interfaces) {
+      try {
+        await device.claimInterface(iface.interfaceNumber)
+        claimed.push(iface.interfaceNumber)
+      } catch { /* interface busy or kernel-claimed — skip */ }
+    }
+  }
+
   const ep = findEndpoint(device)
-  if (!ep) throw new Error('No bulk-OUT endpoint found. Is this a printer?')
-  await device.claimInterface(ep.interfaceNumber)
+  if (!ep) throw new Error('No OUT endpoint found on this device. Is it a printer?')
+
+  // Release any interfaces we claimed that are NOT the one we need
+  for (const n of claimed) {
+    if (n !== ep.interfaceNumber) {
+      await device.releaseInterface(n).catch(() => {/* ignore */})
+    }
+  }
+
+  // Ensure the needed interface is claimed
+  if (!claimed.includes(ep.interfaceNumber)) {
+    await device.claimInterface(ep.interfaceNumber)
+  }
 }
 
 async function sendBytes(data: Uint8Array): Promise<void> {
@@ -224,16 +249,46 @@ export async function getStatus(): Promise<PrinterStatus> {
   }
 }
 
-/** Open browser USB device picker. Resolves with device name on success. */
+/** Open browser USB device picker (shows ALL USB devices). Resolves with device name on success. */
 export async function connectPrinter(): Promise<string> {
   const api = usb()
   if (!api) throw new Error('WebUSB not supported. Use Chrome or Edge.')
+
+  // filters: [] = show every USB device — user picks Xprinter manually
   const device = await api.requestDevice({ filters: [] })
+
+  // Log IDs so user can confirm which device was selected
+  console.log(
+    `[thermal-printer] Selected device — vendorId: 0x${device.vendorId.toString(16).toUpperCase()}`,
+    `productId: 0x${device.productId.toString(16).toUpperCase()}`,
+    `name: "${device.productName || device.manufacturerName || '(none)'}"`,
+  )
+
   await openDevice(device)
   _device = device
   persistDevice(device)
-  return device.productName || device.manufacturerName
-      || `USB ${device.vendorId.toString(16).toUpperCase()}:${device.productId.toString(16).toUpperCase()}`
+
+  const name = device.productName || device.manufacturerName
+    || `USB ${device.vendorId.toString(16).toUpperCase()}:${device.productId.toString(16).toUpperCase()}`
+  console.log(`[thermal-printer] Connected: ${name}`)
+  return name
+}
+
+/** Return info about all USB devices previously granted permission by the user. */
+export async function debugDevices(): Promise<string> {
+  const api = usb()
+  if (!api) return 'WebUSB not supported in this browser.'
+  try {
+    const devices = await api.getDevices()
+    if (devices.length === 0) return 'No paired USB devices found.\nClick "เชื่อมต่อเครื่องพิมพ์" first to grant permission.'
+    return devices.map((d, i) =>
+      `[${i + 1}] ${d.productName || d.manufacturerName || '(unnamed)'}\n` +
+      `    vendorId:  0x${d.vendorId.toString(16).toUpperCase().padStart(4, '0')}\n` +
+      `    productId: 0x${d.productId.toString(16).toUpperCase().padStart(4, '0')}`
+    ).join('\n\n')
+  } catch (e) {
+    return `Error: ${e instanceof Error ? e.message : String(e)}`
+  }
 }
 
 /** Disconnect and forget the printer. */

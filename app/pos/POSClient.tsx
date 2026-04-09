@@ -6,7 +6,7 @@ import { MoneyInput } from '@/components/MoneyInput'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
-  isSupported as printerIsSupported,
+  isSupported as printerIsSupported, debugDevices,
 } from '@/lib/thermal-printer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1015,6 +1015,11 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
     setPrinterBusy(false)
   }
 
+  async function handleDebugUsb() {
+    const info = await debugDevices()
+    alert(`USB Devices (paired with this browser):\n\n${info}`)
+  }
+
   function save() {
     try {
       localStorage.setItem('pos_currency',        currency)
@@ -1095,6 +1100,11 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
                     {printerBusy ? 'กำลังพิมพ์...' : '📄 ทดสอบพิมพ์'}
                   </button>
                 </div>
+                <button onClick={handleDebugUsb} style={{
+                  width: '100%', padding: '7px 0', borderRadius: 7, cursor: 'pointer',
+                  border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent',
+                  color: 'rgba(255,255,255,0.4)', fontSize: 11,
+                }}>🔍 Debug USB</button>
               </>
             )}
           </div>
