@@ -1620,7 +1620,7 @@ export default function POSClient() {
   const [confirmClear,  setConfirmClear]  = useState(false)
   const [activeL1,     setActiveL1]     = useState<string>('All')
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
-  const [now,          setNow]          = useState(new Date())
+  const [now,          setNow]          = useState<Date | null>(null)
   const [chargeStatus, setChargeStatus] = useState<ChargeStatus>('idle')
   const [successData,  setSuccessData]  = useState<SuccessData | null>(null)
   const [posSettings,  setPosSettings]  = useState<PosSettings>({ shop_name: '', vat_percent: 0, qr_payment_number: '', shop_line: '', shop_facebook: '' })
@@ -1642,6 +1642,7 @@ export default function POSClient() {
 
   // Load cart from localStorage after mount (avoids SSR hydration mismatch)
   useEffect(() => {
+    setNow(new Date())
     try {
       const saved = localStorage.getItem('pos_cart')
       if (saved) setCart(JSON.parse(saved) as CartItem[])
@@ -1667,7 +1668,7 @@ export default function POSClient() {
     try { localStorage.setItem('pos_cart', JSON.stringify(cart)) } catch { /* ignore */ }
   }, [cart, mounted])
 
-  // Live clock
+  // Live clock — only runs on client, no SSR mismatch
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(id)
@@ -1682,22 +1683,22 @@ export default function POSClient() {
 
   // Fetch menu
   useEffect(() => {
-    supabase.from('recipes').select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization, default_sweetness')
-      .eq('is_active', true).order('category')
+    supabase.from('recipes').select('id, product_name, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
+      .eq('is_active', true).order('product_name')
       .then(({ data }) => { setRecipes((data as Recipe[]) ?? []); setLoading(false) })
 
     const channel = supabase.channel('recipes-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => {
         supabase.from('recipes')
-          .select('id, product_name, product_name_lo, category, category_id, price_lak, image_url, requires_customization, default_sweetness')
+          .select('id, product_name, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
           .eq('is_active', true)
-          .order('category')
+          .order('product_name')
           .then(({ data }) => {
             if (data) setRecipes(data.map(r => ({
               id: r.id as string,
               product_name: r.product_name as string,
               product_name_lo: r.product_name_lo as string | null,
-              category: r.category as string | null,
+              category: null,
               category_id: r.category_id as string | null,
               price_lak: r.price_lak as number,
               image_url: r.image_url as string | null,
@@ -1834,7 +1835,8 @@ export default function POSClient() {
   }, [])
 
   const loadTodayOrders = useCallback(async () => {
-    const { data } = await supabase.rpc('get_today_orders')
+    const { data, error } = await supabase.rpc('get_today_orders')
+    if (error) { console.warn('[POS] get_today_orders:', error.message); return }
     setTodayOrders((data as TodayOrder[]) ?? [])
   }, [])
 
@@ -1891,8 +1893,8 @@ export default function POSClient() {
     fetchTodayQueue()
   }
 
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-  const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  const timeStr = now ? now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'
+  const dateStr = now ? now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''
 
   const cartPayload = cart.map(item => ({
     recipe_id:      item.recipe.id,
