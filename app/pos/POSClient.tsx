@@ -982,9 +982,23 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const [printerConnected, setPrinterConnected] = useState(false)
   const [printerBusy,      setPrinterBusy]      = useState(false)
   const [webUsbSupported,  setWebUsbSupported]  = useState(true)
+  const [serverOk,         setServerOk]         = useState<boolean | null>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
 
+  async function checkServer(): Promise<boolean> {
+    try {
+      const res = await fetch('http://127.0.0.1:12345/status', { signal: AbortSignal.timeout(2000) })
+      const ok = res.ok
+      setServerOk(ok)
+      return ok
+    } catch {
+      setServerOk(false)
+      return false
+    }
+  }
+
   useEffect(() => {
+    checkServer()
     if (!printerIsSupported()) { setWebUsbSupported(false); return }
     getPrinterStatus().then(s => {
       setPrinterConnected(s.connected)
@@ -1012,6 +1026,8 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
   async function handleTestPrint() {
     setPrinterBusy(true)
+    // Check print server first so status indicator updates before printing
+    await checkServer()
     try { await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL') } catch { /* ignore */ }
     setPrinterBusy(false)
   }
@@ -1075,52 +1091,56 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
                 ระบบจะลองพิมพ์ตามลำดับ: WiFi → Print Server → WebUSB → หน้าจอ
               </div>
             </div>
-            {!webUsbSupported ? (
-              <div style={{ padding: '10px 14px', borderRadius: 8, backgroundColor: 'rgba(220,80,80,0.1)', border: '1px solid rgba(220,80,80,0.25)', fontSize: 12, color: '#e07070', lineHeight: 1.6 }}>
-                ⚠️ WebUSB ไม่รองรับบน browser นี้<br />
-                ใช้ <strong>Chrome</strong> หรือ <strong>Edge</strong> เพื่อพิมพ์ใบเสร็จผ่าน USB
+            {/* Status indicator */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: (serverOk || printerConnected) ? GREEN : 'rgba(255,255,255,0.35)' }}>
+                {serverOk === null
+                  ? '⏳ กำลังตรวจสอบ...'
+                  : serverOk
+                  ? '🟢 Print Server พร้อม'
+                  : printerConnected
+                  ? `🟢 WebUSB เชื่อมต่อแล้ว${printerName ? ` — ${printerName}` : ''}`
+                  : '🔴 ยังไม่เชื่อมต่อ'}
+              </div>
+            </div>
+
+            {/* Test print — always enabled */}
+            <button onClick={handleTestPrint} disabled={printerBusy} style={{
+              width: '100%', padding: '8px 0', borderRadius: 7, marginBottom: 8,
+              border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD,
+              fontSize: 12, fontWeight: 700, cursor: printerBusy ? 'wait' : 'pointer',
+            }}>
+              {printerBusy ? 'กำลังพิมพ์...' : '📄 ทดสอบพิมพ์'}
+            </button>
+
+            {/* WebUSB section */}
+            {webUsbSupported ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                {!printerConnected ? (
+                  <button onClick={handleConnect} disabled={printerBusy} style={{
+                    flex: 1, padding: '7px 0', borderRadius: 7,
+                    border: '1px solid rgba(255,255,255,0.12)', backgroundColor: 'transparent',
+                    color: 'rgba(255,255,255,0.45)', fontSize: 11, cursor: printerBusy ? 'wait' : 'pointer',
+                  }}>
+                    {printerBusy ? '...' : '🔌 เชื่อมต่อ WebUSB'}
+                  </button>
+                ) : (
+                  <button onClick={handleDisconnect} style={{
+                    flex: 1, padding: '7px 0', borderRadius: 7,
+                    border: '1px solid rgba(220,80,80,0.3)', backgroundColor: 'rgba(220,80,80,0.08)',
+                    color: '#e07070', fontSize: 11, cursor: 'pointer',
+                  }}>ยกเลิก WebUSB</button>
+                )}
+                <button onClick={handleDebugUsb} style={{
+                  flex: 1, padding: '7px 0', borderRadius: 7,
+                  border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent',
+                  color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: 'pointer',
+                }}>🔍 Debug USB</button>
               </div>
             ) : (
-              <>
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: printerConnected ? GREEN : 'rgba(255,255,255,0.35)' }}>
-                    {printerConnected
-                      ? `🟢 เชื่อมต่อแล้ว${printerName ? ` — ${printerName}` : ''}`
-                      : `🔴 ยังไม่เชื่อมต่อ${printerName ? ` (${printerName})` : ''}`}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {!printerConnected ? (
-                    <button onClick={handleConnect} disabled={printerBusy} style={{
-                      flex: 1, padding: '8px 0', borderRadius: 7, border: `1px solid ${GOLD}55`,
-                      backgroundColor: `${GOLD}14`, color: GOLD,
-                      fontSize: 12, fontWeight: 700, cursor: printerBusy ? 'wait' : 'pointer',
-                    }}>
-                      {printerBusy ? 'กำลังเชื่อมต่อ...' : '🔌 เชื่อมต่อเครื่องพิมพ์'}
-                    </button>
-                  ) : (
-                    <button onClick={handleDisconnect} style={{
-                      flex: 1, padding: '8px 0', borderRadius: 7,
-                      border: '1px solid rgba(220,80,80,0.3)', backgroundColor: 'rgba(220,80,80,0.08)',
-                      color: '#e07070', fontSize: 12, cursor: 'pointer',
-                    }}>ยกเลิกการเชื่อมต่อ</button>
-                  )}
-                  <button onClick={handleTestPrint} disabled={!printerConnected || printerBusy} style={{
-                    flex: 1, padding: '8px 0', borderRadius: 7,
-                    border: `1px solid ${printerConnected ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.07)'}`,
-                    backgroundColor: 'transparent',
-                    color: printerConnected ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)',
-                    fontSize: 12, cursor: printerConnected && !printerBusy ? 'pointer' : 'not-allowed',
-                  }}>
-                    {printerBusy ? 'กำลังพิมพ์...' : '📄 ทดสอบพิมพ์'}
-                  </button>
-                </div>
-                <button onClick={handleDebugUsb} style={{
-                  width: '100%', padding: '7px 0', borderRadius: 7, cursor: 'pointer',
-                  border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent',
-                  color: 'rgba(255,255,255,0.4)', fontSize: 11,
-                }}>🔍 Debug USB</button>
-              </>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
+                WebUSB ไม่รองรับ (ใช้ Chrome/Edge) — Print Server ยังใช้งานได้
+              </div>
             )}
           </div>
 
