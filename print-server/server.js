@@ -74,55 +74,89 @@ function printToTcp(data, ip) {
 
 // ── Named-printer (Windows spooler) printing ─────────────────────────────────
 
-// Returns the Windows port name (e.g. "USB001") for a given printer display name.
-function getPortForPrinter(printerName) {
+// Send raw ESC/POS bytes to the Windows print spooler by printer name using
+// Win32 winspool.drv via .NET P/Invoke. Works for ALL port types (USB, LPT,
+// network, virtual) — no port lookup needed.
+function printRawByName(data, printerName) {
   return new Promise((resolve, reject) => {
-    // Escape single quotes in printer name for PowerShell
+    const ts  = Date.now()
+    const bin = path.join(os.tmpdir(), `alan_pos_${ts}.bin`)
+    const ps1 = path.join(os.tmpdir(), `alan_pos_${ts}.ps1`)
+
+    try { fs.writeFileSync(bin, data) } catch (e) { return reject(e) }
+
+    // Escape for PowerShell single-quoted strings
     const safeName = printerName.replace(/'/g, "''")
+    // Double-backslash the temp path for use inside PS single-quoted string
+    const safeBin  = bin.replace(/\\/g, '\\\\')
+
+    const script = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class RawPrint {
+  [DllImport("winspool.drv", CharSet=CharSet.Auto, SetLastError=true)]
+  public static extern bool OpenPrinter(string n, out IntPtr h, IntPtr d);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.drv", CharSet=CharSet.Auto, SetLastError=true)]
+  public static extern int StartDocPrinter(IntPtr h, int lvl, ref DOCINFO di);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool WritePrinter(IntPtr h, IntPtr buf, int n, out int w);
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)]
+  public struct DOCINFO {
+    public int cbSize; public string pDocName;
+    public string pOutputFile; public string pDatatype; public int fwType;
+  }
+}
+"@ -ErrorAction SilentlyContinue
+$bytes = [System.IO.File]::ReadAllBytes('${safeBin}')
+$h = [IntPtr]::Zero
+[RawPrint]::OpenPrinter('${safeName}', [ref]$h, [IntPtr]::Zero) | Out-Null
+if ($h -eq [IntPtr]::Zero) { throw "Could not open printer '${safeName}'" }
+$di = New-Object RawPrint+DOCINFO
+$di.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($di)
+$di.pDocName = 'AlanPOS Receipt'
+$di.pDatatype = 'RAW'
+[RawPrint]::StartDocPrinter($h, 1, [ref]$di) | Out-Null
+[RawPrint]::StartPagePrinter($h) | Out-Null
+$ptr = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
+[System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $ptr, $bytes.Length)
+$w = 0
+[RawPrint]::WritePrinter($h, $ptr, $bytes.Length, [ref]$w) | Out-Null
+[System.Runtime.InteropServices.Marshal]::FreeHGlobal($ptr)
+[RawPrint]::EndPagePrinter($h) | Out-Null
+[RawPrint]::EndDocPrinter($h) | Out-Null
+[RawPrint]::ClosePrinter($h) | Out-Null
+Write-Output "OK:$w"
+`.trim()
+
+    try { fs.writeFileSync(ps1, script, 'utf8') } catch (e) { return reject(e) }
+
     execFile(
       'powershell',
-      ['-NoProfile', '-Command', `Get-Printer -Name '${safeName}' | Select-Object -ExpandProperty PortName`],
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1],
       (err, stdout, stderr) => {
-        if (err) return reject(new Error(`PowerShell query failed: ${stderr.trim() || err.message}`))
-        const port = stdout.trim()
-        if (!port) return reject(new Error(`Printer "${printerName}" not found`))
-        resolve(port)
+        try { fs.unlinkSync(bin) } catch {}
+        try { fs.unlinkSync(ps1) } catch {}
+        if (err) return reject(new Error(`Raw spool failed: ${stderr.trim() || err.message}`))
+        const out = stdout.trim()
+        if (!out.includes('OK:')) return reject(new Error(`Spool error: ${out || stderr.trim()}`))
+        resolve()
       }
     )
   })
 }
 
-// Print ESC/POS bytes to a named Windows printer by looking up its port first.
-// Falls back to auto-USB scan if port lookup fails.
 async function printByName(data, printerName) {
-  let port
-  try {
-    port = await getPortForPrinter(printerName)
-    console.log(`[alan-pos] Printer "${printerName}" → port ${port}`)
-  } catch (e) {
-    console.warn(`[alan-pos] Port lookup failed (${e.message}), falling back to USB scan`)
-    return printToUsb(data)
-  }
-
-  // USB / LPT ports: reuse copy-to-port helper (strips the trailing ":" if present)
-  const basePort = port.replace(/:$/, '')
-  if (/^(USB|LPT)\d+$/i.test(basePort)) {
-    await tryUsbPort(basePort, data)
-    console.log(`[alan-pos] Printed "${printerName}" via ${basePort}`)
-    return
-  }
-
-  // Network port like "IP_192.168.1.x" — extract IP and use TCP
-  const ipMatch = basePort.match(/^(?:IP_)?(\d+\.\d+\.\d+\.\d+)$/)
-  if (ipMatch) {
-    await printToTcp(data, ipMatch[1])
-    console.log(`[alan-pos] Printed "${printerName}" via TCP ${ipMatch[1]}`)
-    return
-  }
-
-  // Unknown port type — fall back to auto USB scan
-  console.warn(`[alan-pos] Unknown port "${port}", falling back to USB scan`)
-  await printToUsb(data)
+  await printRawByName(data, printerName)
+  console.log(`[alan-pos] Printed "${printerName}" via Windows spooler`)
 }
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
