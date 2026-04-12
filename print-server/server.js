@@ -72,12 +72,66 @@ function printToTcp(data, ip) {
   })
 }
 
+// ── Named-printer (Windows spooler) printing ─────────────────────────────────
+
+// Returns the Windows port name (e.g. "USB001") for a given printer display name.
+function getPortForPrinter(printerName) {
+  return new Promise((resolve, reject) => {
+    // wmic output: "PortName=USB001\r\n\r\n" — parse the value after "="
+    execFile(
+      'wmic',
+      ['printer', 'where', `name='${printerName}'`, 'get', 'PortName', '/value'],
+      (err, stdout) => {
+        if (err) return reject(new Error(`wmic query failed: ${err.message}`))
+        const match = stdout.match(/PortName=(.+)/i)
+        if (!match || !match[1].trim()) {
+          return reject(new Error(`Printer "${printerName}" not found via wmic`))
+        }
+        resolve(match[1].trim())
+      }
+    )
+  })
+}
+
+// Print ESC/POS bytes to a named Windows printer by looking up its port first.
+// Falls back to auto-USB scan if port lookup fails.
+async function printByName(data, printerName) {
+  let port
+  try {
+    port = await getPortForPrinter(printerName)
+    console.log(`[alan-pos] Printer "${printerName}" → port ${port}`)
+  } catch (e) {
+    console.warn(`[alan-pos] Port lookup failed (${e.message}), falling back to USB scan`)
+    return printToUsb(data)
+  }
+
+  // USB / LPT ports: reuse copy-to-port helper (strips the trailing ":" if present)
+  const basePort = port.replace(/:$/, '')
+  if (/^(USB|LPT)\d+$/i.test(basePort)) {
+    await tryUsbPort(basePort, data)
+    console.log(`[alan-pos] Printed "${printerName}" via ${basePort}`)
+    return
+  }
+
+  // Network port like "IP_192.168.1.x" — extract IP and use TCP
+  const ipMatch = basePort.match(/^(?:IP_)?(\d+\.\d+\.\d+\.\d+)$/)
+  if (ipMatch) {
+    await printToTcp(data, ipMatch[1])
+    console.log(`[alan-pos] Printed "${printerName}" via TCP ${ipMatch[1]}`)
+    return
+  }
+
+  // Unknown port type — fall back to auto USB scan
+  console.warn(`[alan-pos] Unknown port "${port}", falling back to USB scan`)
+  await printToUsb(data)
+}
+
 // ── HTTP server ───────────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Printer-IP')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Printer-IP, X-Printer-Name')
 
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
@@ -87,23 +141,44 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  if (req.method === 'GET' && req.url === '/printers') {
+    execFile('wmic', ['printer', 'get', 'name'], (err, stdout) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: err.message }))
+        return
+      }
+      const printers = stdout
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l && l !== 'Name')
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, printers }))
+    })
+    return
+  }
+
   if (req.method === 'POST' && req.url === '/print') {
     const chunks = []
     req.on('data', c => chunks.push(c))
     req.on('end', async () => {
-      const data       = Buffer.concat(chunks)
-      const printerIp  = req.headers['x-printer-ip']  || ''
+      const data        = Buffer.concat(chunks)
+      const printerIp   = req.headers['x-printer-ip']   || ''
+      const printerName = req.headers['x-printer-name'] || ''
       // Paper width from browser: 58 (32 chars) or 80 (48 chars) — already applied
       // in ESC/POS bytes by the browser; logged here for diagnostics only
-      const paperWidth = req.headers['x-paper-width'] || '58'
+      const paperWidth  = req.headers['x-paper-width']  || '58'
 
       try {
-        if (printerIp) {
+        if (printerName) {
+          await printByName(data, printerName)
+          console.log(`[alan-pos] Printed to "${printerName}" (${paperWidth}mm)`)
+        } else if (printerIp) {
           await printToTcp(data, printerIp)
           console.log(`[alan-pos] Printed via WiFi TCP ${printerIp} (${paperWidth}mm)`)
         } else {
           await printToUsb(data)
-          console.log(`[alan-pos] Printed via USB (${paperWidth}mm)`)
+          console.log(`[alan-pos] Printed via USB auto-detect (${paperWidth}mm)`)
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true, paperWidth }))

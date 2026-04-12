@@ -265,6 +265,7 @@ async function sendBytes(data: Uint8Array): Promise<void> {
 // ── WiFi / Print-Server helpers ───────────────────────────────────────────────
 
 const PRINTER_IP_KEY     = 'pos_printer_ip'
+const PRINTER_NAME_KEY   = 'pos_printer_name'
 const PRINT_SERVER_URL   = 'http://127.0.0.1:12345/print'
 const WIFI_TIMEOUT_MS    = 4000
 const SERVER_TIMEOUT_MS  = 5000
@@ -276,6 +277,16 @@ export function setPrinterIp(ip: string): void {
   try {
     if (ip.trim()) localStorage.setItem(PRINTER_IP_KEY, ip.trim())
     else           localStorage.removeItem(PRINTER_IP_KEY)
+  } catch { /* ignore */ }
+}
+
+export function getPrinterName(): string {
+  try { return localStorage.getItem(PRINTER_NAME_KEY) ?? '' } catch { return '' }
+}
+export function setPrinterName(name: string): void {
+  try {
+    if (name.trim()) localStorage.setItem(PRINTER_NAME_KEY, name.trim())
+    else             localStorage.removeItem(PRINTER_NAME_KEY)
   } catch { /* ignore */ }
 }
 
@@ -295,6 +306,8 @@ async function sendViaPrintServer(data: Uint8Array, ip?: string): Promise<void> 
     'X-Paper-Width': String(getPaperWidth()),
   }
   if (ip) headers['X-Printer-IP'] = ip
+  const printerName = getPrinterName()
+  if (printerName) headers['X-Printer-Name'] = printerName
   const res = await fetch(PRINT_SERVER_URL, {
     method:  'POST',
     body:    new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
