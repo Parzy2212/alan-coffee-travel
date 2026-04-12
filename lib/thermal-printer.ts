@@ -251,6 +251,48 @@ async function sendBytes(data: Uint8Array): Promise<void> {
   }
 }
 
+// ── WiFi / Print-Server helpers ───────────────────────────────────────────────
+
+const PRINTER_IP_KEY     = 'pos_printer_ip'
+const PRINT_SERVER_URL   = 'http://127.0.0.1:12345/print'
+const WIFI_TIMEOUT_MS    = 4000
+const SERVER_TIMEOUT_MS  = 5000
+
+export function getPrinterIp(): string {
+  try { return localStorage.getItem(PRINTER_IP_KEY) ?? '' } catch { return '' }
+}
+export function setPrinterIp(ip: string): void {
+  try {
+    if (ip.trim()) localStorage.setItem(PRINTER_IP_KEY, ip.trim())
+    else           localStorage.removeItem(PRINTER_IP_KEY)
+  } catch { /* ignore */ }
+}
+
+async function sendViaWifi(data: Uint8Array, ip: string): Promise<void> {
+  const res = await fetch(`http://${ip}:9100`, {
+    method:  'POST',
+    body:    new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
+    headers: { 'Content-Type': 'application/octet-stream' },
+    signal:  AbortSignal.timeout(WIFI_TIMEOUT_MS),
+  })
+  if (!res.ok) throw new Error(`WiFi printer responded ${res.status}`)
+}
+
+async function sendViaPrintServer(data: Uint8Array, ip?: string): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' }
+  if (ip) headers['X-Printer-IP'] = ip
+  const res = await fetch(PRINT_SERVER_URL, {
+    method:  'POST',
+    body:    new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
+    headers,
+    signal:  AbortSignal.timeout(SERVER_TIMEOUT_MS),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? `Print server responded ${res.status}`)
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function isSupported(): boolean {
@@ -340,14 +382,9 @@ export async function testPrint(shopName = 'ALAN COFFEE & TRAVEL'): Promise<void
   })
 }
 
-/** Build ESC/POS receipt and send to printer. */
+/** Build ESC/POS receipt and send to printer.
+ *  Tries in order: WiFi (port 9100) → local print server → WebUSB → window.print() */
 export async function printReceipt(data: PrintReceiptData): Promise<void> {
-  // Auto-reconnect if device was previously paired
-  if (!_device) {
-    const s = await getStatus()
-    if (!s.connected) throw new Error('Printer not connected')
-  }
-
   const now     = new Date()
   const dateStr = now.toLocaleDateString('en-GB')
   const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -421,5 +458,50 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   // Feed + partial cut
   p(CMD.feed3, CMD.cutPartial)
 
-  await sendBytes(concat(...parts))
+  const bytes  = concat(...parts)
+  const ip     = getPrinterIp()
+  const errors: string[] = []
+
+  // ── Method 1: WiFi direct (browser → printer:9100) ────────────────────────
+  if (ip) {
+    try {
+      await sendViaWifi(bytes, ip)
+      console.log(`[thermal-printer] Printed via WiFi ${ip}:9100`)
+      return
+    } catch (e) {
+      errors.push(`WiFi: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  // ── Method 2: Local print server (localhost:12345) ─────────────────────────
+  try {
+    // Pass IP to server so it can forward via TCP if needed
+    await sendViaPrintServer(bytes, ip || undefined)
+    console.log('[thermal-printer] Printed via local print server')
+    return
+  } catch (e) {
+    errors.push(`PrintServer: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  // ── Method 3: WebUSB ───────────────────────────────────────────────────────
+  try {
+    if (!_device) {
+      const s = await getStatus()
+      if (!s.connected) throw new Error('not connected')
+    }
+    await sendBytes(bytes)
+    console.log('[thermal-printer] Printed via WebUSB')
+    return
+  } catch (e) {
+    errors.push(`WebUSB: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  // ── Method 4: window.print() fallback ─────────────────────────────────────
+  console.warn('[thermal-printer] All hardware methods failed — falling back to window.print()', errors)
+  if (typeof window !== 'undefined') {
+    window.print()
+    return
+  }
+
+  throw new Error(`ไม่สามารถพิมพ์ได้ — ${errors.join(' | ')}`)
 }

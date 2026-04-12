@@ -1,0 +1,13 @@
+{
+  "name": "alan-pos-print-server",
+  "version": "1.0.0",
+  "description": "AlanPOS local print server for Xprinter USB 58mm",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "pkg server.js --target node18-win-x64 --output AlanPOS-PrintServer.exe"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  }
+}

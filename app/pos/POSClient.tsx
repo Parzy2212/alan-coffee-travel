@@ -970,6 +970,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const ls = (k: string, fallback = '') => typeof window !== 'undefined' ? localStorage.getItem(k) ?? fallback : fallback
 
   const [currency,   setCurrency]   = useState(() => ls('pos_currency', 'LAK'))
+  const [printerIp,  setPrinterIpState] = useState(() => ls('printer_ip'))
   const [shopName,   setShopName]   = useState(() => ls('receipt_shop_name'))
   const [footerText, setFooterText] = useState(() => ls('receipt_footer_text', 'ขอบคุณที่ใช้บริการ'))
   const [phone,      setPhone]      = useState(() => ls('receipt_phone'))
@@ -1023,6 +1024,8 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   function save() {
     try {
       localStorage.setItem('pos_currency',        currency)
+      if (printerIp.trim()) localStorage.setItem('printer_ip', printerIp.trim())
+      else                  localStorage.removeItem('printer_ip')
       localStorage.setItem('receipt_shop_name',   shopName)
       localStorage.setItem('receipt_footer_text', footerText)
       localStorage.setItem('receipt_phone',       phone)
@@ -1059,7 +1062,19 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
           {/* Printer */}
           <div>
-            <div style={sectionLabel}>เครื่องพิมพ์ใบเสร็จ (WebUSB)</div>
+            <div style={sectionLabel}>เครื่องพิมพ์ใบเสร็จ</div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>IP เครื่องพิมพ์ WiFi (ถ้ามี)</div>
+              <input
+                value={printerIp}
+                onChange={e => setPrinterIpState(e.target.value)}
+                style={popupInput}
+                placeholder="192.168.1.100  (ว่างไว้ = ใช้ USB)"
+              />
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
+                ระบบจะลองพิมพ์ตามลำดับ: WiFi → Print Server → WebUSB → หน้าจอ
+              </div>
+            </div>
             {!webUsbSupported ? (
               <div style={{ padding: '10px 14px', borderRadius: 8, backgroundColor: 'rgba(220,80,80,0.1)', border: '1px solid rgba(220,80,80,0.25)', fontSize: 12, color: '#e07070', lineHeight: 1.6 }}>
                 ⚠️ WebUSB ไม่รองรับบน browser นี้<br />
