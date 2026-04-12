@@ -77,17 +77,16 @@ function printToTcp(data, ip) {
 // Returns the Windows port name (e.g. "USB001") for a given printer display name.
 function getPortForPrinter(printerName) {
   return new Promise((resolve, reject) => {
-    // wmic output: "PortName=USB001\r\n\r\n" — parse the value after "="
+    // Escape single quotes in printer name for PowerShell
+    const safeName = printerName.replace(/'/g, "''")
     execFile(
-      'wmic',
-      ['printer', 'where', `name='${printerName}'`, 'get', 'PortName', '/value'],
-      (err, stdout) => {
-        if (err) return reject(new Error(`wmic query failed: ${err.message}`))
-        const match = stdout.match(/PortName=(.+)/i)
-        if (!match || !match[1].trim()) {
-          return reject(new Error(`Printer "${printerName}" not found via wmic`))
-        }
-        resolve(match[1].trim())
+      'powershell',
+      ['-NoProfile', '-Command', `Get-Printer -Name '${safeName}' | Select-Object -ExpandProperty PortName`],
+      (err, stdout, stderr) => {
+        if (err) return reject(new Error(`PowerShell query failed: ${stderr.trim() || err.message}`))
+        const port = stdout.trim()
+        if (!port) return reject(new Error(`Printer "${printerName}" not found`))
+        resolve(port)
       }
     )
   })
@@ -142,19 +141,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && req.url === '/printers') {
-    execFile('wmic', ['printer', 'get', 'name'], (err, stdout) => {
-      if (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: err.message }))
-        return
+    execFile(
+      'powershell',
+      ['-NoProfile', '-Command', 'Get-Printer | Select-Object -ExpandProperty Name'],
+      (err, stdout, stderr) => {
+        if (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: stderr.trim() || err.message }))
+          return
+        }
+        const printers = stdout
+          .split('\n')
+          .map(l => l.trim())
+          .filter(l => l)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, printers }))
       }
-      const printers = stdout
-        .split('\n')
-        .map(l => l.trim())
-        .filter(l => l && l !== 'Name')
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, printers }))
-    })
+    )
     return
   }
 
