@@ -50,7 +50,18 @@ const CMD = {
   cutPartial:  [GS,  0x56, 0x41, 0x10],
 }
 
-const WIDTH = 32 // 58mm = 32 chars at standard font
+const WIDTH_58 = 32 // 58mm paper = 32 chars at standard font
+const WIDTH_80 = 48 // 80mm paper = 48 chars at standard font
+
+const PAPER_WIDTH_KEY = 'pos_paper_width'
+
+export function getPaperWidth(): 58 | 80 {
+  try { return localStorage.getItem(PAPER_WIDTH_KEY) === '80' ? 80 : 58 } catch { return 58 }
+}
+
+function charWidth(mm: 58 | 80): number {
+  return mm === 80 ? WIDTH_80 : WIDTH_58
+}
 
 // ── TIS-620 encoding ──────────────────────────────────────────────────────────
 // Thai Unicode U+0E01–U+0E5B → TIS-620 byte = codepoint − 0x0D60
@@ -82,11 +93,11 @@ function padR(str: string, len: number): string {
   return bl >= len ? str : str + ' '.repeat(len - bl)
 }
 
-// Two-column row: label left, value right, total = WIDTH bytes
-function twoCol(left: string, right: string): string {
-  const lLen  = byteLen(left)
-  const rLen  = right.length // right is always ASCII numbers
-  const spaces = WIDTH - lLen - rLen
+// Two-column row: label left, value right, total = w bytes
+function twoCol(left: string, right: string, w: number): string {
+  const lLen   = byteLen(left)
+  const rLen   = right.length // right is always ASCII numbers
+  const spaces = w - lLen - rLen
   return left + (spaces > 0 ? ' '.repeat(spaces) : ' ') + right
 }
 
@@ -279,7 +290,10 @@ async function sendViaWifi(data: Uint8Array, ip: string): Promise<void> {
 }
 
 async function sendViaPrintServer(data: Uint8Array, ip?: string): Promise<void> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' }
+  const headers: Record<string, string> = {
+    'Content-Type':  'application/octet-stream',
+    'X-Paper-Width': String(getPaperWidth()),
+  }
   if (ip) headers['X-Printer-IP'] = ip
   const res = await fetch(PRINT_SERVER_URL, {
     method:  'POST',
@@ -385,11 +399,12 @@ export async function testPrint(shopName = 'ALAN COFFEE & TRAVEL'): Promise<void
 /** Build ESC/POS receipt and send to printer.
  *  Tries in order: WiFi (port 9100) → local print server → WebUSB → window.print() */
 export async function printReceipt(data: PrintReceiptData): Promise<void> {
-  const now     = new Date()
-  const dateStr = now.toLocaleDateString('en-GB')
-  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  const sep1    = '='.repeat(WIDTH)
-  const sep2    = '-'.repeat(WIDTH)
+  const W        = charWidth(getPaperWidth()) // 32 or 48 depending on paper setting
+  const now      = new Date()
+  const dateStr  = now.toLocaleDateString('en-GB')
+  const timeStr  = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const sep1     = '='.repeat(W)
+  const sep2     = '-'.repeat(W)
   const payLabel = data.method === 'cash' ? 'เงินสด'
                  : data.method === 'qr'   ? 'QR Code'
                  : 'โอนเงิน'
@@ -401,14 +416,15 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   p(CMD.init, CMD.codePage874)
 
   // Shop name — center, large, bold
+  // Large text = 2× width, so max chars = W / 2
   p(CMD.alignCenter, CMD.sizeLarge, CMD.boldOn)
-  p(line(data.shopName.substring(0, 16))) // large text = 2× width, 16 chars fills 32
+  p(line(data.shopName.substring(0, Math.floor(W / 2))))
   p(CMD.boldOff, CMD.sizeNormal)
 
   // Date / time / order number
   p(line(`${dateStr} ${timeStr}`))
   p(line(data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`))
-  if (data.customer) p(line(data.customer.substring(0, WIDTH)))
+  if (data.customer) p(line(data.customer.substring(0, W)))
 
   // Items
   p(CMD.alignLeft)
@@ -419,40 +435,40 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     const price = fmtLak((item.recipe.price_lak || 0) * item.qty)
     const qty   = `x${item.qty}`
     // Row 1: name + qty
-    p(line(padR(name, WIDTH - qty.length - 1) + ' ' + qty))
+    p(line(padR(name, W - qty.length - 1) + ' ' + qty))
     // Row 2: customization + price
     const cust = item.customization ? `  ${item.customization}` : ''
-    p(line(padR(cust, WIDTH - price.length - 1) + ' ' + price))
+    p(line(padR(cust, W - price.length - 1) + ' ' + price))
   }
 
   // Totals
   p(line(sep2))
-  p(line(twoCol('ยอดรวม', fmtLak(data.subtotal))))
+  p(line(twoCol('ยอดรวม', fmtLak(data.subtotal), W)))
   if (data.discountAmt > 0) {
     const lbl = data.discountReason ? `ส่วนลด (${data.discountReason})` : 'ส่วนลด'
-    p(line(twoCol(lbl, fmtLak(data.discountAmt))))
+    p(line(twoCol(lbl, fmtLak(data.discountAmt), W)))
   } else {
-    p(line(twoCol('ส่วนลด', '0')))
+    p(line(twoCol('ส่วนลด', '0', W)))
   }
   p(CMD.boldOn)
-  p(line(twoCol('ยอดสุทธิ', fmtLak(data.finalTotal))))
+  p(line(twoCol('ยอดสุทธิ', fmtLak(data.finalTotal), W)))
   p(CMD.boldOff)
 
   // Payment
   p(line(sep1))
-  p(line(twoCol('ชำระด้วย:', payLabel)))
+  p(line(twoCol('ชำระด้วย:', payLabel, W)))
   if (data.method === 'cash' && data.received > 0) {
-    p(line(twoCol('รับมา:', fmtLak(data.received))))
-    p(line(twoCol('เงินทอน:', fmtLak(data.change))))
+    p(line(twoCol('รับมา:', fmtLak(data.received), W)))
+    p(line(twoCol('เงินทอน:', fmtLak(data.change), W)))
   }
 
   // Footer
   p(line(sep1))
   p(CMD.alignCenter)
-  p(line((data.footerText || 'ขอบคุณที่ใช้บริการ').substring(0, WIDTH)))
+  p(line((data.footerText || 'ขอบคุณที่ใช้บริการ').substring(0, W)))
   p(line('Thank you & come back'))
-  if (data.address) p(line(data.address.substring(0, WIDTH)))
-  if (data.phone)   p(line(data.phone.substring(0, WIDTH)))
+  if (data.address) p(line(data.address.substring(0, W)))
+  if (data.phone)   p(line(data.phone.substring(0, W)))
   p(line(sep1))
 
   // Feed + partial cut

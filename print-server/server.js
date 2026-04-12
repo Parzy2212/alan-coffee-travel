@@ -91,18 +91,22 @@ const server = http.createServer(async (req, res) => {
     const chunks = []
     req.on('data', c => chunks.push(c))
     req.on('end', async () => {
-      const data      = Buffer.concat(chunks)
-      const printerIp = req.headers['x-printer-ip'] || ''
+      const data       = Buffer.concat(chunks)
+      const printerIp  = req.headers['x-printer-ip']  || ''
+      // Paper width from browser: 58 (32 chars) or 80 (48 chars) — already applied
+      // in ESC/POS bytes by the browser; logged here for diagnostics only
+      const paperWidth = req.headers['x-paper-width'] || '58'
 
       try {
         if (printerIp) {
           await printToTcp(data, printerIp)
-          console.log(`[alan-pos] Printed via WiFi TCP ${printerIp}`)
+          console.log(`[alan-pos] Printed via WiFi TCP ${printerIp} (${paperWidth}mm)`)
         } else {
           await printToUsb(data)
+          console.log(`[alan-pos] Printed via USB (${paperWidth}mm)`)
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true }))
+        res.end(JSON.stringify({ ok: true, paperWidth }))
       } catch (err) {
         console.error('[alan-pos] Print failed:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })

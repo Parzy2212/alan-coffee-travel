@@ -969,8 +969,9 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
 function SettingsPopup({ onClose }: { onClose: () => void }) {
   const ls = (k: string, fallback = '') => typeof window !== 'undefined' ? localStorage.getItem(k) ?? fallback : fallback
 
-  const [currency,   setCurrency]   = useState(() => ls('pos_currency', 'LAK'))
-  const [printerIp,  setPrinterIpState] = useState(() => ls('printer_ip'))
+  const [currency,    setCurrency]    = useState(() => ls('pos_currency', 'LAK'))
+  const [printerIp,   setPrinterIpState] = useState(() => ls('printer_ip'))
+  const [paperWidth,  setPaperWidth]  = useState<'58' | '80'>(() => ls('pos_paper_width', '58') === '80' ? '80' : '58')
   const [shopName,   setShopName]   = useState(() => ls('receipt_shop_name'))
   const [footerText, setFooterText] = useState(() => ls('receipt_footer_text', 'ขอบคุณที่ใช้บริการ'))
   const [phone,      setPhone]      = useState(() => ls('receipt_phone'))
@@ -1006,12 +1007,22 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
     })
   }, [])
 
+  function detectPaperWidth(name: string | null): 58 | 80 | null {
+    if (!name) return null
+    const n = name.toLowerCase()
+    if (/58/.test(n)) return 58
+    if (/80/.test(n)) return 80
+    return null
+  }
+
   async function handleConnect() {
     setPrinterBusy(true)
     try {
       const name = await connectPrinter()
       setPrinterConnected(true)
       setPrinterName(name)
+      const detected = detectPaperWidth(name)
+      if (detected) setPaperWidth(String(detected) as '58' | '80')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       if (!msg.includes('No device selected') && !msg.includes('cancelled')) setPrinterConnected(false)
@@ -1040,6 +1051,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   function save() {
     try {
       localStorage.setItem('pos_currency',        currency)
+      localStorage.setItem('pos_paper_width',    paperWidth)
       if (printerIp.trim()) localStorage.setItem('printer_ip', printerIp.trim())
       else                  localStorage.removeItem('printer_ip')
       localStorage.setItem('receipt_shop_name',   shopName)
@@ -1091,6 +1103,37 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
                 ระบบจะลองพิมพ์ตามลำดับ: WiFi → Print Server → WebUSB → หน้าจอ
               </div>
             </div>
+
+            {/* Paper size */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 6 }}>ขนาดกระดาษ</div>
+              {(() => {
+                const detected = detectPaperWidth(printerName)
+                if (detected) {
+                  return (
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                      📄 {detected}mm (ตรวจพบอัตโนมัติ)
+                    </div>
+                  )
+                }
+                return (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {(['58', '80'] as const).map(w => (
+                      <button key={w} onClick={() => setPaperWidth(w)} style={{
+                        flex: 1, padding: '7px 0', borderRadius: 7, cursor: 'pointer',
+                        fontSize: 12, fontWeight: paperWidth === w ? 700 : 400,
+                        border: `1px solid ${paperWidth === w ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                        backgroundColor: paperWidth === w ? `${GOLD}18` : 'transparent',
+                        color: paperWidth === w ? GOLD : 'rgba(255,255,255,0.45)',
+                      }}>
+                        📄 {w}mm
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+
             {/* Status indicator */}
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: (serverOk || printerConnected) ? GREEN : 'rgba(255,255,255,0.35)' }}>
