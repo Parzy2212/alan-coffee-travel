@@ -159,6 +159,52 @@ async function printByName(data, printerName) {
   console.log(`[alan-pos] Printed "${printerName}" via Windows spooler`)
 }
 
+// ── ASCII-only test job builder ───────────────────────────────────────────────
+// Builds a minimal ESC/POS payload using only safe ASCII bytes.
+// Used by GET /test-ascii to verify printer communication independent of
+// Thai encoding or browser-side formatting.
+
+function buildAsciiTestJob() {
+  const ESC = 0x1B
+  const GS  = 0x1D
+  const LF  = 0x0A
+
+  const lines = [
+    '================================',
+    '   ALAN POS - TEST PRINT',
+    '================================',
+    'ASCII-only job from print server',
+    'If you see this, RAW print works',
+    '--------------------------------',
+    'Printer: OK',
+    'Spooler: OK',
+    'ESC/POS: OK',
+    '================================',
+    '',
+    '',
+    '',
+  ]
+
+  const bytes = []
+
+  // ESC @ — full printer reset
+  bytes.push(ESC, 0x40)
+  // ESC t 0 — code page PC437 (pure ASCII, universally supported)
+  bytes.push(ESC, 0x74, 0x00)
+  // ESC a 1 — center align
+  bytes.push(ESC, 0x61, 0x01)
+
+  for (const l of lines) {
+    for (let i = 0; i < l.length; i++) bytes.push(l.charCodeAt(i) & 0x7F)
+    bytes.push(LF)
+  }
+
+  // GS V 1 — partial cut
+  bytes.push(GS, 0x56, 0x01)
+
+  return Buffer.from(bytes)
+}
+
 // ── HTTP server ───────────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
@@ -192,6 +238,28 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: true, printers }))
       }
     )
+    return
+  }
+
+  // GET /test-ascii?printer=XP-80C  — sends ASCII-only ESC/POS job to verify comms
+  if (req.method === 'GET' && req.url.startsWith('/test-ascii')) {
+    const qs          = new URL(req.url, 'http://localhost').searchParams
+    const printerName = qs.get('printer') || ''
+    const testData    = buildAsciiTestJob()
+    try {
+      if (printerName) {
+        await printByName(testData, printerName)
+      } else {
+        await printToUsb(testData)
+      }
+      console.log(`[alan-pos] ASCII test sent to "${printerName || 'USB auto-detect'}"`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, msg: 'ASCII test job sent', printer: printerName || 'USB auto-detect' }))
+    } catch (err) {
+      console.error('[alan-pos] ASCII test failed:', err.message)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: err.message }))
+    }
     return
   }
 
