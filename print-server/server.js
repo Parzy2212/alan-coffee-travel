@@ -78,10 +78,36 @@ function reformatTwoCol(text, W) {
   }).join('\n')
 }
 
+// Customization Thai → English mapping (mirrors thaiToReceipt in thermal-printer.ts).
+// Longer/more-specific phrases first to avoid partial substitutions.
+const CUSTOM_MAP = [
+  [' · ', ' / '],
+  [' × ', 'x'],
+  // Sweetness
+  ['\u0E2B\u0E27\u0E32\u0E19\u0E19\u0E49\u0E2D\u0E22', 'Less sugar'],    // หวานน้อย
+  ['\u0E2B\u0E27\u0E32\u0E19\u0E1B\u0E01\u0E15\u0E34', 'Normal sugar'],  // หวานปกติ
+  ['\u0E2B\u0E27\u0E32\u0E19\u0E01\u0E25\u0E32\u0E07', 'Normal sugar'],  // หวานกลาง
+  ['\u0E2B\u0E27\u0E32\u0E19\u0E21\u0E32\u0E01', 'Extra sugar'],         // หวานมาก
+  ['\u0E44\u0E21\u0E48\u0E2B\u0E27\u0E32\u0E19', 'No sugar'],            // ไม่หวาน
+  // Temperature
+  ['\u0E40\u0E22\u0E47\u0E19', 'Cold'],   // เย็น
+  ['\u0E23\u0E49\u0E2D\u0E19', 'Hot'],    // ร้อน
+  ['\u0E2D\u0E38\u0E48\u0E19', 'Warm'],   // อุ่น
+  // Size
+  ['\u0E43\u0E2B\u0E0D\u0E48', 'Large'],  // ใหญ่
+  ['\u0E40\u0E25\u0E47\u0E01', 'Small'],  // เล็ก
+  ['\u0E01\u0E25\u0E32\u0E07', 'Medium'], // กลาง
+  // Generic
+  ['\u0E1B\u0E01\u0E15\u0E34', 'Normal'], // ปกติ
+]
+
 // Replace any Unicode Thai chars not handled by THAI_MAP — Courier New has no
-// Thai glyphs so they render as boxes. Customization fields may contain arbitrary Thai.
+// Thai glyphs so they render as boxes. Apply CUSTOM_MAP for known customizations
+// first, then drop any remaining Thai glyphs.
 function dropRemainingThai(text) {
-  return text.replace(/[\u0E00-\u0E7F]/g, '?')
+  let out = text
+  for (const [thai, eng] of CUSTOM_MAP) out = out.split(thai).join(eng)
+  return out.replace(/[\u0E00-\u0E7F]/g, '?')
 }
 
 // Truncate any line that still exceeds W chars after all reformatting.

@@ -101,7 +101,7 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
     } else {
       L(nameQty.substring(0, W))
     }
-    if (item.customization) L(('  ' + sanitizeSpecial(item.customization)).substring(0, W))
+    if (item.customization) L(('  ' + sanitizeSpecial(thaiToReceipt(item.customization))).substring(0, W))
   }
 
   L(sep2)
@@ -168,6 +168,33 @@ export function getPaperWidth(): 58 | 80 {
 
 function charWidth(mm: 58 | 80): number {
   return mm === 80 ? WIDTH_80 : WIDTH_58
+}
+
+// ── Thai customization → English converter ────────────────────────────────────
+// Converts common Thai customization phrases to English before encoding.
+// Longer/more-specific phrases must come before shorter overlapping ones.
+
+function thaiToReceipt(s: string): string {
+  return s
+    // Separators first
+    .replace(/ · /g, ' / ')
+    .replace(/ × /g, 'x')
+    // Sweetness (specific before generic "ปกติ")
+    .replace(/หวานน้อย/g, 'Less sugar')
+    .replace(/หวานปกติ/g, 'Normal sugar')
+    .replace(/หวานกลาง/g, 'Normal sugar')
+    .replace(/หวานมาก/g, 'Extra sugar')
+    .replace(/ไม่หวาน/g, 'No sugar')
+    // Temperature
+    .replace(/เย็น/g, 'Cold')
+    .replace(/ร้อน/g, 'Hot')
+    .replace(/อุ่น/g, 'Warm')
+    // Size (specific before generic "กลาง")
+    .replace(/ใหญ่/g, 'Large')
+    .replace(/เล็ก/g, 'Small')
+    .replace(/กลาง/g, 'Medium')
+    // Generic
+    .replace(/ปกติ/g, 'Normal')
 }
 
 // ── Special-character sanitiser ───────────────────────────────────────────────
