@@ -47,6 +47,12 @@ const THAI_MAP = [
   ['พนักงาน',            'STAFF'],
   // Generic thank-you
   ['ขอบคุณ',             'THANK YOU'],
+  // Special chars not in Courier New
+  ['\u00B7', '-'],   // · middle dot
+  ['\u2022', '*'],   // • bullet
+  ['\u00D7', 'x'],   // × multiplication sign
+  ['\u2013', '-'],   // – en dash
+  ['\u2014', '-'],   // — em dash
 ]
 
 function applyThaiMap(text) {
@@ -211,8 +217,14 @@ Write-Output 'OK'
 
 async function printByName(data, printerName, paperMm = 80) {
   const W    = paperMm === 58 ? 32 : 48
+  console.log(`[alan-pos] printByName paperMm=${paperMm} W=${W}`)
   // Strip ESC/POS, decode TIS-620 Thai, replace Thai labels with ASCII, clamp to W
   const text = clampLines(applyThaiMap(escPosToText(data)), W)
+  // Log every line with its char count so we can spot overflows
+  text.split('\n').forEach((ln, i) => {
+    const flag = ln.length > W ? ' *** OVERFLOW ***' : ''
+    console.log(`[alan-pos] L${String(i + 1).padStart(2, '0')} (${ln.length}/${W}): "${ln}"${flag}`)
+  })
   await printTextByName(text, printerName, paperMm)
   console.log(`[alan-pos] Printed "${printerName}" via System.Drawing (${paperMm}mm)`)
 }

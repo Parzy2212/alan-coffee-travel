@@ -95,13 +95,13 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
 
   L(sep2)
   for (const item of data.cartSnapshot) {
-    const nameQty = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
+    const nameQty = sanitizeSpecial(item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : ''))
     if (d.showItemPrice) {
       L(padR(nameQty, NAME_W) + ' ' + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W))
     } else {
       L(nameQty.substring(0, W))
     }
-    if (item.customization) L(('  ' + item.customization).substring(0, W))
+    if (item.customization) L(('  ' + sanitizeSpecial(item.customization)).substring(0, W))
   }
 
   L(sep2)
@@ -170,13 +170,25 @@ function charWidth(mm: 58 | 80): number {
   return mm === 80 ? WIDTH_80 : WIDTH_58
 }
 
+// ── Special-character sanitiser ───────────────────────────────────────────────
+// Replace Unicode chars that Courier New / TIS-620 can't render before encoding.
+
+function sanitizeSpecial(s: string): string {
+  return s
+    .replace(/·/g, 'x')   // U+00B7 middle dot → x (qty separator)
+    .replace(/•/g, '*')    // U+2022 bullet
+    .replace(/×/g, 'x')   // U+00D7 multiplication sign
+    .replace(/–/g, '-')    // U+2013 en dash
+    .replace(/—/g, '-')    // U+2014 em dash
+}
+
 // ── TIS-620 encoding ──────────────────────────────────────────────────────────
 // Thai Unicode U+0E01–U+0E5B → TIS-620 byte = codepoint − 0x0D60
 // ASCII < 0x80 pass through. Anything else → 0x3F '?'
 
 function encodeLine(str: string): Uint8Array {
   const bytes: number[] = []
-  for (const ch of str) {
+  for (const ch of sanitizeSpecial(str)) {
     const cp = ch.codePointAt(0) ?? 0x3F
     if (cp < 0x80) {
       bytes.push(cp)
@@ -607,13 +619,13 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   // ── Items ─────────────────────────────────────────────────────────────────
   p(line(sep2))
   for (const item of data.cartSnapshot) {
-    const nameQty = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
+    const nameQty = sanitizeSpecial(item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : ''))
     if (design.showItemPrice) {
       p(line(padR(nameQty, NAME_W) + ' ' + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W)))
     } else {
       p(line(nameQty.substring(0, W)))
     }
-    if (item.customization) p(line(('  ' + item.customization).substring(0, W)))
+    if (item.customization) p(line(('  ' + sanitizeSpecial(item.customization)).substring(0, W)))
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────
