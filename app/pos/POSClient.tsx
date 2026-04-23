@@ -289,10 +289,13 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization }: {
         </div>
 
         <div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>หมายเหตุ</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>หมายเหตุ</div>
+            <div style={{ fontSize: 11, color: note.length >= 45 ? '#f87171' : 'rgba(255,255,255,0.3)', fontVariantNumeric: 'tabular-nums' }}>{note.length}/50</div>
+          </div>
           <input type="text" placeholder="เช่น ไม่ใส่น้ำแข็ง, extra shot..." value={note}
             onChange={e => setNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleConfirm() }}
-            style={popupInput} />
+            maxLength={50} style={popupInput} />
         </div>
 
         <button onClick={handleConfirm} style={{

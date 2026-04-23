@@ -652,7 +652,7 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     } else {
       p(line(nameQty.substring(0, W)))
     }
-    if (item.customization) p(line(('  ' + sanitizeSpecial(item.customization)).substring(0, W)))
+    if (item.customization) p(line(('  ' + sanitizeSpecial(thaiToReceipt(item.customization))).substring(0, W)))
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────
