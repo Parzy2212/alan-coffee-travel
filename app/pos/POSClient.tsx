@@ -358,9 +358,18 @@ function DigitalReceiptPopup({
       })
       setPrintState('done')
       setTimeout(() => setPrintState('idle'), 3000)
-    } catch {
+    } catch (e) {
+      console.error('[POS] Print failed:', e)
       setPrintState('error')
-      setTimeout(() => { setPrintState('idle'); window.print() }, 1500)
+      // Only open browser print dialog when no hardware printer is configured.
+      // If pos_printer_name or printer_ip is set, the user has a real printer —
+      // opening the browser dialog would be confusing.
+      const hasHardware = localStorage.getItem('pos_printer_name') || localStorage.getItem('printer_ip')
+      if (!hasHardware) {
+        setTimeout(() => { setPrintState('idle'); window.print() }, 1500)
+      } else {
+        setTimeout(() => setPrintState('idle'), 3000)
+      }
     }
   }
 
@@ -1068,15 +1077,31 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
   async function handleTestPrint() {
     setPrinterBusy(true)
-    const ok = await checkServer()
+    const ok   = await checkServer()
+    const name = serverPrinterName.trim()
     try {
-      if (ok && serverPrinterName.trim()) {
-        await fetch(`http://127.0.0.1:12345/test-ascii?printer=${encodeURIComponent(serverPrinterName.trim())}`,
-          { signal: AbortSignal.timeout(8000) })
+      if (name) {
+        // Printer name is configured — always use print server, never browser dialog
+        if (!ok) {
+          alert('Print Server ไม่ได้รัน\nกรุณาเปิด AlanPOS-PrintServer.exe แล้วลองใหม่')
+        } else {
+          console.log(`[POS] Test print → /test-ascii?printer=${name}&width=${paperWidth}`)
+          const res = await fetch(
+            `http://127.0.0.1:12345/test-ascii?printer=${encodeURIComponent(name)}&width=${paperWidth}`,
+            { signal: AbortSignal.timeout(10000) }
+          )
+          const json = await res.json().catch(() => ({}))
+          console.log('[POS] Test print response:', json)
+          if (!res.ok) alert(`ทดสอบพิมพ์ล้มเหลว: ${(json as {error?: string}).error ?? res.status}`)
+        }
       } else {
+        // No printer name — use the full fallback chain (WebUSB / window.print)
         await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL')
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.error('[POS] Test print failed:', e)
+      alert(`ทดสอบพิมพ์ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`)
+    }
     setPrinterBusy(false)
   }
 

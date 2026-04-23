@@ -401,23 +401,35 @@ async function sendViaWifi(data: Uint8Array, ip: string): Promise<void> {
 }
 
 async function sendViaPrintServer(data: Uint8Array, ip?: string): Promise<void> {
+  const printerName = getPrinterName()
+  const paperWidth  = String(getPaperWidth())
   const headers: Record<string, string> = {
     'Content-Type':  'application/octet-stream',
-    'X-Paper-Width': String(getPaperWidth()),
+    'X-Paper-Width': paperWidth,
   }
-  if (ip) headers['X-Printer-IP'] = ip
-  const printerName = getPrinterName()
+  if (ip)          headers['X-Printer-IP']   = ip
   if (printerName) headers['X-Printer-Name'] = printerName
+
+  console.log(`[thermal-printer] → POST ${PRINT_SERVER_URL}`, {
+    'X-Printer-Name': printerName || '(none — will try USB auto-detect)',
+    'X-Paper-Width':  paperWidth,
+    bytes:            data.length,
+  })
+
   const res = await fetch(PRINT_SERVER_URL, {
     method:  'POST',
     body:    new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
     headers,
     signal:  AbortSignal.timeout(SERVER_TIMEOUT_MS),
   })
+
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string }
-    throw new Error(body.error ?? `Print server responded ${res.status}`)
+    const msg  = body.error ?? `Print server responded ${res.status}`
+    console.error('[thermal-printer] Print server error:', msg)
+    throw new Error(msg)
   }
+  console.log('[thermal-printer] Print server: OK')
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -614,9 +626,22 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   for (let i = 0; i < design.blankLines; i++) p([LF])
   p(CMD.cutPartial)
 
-  const bytes  = concat(...parts)
-  const ip     = getPrinterIp()
+  const bytes       = concat(...parts)
+  const ip          = getPrinterIp()
+  const printerName = getPrinterName()
   const errors: string[] = []
+
+  // ── Fast path: Windows printer name configured → print server only ─────────
+  // When pos_printer_name is set the user has an explicit Windows driver printer.
+  // Don't fall through to WebUSB or window.print() — just succeed or throw.
+  if (printerName) {
+    console.log(`[thermal-printer] pos_printer_name="${printerName}" → using print server only`)
+    await sendViaPrintServer(bytes, ip || undefined)  // throws on failure
+    console.log('[thermal-printer] Printed via print server (named printer)')
+    return
+  }
+
+  // ── Full fallback chain (no printer name configured) ──────────────────────
 
   // ── Method 1: WiFi direct (browser → printer:9100) ────────────────────────
   if (ip) {
@@ -629,9 +654,8 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     }
   }
 
-  // ── Method 2: Local print server (localhost:12345) ─────────────────────────
+  // ── Method 2: Local print server (no named printer — USB auto-detect) ──────
   try {
-    // Pass IP to server so it can forward via TCP if needed
     await sendViaPrintServer(bytes, ip || undefined)
     console.log('[thermal-printer] Printed via local print server')
     return
