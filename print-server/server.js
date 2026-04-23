@@ -61,8 +61,30 @@ function applyThaiMap(text) {
   return out
 }
 
-// Truncate any line that exceeds W chars (can happen when Thai labels are replaced
-// by longer ASCII equivalents, shifting two-column spacing beyond paper width).
+// Re-format two-column lines after Thai→ASCII label substitution.
+// Thai labels are shorter in TIS-620 bytes than their ASCII replacements, so
+// the original spacing (computed client-side for Thai byte widths) is too wide.
+// Detect lines with pattern "label  <2+ spaces>  price" and recompute spacing.
+function reformatTwoCol(text, W) {
+  const re = /^(.+?)\s{2,}(-?[\d,]+)\s*$/
+  return text.split('\n').map(ln => {
+    const m = ln.match(re)
+    if (!m) return ln
+    const label = m[1].trimEnd()
+    const price = m[2]
+    const spaces = W - label.length - price.length
+    if (spaces < 1) return label.substring(0, W - price.length - 1) + ' ' + price
+    return label + ' '.repeat(spaces) + price
+  }).join('\n')
+}
+
+// Replace any Unicode Thai chars not handled by THAI_MAP — Courier New has no
+// Thai glyphs so they render as boxes. Customization fields may contain arbitrary Thai.
+function dropRemainingThai(text) {
+  return text.replace(/[\u0E00-\u0E7F]/g, '?')
+}
+
+// Truncate any line that still exceeds W chars after all reformatting.
 function clampLines(text, W) {
   return text.split('\n').map(ln => {
     if (ln.length > W) {
@@ -216,11 +238,13 @@ Write-Output 'OK'
 }
 
 async function printByName(data, printerName, paperMm = 80) {
-  const W    = paperMm === 58 ? 32 : 48
+  const W = paperMm === 58 ? 32 : 48
   console.log(`[alan-pos] printByName paperMm=${paperMm} W=${W}`)
-  // Strip ESC/POS, decode TIS-620 Thai, replace Thai labels with ASCII, clamp to W
-  const text = clampLines(applyThaiMap(escPosToText(data)), W)
-  // Log every line with its char count so we can spot overflows
+  let text = escPosToText(data)
+  text = applyThaiMap(text)           // known Thai labels → ASCII
+  text = reformatTwoCol(text, W)      // fix two-col spacing after label expansion
+  text = dropRemainingThai(text)      // remaining Thai glyphs → '?' (Courier New has none)
+  text = clampLines(text, W)          // final safety clamp
   text.split('\n').forEach((ln, i) => {
     const flag = ln.length > W ? ' *** OVERFLOW ***' : ''
     console.log(`[alan-pos] L${String(i + 1).padStart(2, '0')} (${ln.length}/${W}): "${ln}"${flag}`)
@@ -350,23 +374,26 @@ const server = http.createServer(async (req, res) => {
       const printerName = req.headers['x-printer-name'] || ''
       const paperMm     = parseInt(req.headers['x-paper-width'] || '80', 10)
 
+      let sent = false
       try {
         if (printerName) {
           await printByName(data, printerName, paperMm)
-          console.log(`[alan-pos] Printed to "${printerName}" via System.Drawing (${paperMm}mm)`)
         } else if (printerIp) {
           await printToTcp(data, printerIp)
-          console.log(`[alan-pos] Printed via WiFi TCP ${printerIp} (${paperWidth}mm)`)
+          console.log(`[alan-pos] Printed via WiFi TCP ${printerIp} (${paperMm}mm)`)
         } else {
           await printToUsb(data)
-          console.log(`[alan-pos] Printed via USB auto-detect (${paperWidth}mm)`)
+          console.log(`[alan-pos] Printed via USB auto-detect (${paperMm}mm)`)
         }
+        sent = true
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true, paperWidth }))
+        res.end(JSON.stringify({ ok: true, paperMm }))
       } catch (err) {
         console.error('[alan-pos] Print failed:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: err.message }))
+        if (!sent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
       }
     })
     return
