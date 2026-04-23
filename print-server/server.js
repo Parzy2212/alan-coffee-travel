@@ -55,6 +55,18 @@ function applyThaiMap(text) {
   return out
 }
 
+// Truncate any line that exceeds W chars (can happen when Thai labels are replaced
+// by longer ASCII equivalents, shifting two-column spacing beyond paper width).
+function clampLines(text, W) {
+  return text.split('\n').map(ln => {
+    if (ln.length > W) {
+      console.warn(`[alan-pos] Line overflow (${ln.length}>${W}): "${ln.substring(0, 40)}"`)
+      return ln.substring(0, W)
+    }
+    return ln
+  }).join('\n')
+}
+
 // ── ESC/POS → plain text converter ───────────────────────────────────────────
 // Strips all ESC/GS control sequences and returns a Unicode string.
 // TIS-620 high bytes (0xA1-0xFB) are decoded to Unicode Thai U+0E01-U+0E5B.
@@ -198,8 +210,9 @@ Write-Output 'OK'
 }
 
 async function printByName(data, printerName, paperMm = 80) {
-  // Strip ESC/POS, decode TIS-620 Thai, replace Thai labels with ASCII
-  const text = applyThaiMap(escPosToText(data))
+  const W    = paperMm === 58 ? 32 : 48
+  // Strip ESC/POS, decode TIS-620 Thai, replace Thai labels with ASCII, clamp to W
+  const text = clampLines(applyThaiMap(escPosToText(data)), W)
   await printTextByName(text, printerName, paperMm)
   console.log(`[alan-pos] Printed "${printerName}" via System.Drawing (${paperMm}mm)`)
 }

@@ -60,15 +60,16 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
   const d       = design ?? getReceiptDesign()
   const mm      = getPaperWidth()
   const W       = charWidth(mm)
-  const NAME_W  = mm === 80 ? 35 : 20
-  const PRICE_W = W - NAME_W
+  const PRICE_W = 10
+  const NAME_W  = W - PRICE_W - 1  // 37 for 80mm, 21 for 58mm
   const now     = new Date()
   const dateStr = now.toLocaleDateString('en-GB')
   const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   const sep1    = '='.repeat(W)
   const sep2    = '-'.repeat(W)
   const ctr     = (s: string) => {
-    const bl = byteLen(s); if (bl >= W) return s
+    const bl = byteLen(s)
+    if (bl >= W) return s.substring(0, W)
     return ' '.repeat(Math.floor((W - bl) / 2)) + s
   }
   const tc  = (l: string, r: string) => twoCol(l, r, W)
@@ -78,8 +79,11 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
   const L = (...ss: string[]) => lines.push(...ss)
 
   if (d.showLogo)       L(ctr(data.shopName.substring(0, W)))
-  L(`${dateStr} ${timeStr}`)
-  if (d.showReceiptNum) L(data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`)
+  L(`${dateStr} ${timeStr}`.substring(0, W))
+  if (d.showReceiptNum) {
+    const orderLine = data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`
+    L(orderLine.substring(0, W))
+  }
   if (data.customer)    L(data.customer.substring(0, W))
   if (d.showStaff && (d.staffName || data.staffName)) {
     L(`พนักงาน: ${(d.staffName || data.staffName || '').substring(0, W - 10)}`)
@@ -93,7 +97,7 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
   for (const item of data.cartSnapshot) {
     const nameQty = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
     if (d.showItemPrice) {
-      L(padR(nameQty, NAME_W) + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W))
+      L(padR(nameQty, NAME_W) + ' ' + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W))
     } else {
       L(nameQty.substring(0, W))
     }
@@ -121,6 +125,9 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
   L(sep1)
   for (let i = 0; i < d.blankLines; i++) L('')
 
+  for (const ln of lines) {
+    if (ln.length > W) console.warn(`[thermal-printer] buildReceiptText overflow (${ln.length}>${W}): "${ln.substring(0, 40)}"`)
+  }
   return lines.join('\n')
 }
 
@@ -187,18 +194,36 @@ function byteLen(str: string): number {
   return encodeLine(str).length
 }
 
-// Pad string so its TIS-620 byteLen equals `len`
+// Pad string to exactly `len` TIS-620 bytes; truncate with "..." if too long
 function padR(str: string, len: number): string {
   const bl = byteLen(str)
-  return bl >= len ? str : str + ' '.repeat(len - bl)
+  if (bl <= len) return str + ' '.repeat(len - bl)
+  // Truncate: fit (len-3) bytes then add "..."
+  let s = '', bytes = 0
+  for (const ch of str) {
+    const cl = byteLen(ch)
+    if (bytes + cl > len - 3) break
+    s += ch; bytes += cl
+  }
+  return s + '...' + ' '.repeat(Math.max(0, len - bytes - 3))
 }
 
-// Two-column row: label left, value right, total = w bytes
+// Two-column row: label left (clamped to w/2), value right, total = w bytes
 function twoCol(left: string, right: string, w: number): string {
-  const lLen   = byteLen(left)
-  const rLen   = right.length // right is always ASCII numbers
-  const spaces = w - lLen - rLen
-  return left + (spaces > 0 ? ' '.repeat(spaces) : ' ') + right
+  const rLen   = right.length  // right is always ASCII numbers
+  const maxL   = Math.floor(w / 2)
+  let lStr = left, lLen = byteLen(left)
+  if (lLen > maxL) {
+    let s = '', bytes = 0
+    for (const ch of left) {
+      const cl = byteLen(ch)
+      if (bytes + cl > maxL) break
+      s += ch; bytes += cl
+    }
+    lStr = s; lLen = bytes
+  }
+  const spaces = Math.max(1, w - lLen - rLen)
+  return lStr + ' '.repeat(spaces) + right
 }
 
 function fmtLak(n: number): string {
@@ -521,10 +546,10 @@ export async function testPrint(shopName = 'ALAN COFFEE & TRAVEL'): Promise<void
   })
 }
 
-// Center a string within w bytes (using byte-length for Thai awareness)
+// Center a string within w bytes; truncate if too long
 function centerStr(s: string, w: number): string {
   const bl = byteLen(s)
-  if (bl >= w) return s
+  if (bl >= w) return s.substring(0, w)
   return ' '.repeat(Math.floor((w - bl) / 2)) + s
 }
 
@@ -534,8 +559,8 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   const design   = getReceiptDesign()
   const mm       = getPaperWidth()
   const W        = charWidth(mm)
-  const NAME_W   = mm === 80 ? 35 : 20
-  const PRICE_W  = W - NAME_W
+  const PRICE_W  = 10
+  const NAME_W   = W - PRICE_W - 1  // 37 for 80mm, 21 for 58mm
   const now      = new Date()
   const dateStr  = now.toLocaleDateString('en-GB')
   const timeStr  = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -584,7 +609,7 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   for (const item of data.cartSnapshot) {
     const nameQty = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
     if (design.showItemPrice) {
-      p(line(padR(nameQty, NAME_W) + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W)))
+      p(line(padR(nameQty, NAME_W) + ' ' + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W)))
     } else {
       p(line(nameQty.substring(0, W)))
     }
