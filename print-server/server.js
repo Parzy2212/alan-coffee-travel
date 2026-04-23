@@ -93,35 +93,75 @@ function buildTextTestJob(width = 48) {
   ].join('\r\n')
 }
 
-// ── Named-printer via Out-Printer (GDI-safe plain text) ──────────────────────
+// ── Named-printer via System.Drawing.Printing (GDI, fixed-width font, zero margins) ──
+//
+// Out-Printer uses Windows default font (~12pt) with large margins → text fills
+// only the center 1/3 of 80mm paper.  System.Drawing lets us specify:
+//   • Courier New 8pt  — monospace, ~48 chars fit on 80mm at 0 margin
+//   • Margins = 0      — no left/right padding
+//   • Custom paper size matching the roll width
 
-function printTextByName(text, printerName) {
+function printTextByName(text, printerName, paperMm) {
   return new Promise((resolve, reject) => {
-    const tmp      = path.join(os.tmpdir(), `alan_pos_${Date.now()}.txt`)
+    const ts       = Date.now()
+    const tmp      = path.join(os.tmpdir(), `alan_pos_${ts}.txt`)
+    const ps1      = path.join(os.tmpdir(), `alan_pos_${ts}.ps1`)
     const safeName = printerName.replace(/'/g, "''")
+    // Paper width in 1/100 inch: 80mm = 315, 58mm = 228
+    const paperW   = (paperMm === 58) ? 228 : 315
+    // Estimate height: ~14 hundredths/line + buffer (thermal cuts at content end)
+    const lineCount = text.split('\n').length
+    const paperH   = Math.max(lineCount * 14 + 150, 300)
 
     try { fs.writeFileSync(tmp, text, 'utf8') } catch (e) { return reject(e) }
 
-    // Single-quoted PS strings treat backslashes as literals — no escaping needed
-    const cmd = `Get-Content '${tmp}' | Out-Printer -Name '${safeName}'`
+    // PS uses $script: scope so event handler can read the variables.
+    // Single-quoted strings: backslashes are literal — no escaping needed for paths.
+    const script = `
+Add-Type -AssemblyName System.Drawing
+$script:pLines = [System.IO.File]::ReadAllLines('${tmp}', [System.Text.Encoding]::UTF8)
+$script:pFont  = New-Object System.Drawing.Font('Courier New', 8, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Point)
+$pd = New-Object System.Drawing.Printing.PrintDocument
+$pd.PrinterSettings.PrinterName = '${safeName}'
+$pd.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
+$pd.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('Receipt', ${paperW}, ${paperH})
+$pd.add_PrintPage({
+    param($s, $e)
+    $lh = [Math]::Max($script:pFont.GetHeight($e.Graphics), 8)
+    $y  = [float]0
+    foreach ($ln in $script:pLines) {
+        $e.Graphics.DrawString($ln, $script:pFont, [System.Drawing.Brushes]::Black, [float]0, $y)
+        $y += $lh
+    }
+    $e.HasMorePages = $false
+})
+$pd.Print()
+$script:pFont.Dispose()
+$pd.Dispose()
+Write-Output 'OK'
+`.trim()
+
+    try { fs.writeFileSync(ps1, script, 'utf8') } catch (e) { return reject(e) }
 
     execFile(
       'powershell',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', cmd],
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1],
       (err, stdout, stderr) => {
         try { fs.unlinkSync(tmp) } catch {}
-        if (err) return reject(new Error(`Out-Printer failed: ${stderr.trim() || err.message}`))
+        try { fs.unlinkSync(ps1) } catch {}
+        if (err) return reject(new Error(`Print failed: ${stderr.trim() || err.message}`))
+        if (!stdout.trim().includes('OK')) return reject(new Error(`Spool error: ${stdout.trim() || stderr.trim()}`))
         resolve()
       }
     )
   })
 }
 
-async function printByName(data, printerName) {
+async function printByName(data, printerName, paperMm = 80) {
   // Strip ESC/POS control bytes — GDI drivers only understand plain text
   const text = escPosToText(data)
-  await printTextByName(text, printerName)
-  console.log(`[alan-pos] Printed "${printerName}" via Out-Printer (plain text)`)
+  await printTextByName(text, printerName, paperMm)
+  console.log(`[alan-pos] Printed "${printerName}" via System.Drawing (${paperMm}mm)`)
 }
 
 // ── USB printing via Windows copy /b ─────────────────────────────────────────
@@ -218,7 +258,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       if (printerName) {
-        await printTextByName(testText, printerName)
+        await printTextByName(testText, printerName, paperMm)
       } else {
         // Fall back to USB raw for port-based printers
         await printToUsb(Buffer.from(testText, 'ascii'))
@@ -241,12 +281,12 @@ const server = http.createServer(async (req, res) => {
       const data        = Buffer.concat(chunks)
       const printerIp   = req.headers['x-printer-ip']   || ''
       const printerName = req.headers['x-printer-name'] || ''
-      const paperWidth  = req.headers['x-paper-width']  || '80'
+      const paperMm     = parseInt(req.headers['x-paper-width'] || '80', 10)
 
       try {
         if (printerName) {
-          await printByName(data, printerName)
-          console.log(`[alan-pos] Printed to "${printerName}" via Out-Printer (${paperWidth}mm)`)
+          await printByName(data, printerName, paperMm)
+          console.log(`[alan-pos] Printed to "${printerName}" via System.Drawing (${paperMm}mm)`)
         } else if (printerIp) {
           await printToTcp(data, printerIp)
           console.log(`[alan-pos] Printed via WiFi TCP ${printerIp} (${paperWidth}mm)`)

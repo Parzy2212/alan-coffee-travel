@@ -7,6 +7,7 @@ import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
   isSupported as printerIsSupported, debugDevices, setPrinterName as saveServerPrinterName,
+  buildReceiptText, type ReceiptDesign,
 } from '@/lib/thermal-printer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -983,6 +984,18 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const [showQr,     setShowQr]     = useState(() => ls('receipt_show_qr',  'true') === 'true')
   const [showVat,    setShowVat]    = useState(() => ls('receipt_show_vat', 'true') === 'true')
 
+  // Receipt designer
+  const [showLogo,       setShowLogo]       = useState(() => ls('receipt_show_logo',       'true')  === 'true')
+  const [showReceiptNum, setShowReceiptNum] = useState(() => ls('receipt_show_receipt_num','true')  === 'true')
+  const [showStaff,      setShowStaff]      = useState(() => ls('receipt_show_staff',      'false') === 'true')
+  const [staffName,      setStaffName]      = useState(() => ls('receipt_staff_name'))
+  const [showQueueLarge, setShowQueueLarge] = useState(() => ls('receipt_show_queue_large','true')  === 'true')
+  const [showItemPrice,  setShowItemPrice]  = useState(() => ls('receipt_show_item_price', 'true')  === 'true')
+  const [extraLine1,     setExtraLine1]     = useState(() => ls('receipt_extra_line_1'))
+  const [extraLine2,     setExtraLine2]     = useState(() => ls('receipt_extra_line_2'))
+  const [blankLines,     setBlankLines]     = useState(() => parseInt(ls('receipt_blank_lines', '4'), 10) || 4)
+  const [showPreview,    setShowPreview]    = useState(false)
+
   const [serverPrinterName, setServerPrinterName] = useState(() => ls('pos_printer_name'))
   const [serverPrinters,    setServerPrinters]    = useState<string[]>([])
   const [printersLoading,   setPrintersLoading]   = useState(false)
@@ -1083,8 +1096,17 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
       localStorage.setItem('receipt_footer_text', footerText)
       localStorage.setItem('receipt_phone',       phone)
       localStorage.setItem('receipt_address',     address)
-      localStorage.setItem('receipt_show_qr',     String(showQr))
-      localStorage.setItem('receipt_show_vat',    String(showVat))
+      localStorage.setItem('receipt_show_qr',          String(showQr))
+      localStorage.setItem('receipt_show_vat',         String(showVat))
+      localStorage.setItem('receipt_show_logo',        String(showLogo))
+      localStorage.setItem('receipt_show_receipt_num', String(showReceiptNum))
+      localStorage.setItem('receipt_show_staff',       String(showStaff))
+      localStorage.setItem('receipt_staff_name',       staffName)
+      localStorage.setItem('receipt_show_queue_large', String(showQueueLarge))
+      localStorage.setItem('receipt_show_item_price',  String(showItemPrice))
+      localStorage.setItem('receipt_extra_line_1',     extraLine1)
+      localStorage.setItem('receipt_extra_line_2',     extraLine2)
+      localStorage.setItem('receipt_blank_lines',      String(blankLines))
     } catch { /* ignore */ }
     onClose()
   }
@@ -1281,6 +1303,105 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           </div>
+
+          {/* Receipt Designer */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={sectionLabel}>ออกแบบใบเสร็จ</div>
+              <button onClick={() => setShowPreview(true)} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD,
+              }}>ดูตัวอย่าง</button>
+            </div>
+
+            {/* Toggle grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+              {([
+                ['showLogo',       showLogo,       setShowLogo,       'ชื่อร้าน'],
+                ['showReceiptNum', showReceiptNum, setShowReceiptNum, 'เลขใบเสร็จ'],
+                ['showStaff',      showStaff,      setShowStaff,      'ชื่อพนักงาน'],
+                ['showQueueLarge', showQueueLarge, setShowQueueLarge, 'เลขคิวใหญ่'],
+                ['showItemPrice',  showItemPrice,  setShowItemPrice,  'ราคาต่อชิ้น'],
+                ['showVat',        showVat,        setShowVat,        'VAT breakdown'],
+              ] as [string, boolean, (v: boolean) => void, string][]).map(([key, val, setter, label]) => (
+                <button key={key} onClick={() => setter(!val)} style={{
+                  padding: '7px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11,
+                  fontWeight: val ? 700 : 400, textAlign: 'left',
+                  border: `1px solid ${val ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                  backgroundColor: val ? `${GOLD}18` : 'transparent',
+                  color: val ? GOLD : 'rgba(255,255,255,0.4)',
+                }}>{val ? '✓ ' : '○ '}{label}</button>
+              ))}
+            </div>
+
+            {/* Staff name (shown when toggle is on) */}
+            {showStaff && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>ชื่อพนักงาน</div>
+                <input value={staffName} onChange={e => setStaffName(e.target.value)}
+                  style={popupInput} placeholder="เช่น Alan" />
+              </div>
+            )}
+
+            {/* Extra text lines */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+              <input value={extraLine1} onChange={e => setExtraLine1(e.target.value)}
+                style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 1 (เว้นว่างเพื่อซ่อน)" />
+              <input value={extraLine2} onChange={e => setExtraLine2(e.target.value)}
+                style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 2" />
+            </div>
+
+            {/* Blank feed lines */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', whiteSpace: 'nowrap' }}>บรรทัดว่างท้ายบิล</div>
+              <input type="range" min={1} max={10} value={blankLines}
+                onChange={e => setBlankLines(parseInt(e.target.value, 10))}
+                style={{ flex: 1, accentColor: GOLD }} />
+              <div style={{ fontSize: 12, color: GOLD, minWidth: 20, textAlign: 'right' }}>{blankLines}</div>
+            </div>
+          </div>
+
+          {/* Preview modal (rendered inside the settings overlay) */}
+          {showPreview && (() => {
+            const design: ReceiptDesign = {
+              showLogo, showReceiptNum, showStaff, staffName,
+              showQueueLarge, showItemPrice,
+              extraLine1, extraLine2, blankLines,
+            }
+            const sample = buildReceiptText({
+              shopName: shopName || 'ALAN COFFEE & TRAVEL',
+              queue: 42, receipt: '042',
+              table: 'A1', customer: 'ลูกค้าทดสอบ',
+              cartSnapshot: [
+                { qty: 2, recipe: { product_name: 'Lao Coffee', price_lak: 25000 }, customization: 'ไม่ใส่น้ำตาล' },
+                { qty: 1, recipe: { product_name: 'Matcha Latte', price_lak: 35000 }, customization: '' },
+              ],
+              subtotal: 85000, discountAmt: 0, discountReason: '', finalTotal: 85000,
+              method: 'cash', received: 100000, change: 15000, vatPct: 0,
+              footerText: footerText || 'ขอบคุณที่ใช้บริการ',
+              phone: phone || '', address: address || '',
+            }, design)
+            return (
+              <div onClick={() => setShowPreview(false)} style={{
+                position: 'fixed', inset: 0, zIndex: 300,
+                backgroundColor: 'rgba(0,0,0,0.85)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+              }}>
+                <div onClick={e => e.stopPropagation()} style={{
+                  backgroundColor: '#fff', borderRadius: 8, padding: '16px',
+                  maxHeight: '80vh', overflowY: 'auto', maxWidth: 360, width: '100%',
+                }}>
+                  <div style={{ fontSize: 10, color: '#999', marginBottom: 8, fontFamily: 'monospace' }}>
+                    ตัวอย่างใบเสร็จ (80mm) — กดพื้นหลังเพื่อปิด
+                  </div>
+                  <pre style={{
+                    fontFamily: 'Courier New, monospace', fontSize: 8, lineHeight: 1.4,
+                    margin: 0, whiteSpace: 'pre', color: '#111', overflowX: 'auto',
+                  }}>{sample}</pre>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Currency */}
           <div>

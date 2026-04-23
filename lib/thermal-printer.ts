@@ -10,6 +10,7 @@ export type PrintReceiptData = {
   receipt:        string
   table:          string
   customer:       string
+  staffName?:     string
   cartSnapshot:   { qty: number; recipe: { product_name: string; price_lak: number }; customization: string }[]
   subtotal:       number
   discountAmt:    number
@@ -22,6 +23,105 @@ export type PrintReceiptData = {
   footerText?:    string
   phone?:         string
   address?:       string
+}
+
+export type ReceiptDesign = {
+  showLogo:       boolean   // show shop name header
+  showReceiptNum: boolean   // show order # line
+  showStaff:      boolean   // show staff name line
+  staffName:      string    // staff name value
+  showQueueLarge: boolean   // show large queue number box
+  showItemPrice:  boolean   // show price on each item line
+  extraLine1:     string    // free text line before footer
+  extraLine2:     string    // free text line before footer
+  blankLines:     number    // blank feed lines at end (1-10)
+}
+
+export function getReceiptDesign(): ReceiptDesign {
+  const g = (k: string, d: string) => {
+    try { return localStorage.getItem(k) ?? d } catch { return d }
+  }
+  return {
+    showLogo:       g('receipt_show_logo',       'true')  === 'true',
+    showReceiptNum: g('receipt_show_receipt_num','true')  === 'true',
+    showStaff:      g('receipt_show_staff',      'false') === 'true',
+    staffName:      g('receipt_staff_name',      ''),
+    showQueueLarge: g('receipt_show_queue_large','true')  === 'true',
+    showItemPrice:  g('receipt_show_item_price', 'true')  === 'true',
+    extraLine1:     g('receipt_extra_line_1',    ''),
+    extraLine2:     g('receipt_extra_line_2',    ''),
+    blankLines:     Math.min(10, Math.max(1, parseInt(g('receipt_blank_lines', '4'), 10) || 4)),
+  }
+}
+
+/** Build plain-text receipt string — used for print preview and for the
+ *  escPosToText path through the local print server. */
+export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign): string {
+  const d       = design ?? getReceiptDesign()
+  const mm      = getPaperWidth()
+  const W       = charWidth(mm)
+  const NAME_W  = mm === 80 ? 35 : 20
+  const PRICE_W = W - NAME_W
+  const now     = new Date()
+  const dateStr = now.toLocaleDateString('en-GB')
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const sep1    = '='.repeat(W)
+  const sep2    = '-'.repeat(W)
+  const ctr     = (s: string) => {
+    const bl = byteLen(s); if (bl >= W) return s
+    return ' '.repeat(Math.floor((W - bl) / 2)) + s
+  }
+  const tc  = (l: string, r: string) => twoCol(l, r, W)
+  const pay = data.method === 'cash' ? 'เงินสด' : data.method === 'qr' ? 'QR Code' : 'โอนเงิน'
+
+  const lines: string[] = []
+  const L = (...ss: string[]) => lines.push(...ss)
+
+  if (d.showLogo)       L(ctr(data.shopName.substring(0, W)))
+  L(`${dateStr} ${timeStr}`)
+  if (d.showReceiptNum) L(data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`)
+  if (data.customer)    L(data.customer.substring(0, W))
+  if (d.showStaff && (d.staffName || data.staffName)) {
+    L(`พนักงาน: ${(d.staffName || data.staffName || '').substring(0, W - 10)}`)
+  }
+
+  if (d.showQueueLarge) {
+    L(sep1, ctr('** คิว / QUEUE **'), ctr(`#${String(data.queue).padStart(3, '0')}`), sep1)
+  }
+
+  L(sep2)
+  for (const item of data.cartSnapshot) {
+    const nameQty = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
+    if (d.showItemPrice) {
+      L(padR(nameQty, NAME_W) + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W))
+    } else {
+      L(nameQty.substring(0, W))
+    }
+    if (item.customization) L(('  ' + item.customization).substring(0, W))
+  }
+
+  L(sep2)
+  L(tc('ยอดรวม', fmtLak(data.subtotal)))
+  if (data.discountAmt > 0) {
+    const lbl = data.discountReason ? `ส่วนลด (${data.discountReason})` : 'ส่วนลด'
+    L(tc(lbl, `-${fmtLak(data.discountAmt)}`))
+  }
+  L(tc('ยอดสุทธิ', fmtLak(data.finalTotal)))
+  L(sep1)
+  L(tc('ชำระด้วย:', pay))
+  if (data.method === 'cash' && data.received > 0) {
+    L(tc('รับมา:', fmtLak(data.received)), tc('เงินทอน:', fmtLak(data.change)))
+  }
+  L(sep1)
+  L(ctr(data.footerText || 'ขอบคุณที่ใช้บริการ'), ctr('Thank you & come back'))
+  if (data.address) L(ctr(data.address.substring(0, W)))
+  if (data.phone)   L(ctr(data.phone.substring(0, W)))
+  if (d.extraLine1) L(ctr(d.extraLine1.substring(0, W)))
+  if (d.extraLine2) L(ctr(d.extraLine2.substring(0, W)))
+  L(sep1)
+  for (let i = 0; i < d.blankLines; i++) L('')
+
+  return lines.join('\n')
 }
 
 export type PrinterStatus = {
@@ -419,61 +519,67 @@ function centerStr(s: string, w: number): string {
 /** Build ESC/POS receipt and send to printer.
  *  Tries in order: WiFi (port 9100) → local print server → WebUSB → window.print() */
 export async function printReceipt(data: PrintReceiptData): Promise<void> {
+  const design   = getReceiptDesign()
   const mm       = getPaperWidth()
-  const W        = charWidth(mm)            // 48 for 80mm, 32 for 58mm
-  const NAME_W   = mm === 80 ? 35 : 20     // item name column width
-  const PRICE_W  = W - NAME_W              // price column (right-aligned)
+  const W        = charWidth(mm)
+  const NAME_W   = mm === 80 ? 35 : 20
+  const PRICE_W  = W - NAME_W
   const now      = new Date()
   const dateStr  = now.toLocaleDateString('en-GB')
   const timeStr  = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   const sep1     = '='.repeat(W)
   const sep2     = '-'.repeat(W)
   const payLabel = data.method === 'cash' ? 'เงินสด'
-                 : data.method === 'qr'   ? 'QR Code'
-                 : 'โอนเงิน'
+                 : data.method === 'qr'   ? 'QR Code' : 'โอนเงิน'
 
   const parts: Uint8Array[] = []
   const p = (...s: (number[] | Uint8Array)[]) => parts.push(concat(...s))
 
-  // Init + code page for Thai
   p(CMD.init, CMD.codePage874)
 
-  // Shop name — centered, large, bold (ESC/POS path); manual center for plain-text path
-  p(CMD.alignCenter, CMD.sizeLarge, CMD.boldOn)
-  p(line(centerStr(data.shopName.substring(0, Math.floor(W / 2)), Math.floor(W / 2))))
-  p(CMD.boldOff, CMD.sizeNormal, CMD.alignLeft)
+  // Shop name
+  if (design.showLogo) {
+    p(CMD.alignCenter, CMD.sizeLarge, CMD.boldOn)
+    p(line(centerStr(data.shopName.substring(0, Math.floor(W / 2)), Math.floor(W / 2))))
+    p(CMD.boldOff, CMD.sizeNormal, CMD.alignLeft)
+  }
 
-  // Date / time / order info
   p(line(`${dateStr} ${timeStr}`))
-  p(line(data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`))
-  if (data.customer) p(line(data.customer.substring(0, W)))
+  if (design.showReceiptNum) {
+    p(line(data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`))
+  }
+  if (data.customer)   p(line(data.customer.substring(0, W)))
+  if (design.showStaff && (design.staffName || data.staffName)) {
+    p(line(`พนักงาน: ${(design.staffName || data.staffName || '').substring(0, W - 10)}`))
+  }
 
   // ── Queue number — prominent box ──────────────────────────────────────────
-  const queueStr   = `#${String(data.queue).padStart(3, '0')}`
-  const queueLabel = '** คิว / QUEUE **'
-  p(line(sep1))
-  p(CMD.boldOn)
-  p(line(centerStr(queueLabel, W)))
-  p(CMD.boldOff)
-  // Large double-height for ESC/POS path; manual-centered string preserved for plain-text path
-  p(CMD.alignCenter, CMD.sizeLarge, CMD.boldOn)
-  p(line(centerStr(queueStr, W)))
-  p(CMD.boldOff, CMD.sizeNormal, CMD.alignLeft)
-  p(line(sep1))
+  if (design.showQueueLarge) {
+    const queueStr   = `#${String(data.queue).padStart(3, '0')}`
+    const queueLabel = '** คิว / QUEUE **'
+    p(line(sep1))
+    p(CMD.boldOn)
+    p(line(centerStr(queueLabel, W)))
+    p(CMD.boldOff)
+    p(CMD.alignCenter, CMD.sizeLarge, CMD.boldOn)
+    p(line(centerStr(queueStr, W)))
+    p(CMD.boldOff, CMD.sizeNormal, CMD.alignLeft)
+    p(line(sep1))
+  }
 
   // ── Items ─────────────────────────────────────────────────────────────────
   p(line(sep2))
-
   for (const item of data.cartSnapshot) {
-    const nameQty  = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
-    const priceStr = fmtLak((item.recipe.price_lak || 0) * item.qty)
-    // Name (left, NAME_W chars) + price (right-aligned, PRICE_W chars)
-    p(line(padR(nameQty, NAME_W) + priceStr.padStart(PRICE_W)))
-    // Customization indented 2 spaces on next line
+    const nameQty = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
+    if (design.showItemPrice) {
+      p(line(padR(nameQty, NAME_W) + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W)))
+    } else {
+      p(line(nameQty.substring(0, W)))
+    }
     if (item.customization) p(line(('  ' + item.customization).substring(0, W)))
   }
 
-  // ── Totals — right-aligned ────────────────────────────────────────────────
+  // ── Totals ────────────────────────────────────────────────────────────────
   p(line(sep2))
   p(line(twoCol('ยอดรวม', fmtLak(data.subtotal), W)))
   if (data.discountAmt > 0) {
@@ -499,11 +605,13 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   p(line(centerStr('Thank you & come back', W)))
   if (data.address) p(line(centerStr(data.address.substring(0, W), W)))
   if (data.phone)   p(line(centerStr(data.phone.substring(0, W), W)))
+  if (design.extraLine1) p(line(centerStr(design.extraLine1.substring(0, W), W)))
+  if (design.extraLine2) p(line(centerStr(design.extraLine2.substring(0, W), W)))
   p(CMD.alignLeft)
   p(line(sep1))
 
-  // 4 blank lines + partial cut
-  p([LF, LF, LF, LF])
+  // Blank feed lines + partial cut
+  for (let i = 0; i < design.blankLines; i++) p([LF])
   p(CMD.cutPartial)
 
   const bytes  = concat(...parts)
