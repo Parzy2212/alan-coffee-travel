@@ -1,9 +1,10 @@
 'use strict'
 
-// AlanPOS Print Server v1.0
+// AlanPOS Print Server v1.1
 // Listens on http://127.0.0.1:12345
-// Receives raw ESC/POS binary from browser, writes to Windows USB printer port.
-// Optionally forwards to a WiFi printer via TCP when X-Printer-IP header is set.
+// Named-printer path: strips ESC/POS bytes → plain text → Out-Printer
+// USB path: raw binary via `copy /b` (direct port, no GDI driver)
+// WiFi path: raw TCP socket to port 9100
 
 const http = require('http')
 const net  = require('net')
@@ -12,13 +13,117 @@ const os   = require('os')
 const path = require('path')
 const { execFile } = require('child_process')
 
-const PORT         = 12345
-const USB_PORTS    = ['USB001', 'USB002', 'USB003', 'USB004', 'USB005']
-const WIFI_PORT    = 9100  // standard raw ESC/POS TCP port on network printers
+const PORT      = 12345
+const USB_PORTS = ['USB001', 'USB002', 'USB003', 'USB004', 'USB005']
+const WIFI_PORT = 9100
 
 let cachedUsbPort = null
 
-// ── USB printing via Windows copy command ─────────────────────────────────────
+// ── ESC/POS → plain text converter ───────────────────────────────────────────
+// Strips all ESC/GS control sequences and returns printable ASCII text.
+// Used so GDI-only drivers (XP-T80A, etc.) can receive via Out-Printer.
+
+function escPosToText(buf) {
+  const ESC = 0x1B
+  const GS  = 0x1D
+  const LF  = 0x0A
+
+  let i   = 0
+  let out = ''
+
+  while (i < buf.length) {
+    const b = buf[i]
+
+    if (b === ESC) {
+      const cmd = buf[i + 1]
+      if      (cmd === 0x40) i += 2           // ESC @  reset
+      else if (cmd === 0x61) i += 3           // ESC a N  align
+      else if (cmd === 0x74) i += 3           // ESC t N  code page
+      else if (cmd === 0x45) i += 3           // ESC E N  bold
+      else if (cmd === 0x4D) i += 3           // ESC M N  font
+      else if (cmd === 0x21) i += 3           // ESC ! N  font select
+      else if (cmd === 0x32) i += 2           // ESC 2    line spacing default
+      else if (cmd === 0x33) i += 3           // ESC 3 N  line spacing
+      else if (cmd === 0x64) i += 3           // ESC d N  feed N lines
+      else                   i += 2           // unknown — skip cmd byte
+    } else if (b === GS) {
+      const cmd = buf[i + 1]
+      if      (cmd === 0x56) i += 3           // GS V N  cut
+      else if (cmd === 0x68) i += 3           // GS h N  barcode height
+      else if (cmd === 0x77) i += 3           // GS w N  barcode width
+      else if (cmd === 0x21) i += 3           // GS ! N  magnify
+      else                   i += 2
+    } else if (b === LF) {
+      out += '\n'
+      i++
+    } else if (b >= 0x20 && b <= 0x7E) {
+      out += String.fromCharCode(b)
+      i++
+    } else {
+      i++ // skip other control / non-ASCII bytes
+    }
+  }
+
+  return out
+}
+
+// ── Plain-text receipt builder ────────────────────────────────────────────────
+
+const WIDTH = 48 // characters for 80mm paper
+
+function buildTextTestJob() {
+  const center  = s => s.padStart(Math.floor((WIDTH + s.length) / 2)).padEnd(WIDTH)
+  const divider = c => c.repeat(WIDTH)
+
+  return [
+    divider('='),
+    center('ALAN POS - TEST PRINT'),
+    divider('='),
+    'Plain text job from print server',
+    'If you see this, Out-Printer works!',
+    divider('-'),
+    'Printer: OK',
+    'Spooler: OK',
+    'Driver:  OK',
+    divider('='),
+    '',
+    '',
+    '',
+  ].join('\r\n')
+}
+
+// ── Named-printer via Out-Printer (GDI-safe plain text) ──────────────────────
+
+function printTextByName(text, printerName) {
+  return new Promise((resolve, reject) => {
+    const tmp      = path.join(os.tmpdir(), `alan_pos_${Date.now()}.txt`)
+    const safeName = printerName.replace(/'/g, "''")
+
+    try { fs.writeFileSync(tmp, text, 'utf8') } catch (e) { return reject(e) }
+
+    // Single-quoted PS strings treat backslashes as literals — no escaping needed
+    const cmd = `Get-Content '${tmp}' | Out-Printer -Name '${safeName}'`
+
+    execFile(
+      'powershell',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', cmd],
+      (err, stdout, stderr) => {
+        try { fs.unlinkSync(tmp) } catch {}
+        if (err) return reject(new Error(`Out-Printer failed: ${stderr.trim() || err.message}`))
+        resolve()
+      }
+    )
+  })
+}
+
+async function printByName(data, printerName) {
+  // Strip ESC/POS control bytes — GDI drivers only understand plain text
+  const text = escPosToText(data)
+  await printTextByName(text, printerName)
+  console.log(`[alan-pos] Printed "${printerName}" via Out-Printer (plain text)`)
+}
+
+// ── USB printing via Windows copy /b ─────────────────────────────────────────
 
 function tryUsbPort(portName, data) {
   return new Promise((resolve, reject) => {
@@ -59,150 +164,14 @@ function printToTcp(data, ip) {
     const socket = new net.Socket()
     socket.setTimeout(5000)
     socket.connect(WIFI_PORT, ip, () => {
-      socket.write(data, () => {
-        socket.end()
-        resolve()
-      })
+      socket.write(data, () => { socket.end(); resolve() })
     })
-    socket.on('error', (e) => reject(new Error(`TCP ${ip}:${WIFI_PORT} — ${e.message}`)))
+    socket.on('error', e => reject(new Error(`TCP ${ip}:${WIFI_PORT} — ${e.message}`)))
     socket.on('timeout', () => {
       socket.destroy()
       reject(new Error(`TCP timeout connecting to ${ip}:${WIFI_PORT}`))
     })
   })
-}
-
-// ── Named-printer (Windows spooler) printing ─────────────────────────────────
-
-// Send raw ESC/POS bytes to the Windows print spooler by printer name using
-// Win32 winspool.drv via .NET P/Invoke. Works for ALL port types (USB, LPT,
-// network, virtual) — no port lookup needed.
-function printRawByName(data, printerName) {
-  return new Promise((resolve, reject) => {
-    const ts  = Date.now()
-    const bin = path.join(os.tmpdir(), `alan_pos_${ts}.bin`)
-    const ps1 = path.join(os.tmpdir(), `alan_pos_${ts}.ps1`)
-
-    try { fs.writeFileSync(bin, data) } catch (e) { return reject(e) }
-
-    // Escape for PowerShell single-quoted strings
-    const safeName = printerName.replace(/'/g, "''")
-    // Double-backslash the temp path for use inside PS single-quoted string
-    const safeBin  = bin.replace(/\\/g, '\\\\')
-
-    const script = `
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public class RawPrint {
-  [DllImport("winspool.drv", CharSet=CharSet.Auto, SetLastError=true)]
-  public static extern bool OpenPrinter(string n, out IntPtr h, IntPtr d);
-  [DllImport("winspool.drv", SetLastError=true)]
-  public static extern bool ClosePrinter(IntPtr h);
-  [DllImport("winspool.drv", CharSet=CharSet.Auto, SetLastError=true)]
-  public static extern int StartDocPrinter(IntPtr h, int lvl, ref DOCINFO di);
-  [DllImport("winspool.drv", SetLastError=true)]
-  public static extern bool EndDocPrinter(IntPtr h);
-  [DllImport("winspool.drv", SetLastError=true)]
-  public static extern bool StartPagePrinter(IntPtr h);
-  [DllImport("winspool.drv", SetLastError=true)]
-  public static extern bool EndPagePrinter(IntPtr h);
-  [DllImport("winspool.drv", SetLastError=true)]
-  public static extern bool WritePrinter(IntPtr h, IntPtr buf, int n, out int w);
-  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)]
-  public struct DOCINFO {
-    public int cbSize; public string pDocName;
-    public string pOutputFile; public string pDatatype; public int fwType;
-  }
-}
-"@ -ErrorAction SilentlyContinue
-$bytes = [System.IO.File]::ReadAllBytes('${safeBin}')
-$h = [IntPtr]::Zero
-[RawPrint]::OpenPrinter('${safeName}', [ref]$h, [IntPtr]::Zero) | Out-Null
-if ($h -eq [IntPtr]::Zero) { throw "Could not open printer '${safeName}'" }
-$di = New-Object RawPrint+DOCINFO
-$di.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($di)
-$di.pDocName = 'AlanPOS Receipt'
-$di.pDatatype = 'RAW'
-[RawPrint]::StartDocPrinter($h, 1, [ref]$di) | Out-Null
-[RawPrint]::StartPagePrinter($h) | Out-Null
-$ptr = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
-[System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $ptr, $bytes.Length)
-$w = 0
-[RawPrint]::WritePrinter($h, $ptr, $bytes.Length, [ref]$w) | Out-Null
-[System.Runtime.InteropServices.Marshal]::FreeHGlobal($ptr)
-[RawPrint]::EndPagePrinter($h) | Out-Null
-[RawPrint]::EndDocPrinter($h) | Out-Null
-[RawPrint]::ClosePrinter($h) | Out-Null
-Write-Output "OK:$w"
-`.trim()
-
-    try { fs.writeFileSync(ps1, script, 'utf8') } catch (e) { return reject(e) }
-
-    execFile(
-      'powershell',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1],
-      (err, stdout, stderr) => {
-        try { fs.unlinkSync(bin) } catch {}
-        try { fs.unlinkSync(ps1) } catch {}
-        if (err) return reject(new Error(`Raw spool failed: ${stderr.trim() || err.message}`))
-        const out = stdout.trim()
-        if (!out.includes('OK:')) return reject(new Error(`Spool error: ${out || stderr.trim()}`))
-        resolve()
-      }
-    )
-  })
-}
-
-async function printByName(data, printerName) {
-  await printRawByName(data, printerName)
-  console.log(`[alan-pos] Printed "${printerName}" via Windows spooler`)
-}
-
-// ── ASCII-only test job builder ───────────────────────────────────────────────
-// Builds a minimal ESC/POS payload using only safe ASCII bytes.
-// Used by GET /test-ascii to verify printer communication independent of
-// Thai encoding or browser-side formatting.
-
-function buildAsciiTestJob() {
-  const ESC = 0x1B
-  const GS  = 0x1D
-  const LF  = 0x0A
-
-  const lines = [
-    '================================',
-    '   ALAN POS - TEST PRINT',
-    '================================',
-    'ASCII-only job from print server',
-    'If you see this, RAW print works',
-    '--------------------------------',
-    'Printer: OK',
-    'Spooler: OK',
-    'ESC/POS: OK',
-    '================================',
-    '',
-    '',
-    '',
-  ]
-
-  const bytes = []
-
-  // ESC @ — full printer reset
-  bytes.push(ESC, 0x40)
-  // ESC t 0 — code page PC437 (pure ASCII, universally supported)
-  bytes.push(ESC, 0x74, 0x00)
-  // ESC a 1 — center align
-  bytes.push(ESC, 0x61, 0x01)
-
-  for (const l of lines) {
-    for (let i = 0; i < l.length; i++) bytes.push(l.charCodeAt(i) & 0x7F)
-    bytes.push(LF)
-  }
-
-  // GS V 1 — partial cut
-  bytes.push(GS, 0x56, 0x01)
-
-  return Buffer.from(bytes)
 }
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
@@ -216,7 +185,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && req.url === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, version: '1.0.0', usbPort: cachedUsbPort }))
+    res.end(JSON.stringify({ ok: true, version: '1.1.0', usbPort: cachedUsbPort }))
     return
   }
 
@@ -230,10 +199,7 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ ok: false, error: stderr.trim() || err.message }))
           return
         }
-        const printers = stdout
-          .split('\n')
-          .map(l => l.trim())
-          .filter(l => l)
+        const printers = stdout.split('\n').map(l => l.trim()).filter(Boolean)
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true, printers }))
       }
@@ -241,22 +207,24 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // GET /test-ascii?printer=XP-80C  — sends ASCII-only ESC/POS job to verify comms
+  // GET /test-ascii?printer=XP-T80A — sends plain-text test job via Out-Printer
   if (req.method === 'GET' && req.url.startsWith('/test-ascii')) {
     const qs          = new URL(req.url, 'http://localhost').searchParams
     const printerName = qs.get('printer') || ''
-    const testData    = buildAsciiTestJob()
+    const testText    = buildTextTestJob()
+
     try {
       if (printerName) {
-        await printByName(testData, printerName)
+        await printTextByName(testText, printerName)
       } else {
-        await printToUsb(testData)
+        // Fall back to USB raw for port-based printers
+        await printToUsb(Buffer.from(testText, 'ascii'))
       }
-      console.log(`[alan-pos] ASCII test sent to "${printerName || 'USB auto-detect'}"`)
+      console.log(`[alan-pos] Text test sent to "${printerName || 'USB auto-detect'}"`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, msg: 'ASCII test job sent', printer: printerName || 'USB auto-detect' }))
+      res.end(JSON.stringify({ ok: true, msg: 'Text test job sent', printer: printerName || 'USB auto-detect' }))
     } catch (err) {
-      console.error('[alan-pos] ASCII test failed:', err.message)
+      console.error('[alan-pos] Test failed:', err.message)
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: false, error: err.message }))
     }
@@ -270,14 +238,12 @@ const server = http.createServer(async (req, res) => {
       const data        = Buffer.concat(chunks)
       const printerIp   = req.headers['x-printer-ip']   || ''
       const printerName = req.headers['x-printer-name'] || ''
-      // Paper width from browser: 58 (32 chars) or 80 (48 chars) — already applied
-      // in ESC/POS bytes by the browser; logged here for diagnostics only
-      const paperWidth  = req.headers['x-paper-width']  || '58'
+      const paperWidth  = req.headers['x-paper-width']  || '80'
 
       try {
         if (printerName) {
           await printByName(data, printerName)
-          console.log(`[alan-pos] Printed to "${printerName}" (${paperWidth}mm)`)
+          console.log(`[alan-pos] Printed to "${printerName}" via Out-Printer (${paperWidth}mm)`)
         } else if (printerIp) {
           await printToTcp(data, printerIp)
           console.log(`[alan-pos] Printed via WiFi TCP ${printerIp} (${paperWidth}mm)`)
@@ -302,15 +268,15 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log('╔══════════════════════════════════════╗')
-  console.log('║   AlanPOS Print Server v1.0          ║')
+  console.log('║   AlanPOS Print Server v1.1          ║')
   console.log(`║   http://127.0.0.1:${PORT}           ║`)
-  console.log('║   พร้อมรับงานพิมพ์แล้ว...           ║')
+  console.log('║   Out-Printer mode (GDI-safe)        ║')
   console.log('╚══════════════════════════════════════╝')
 })
 
 server.on('error', err => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} ถูกใช้งานอยู่แล้ว — print server อาจกำลังทำงานอยู่`)
+    console.error(`Port ${PORT} is already in use — print server may already be running`)
   } else {
     console.error('Server error:', err.message)
   }
