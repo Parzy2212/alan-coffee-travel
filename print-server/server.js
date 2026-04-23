@@ -19,9 +19,45 @@ const WIFI_PORT = 9100
 
 let cachedUsbPort = null
 
+// ── Thai label → ASCII substitution table ────────────────────────────────────
+// Courier New has no Thai glyphs — replace known receipt labels with English.
+// Longer strings must come before shorter ones to avoid partial replacements.
+const THAI_MAP = [
+  // Footer
+  ['ขอบคุณที่ใช้บริการ', 'THANK YOU FOR VISITING'],
+  // Totals
+  ['ยอดสุทธิ',           'TOTAL'],
+  ['ยอดรวม',             'SUBTOTAL'],
+  ['ส่วนลด',             'DISCOUNT'],
+  // Payment labels
+  ['ชำระด้วย:',          'PAYMENT:'],
+  ['ชำระด้วย',           'PAYMENT'],
+  ['เงินทอน:',           'CHANGE:'],
+  ['เงินทอน',            'CHANGE'],
+  ['รับมา:',             'RECEIVED:'],
+  ['รับมา',              'RECEIVED'],
+  // Payment methods
+  ['เงินสด',             'CASH'],
+  ['โอนเงิน',            'TRANSFER'],
+  // Queue
+  ['** คิว / QUEUE **',  '** QUEUE **'],
+  ['คิว',                'QUEUE'],
+  // Staff
+  ['พนักงาน:',           'STAFF:'],
+  ['พนักงาน',            'STAFF'],
+  // Generic thank-you
+  ['ขอบคุณ',             'THANK YOU'],
+]
+
+function applyThaiMap(text) {
+  let out = text
+  for (const [thai, ascii] of THAI_MAP) out = out.split(thai).join(ascii)
+  return out
+}
+
 // ── ESC/POS → plain text converter ───────────────────────────────────────────
-// Strips all ESC/GS control sequences and returns printable ASCII text.
-// Used so GDI-only drivers (XP-T80A, etc.) can receive via Out-Printer.
+// Strips all ESC/GS control sequences and returns a Unicode string.
+// TIS-620 high bytes (0xA1-0xFB) are decoded to Unicode Thai U+0E01-U+0E5B.
 
 function escPosToText(buf) {
   const ESC = 0x1B
@@ -59,8 +95,12 @@ function escPosToText(buf) {
     } else if (b >= 0x20 && b <= 0x7E) {
       out += String.fromCharCode(b)
       i++
+    } else if (b >= 0xA1 && b <= 0xFB) {
+      // TIS-620 Thai byte → Unicode: codepoint = byte + 0x0D60
+      out += String.fromCodePoint(b + 0x0D60)
+      i++
     } else {
-      i++ // skip other control / non-ASCII bytes
+      i++ // skip other control / non-printable bytes
     }
   }
 
@@ -158,8 +198,8 @@ Write-Output 'OK'
 }
 
 async function printByName(data, printerName, paperMm = 80) {
-  // Strip ESC/POS control bytes — GDI drivers only understand plain text
-  const text = escPosToText(data)
+  // Strip ESC/POS, decode TIS-620 Thai, replace Thai labels with ASCII
+  const text = applyThaiMap(escPosToText(data))
   await printTextByName(text, printerName, paperMm)
   console.log(`[alan-pos] Printed "${printerName}" via System.Drawing (${paperMm}mm)`)
 }
@@ -221,6 +261,8 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Printer-IP, X-Printer-Name, X-Paper-Width')
+  // Chrome Private Network Access: required when an https page calls http://127.0.0.1
+  res.setHeader('Access-Control-Allow-Private-Network', 'true')
 
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
