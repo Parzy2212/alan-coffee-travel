@@ -711,7 +711,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
       p_discount_amount: discountAmt,
       p_discount_reason: discountReason || null,
       p_staff_note:      staffNote || null,
-    }).catch(() => { /* background — non-critical */ })
+    }).then(null, () => { /* background — non-critical */ })
 
     // Use queue number as receipt ID so we can show success immediately
     const finalReceipt = String(result.queue_number).padStart(3, '0')
