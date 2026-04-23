@@ -68,24 +68,25 @@ function escPosToText(buf) {
 }
 
 // ── Plain-text receipt builder ────────────────────────────────────────────────
+// width: 48 for 80mm paper, 32 for 58mm paper
 
-const WIDTH = 48 // characters for 80mm paper
-
-function buildTextTestJob() {
-  const center  = s => s.padStart(Math.floor((WIDTH + s.length) / 2)).padEnd(WIDTH)
-  const divider = c => c.repeat(WIDTH)
+function buildTextTestJob(width = 48) {
+  const W       = width
+  const center  = s => s.padStart(Math.floor((W + s.length) / 2)).padEnd(W)
+  const divider = c => c.repeat(W)
 
   return [
     divider('='),
     center('ALAN POS - TEST PRINT'),
     divider('='),
-    'Plain text job from print server',
-    'If you see this, Out-Printer works!',
+    center(`Paper: ${W === 48 ? '80mm (48 chars)' : '58mm (32 chars)'}`),
+    center('If you see this, Out-Printer works!'),
     divider('-'),
     'Printer: OK',
     'Spooler: OK',
     'Driver:  OK',
     divider('='),
+    '',
     '',
     '',
     '',
@@ -207,11 +208,13 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // GET /test-ascii?printer=XP-T80A — sends plain-text test job via Out-Printer
+  // GET /test-ascii?printer=XP-T80A&width=80 — sends plain-text test job via Out-Printer
   if (req.method === 'GET' && req.url.startsWith('/test-ascii')) {
     const qs          = new URL(req.url, 'http://localhost').searchParams
     const printerName = qs.get('printer') || ''
-    const testText    = buildTextTestJob()
+    const paperMm     = parseInt(qs.get('width') || '80', 10)
+    const charWidth   = paperMm === 58 ? 32 : 48
+    const testText    = buildTextTestJob(charWidth)
 
     try {
       if (printerName) {

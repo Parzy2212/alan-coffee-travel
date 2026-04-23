@@ -698,7 +698,10 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
     if (error) { setErrMsg(translateError(error.message)); setLoading(false); return }
 
     const result = data as { order_id: string; queue_number: number }
-    const { data: receipt, error: err2 } = await supabase.rpc('finalize_order_payment', {
+
+    // Fire finalize in the background — order is already committed and paid.
+    // This records payment metadata (received, change, table, note) without blocking the UI.
+    supabase.rpc('finalize_order_payment', {
       p_order_id:        result.order_id,
       p_payment_method:  method,
       p_amount_received: method === 'cash' ? receivedNum : null,
@@ -708,9 +711,10 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
       p_discount_amount: discountAmt,
       p_discount_reason: discountReason || null,
       p_staff_note:      staffNote || null,
-    })
+    }).catch(() => { /* background — non-critical */ })
 
-    const finalReceipt = err2 ? '—' : ((receipt as string) ?? '—')
+    // Use queue number as receipt ID so we can show success immediately
+    const finalReceipt = String(result.queue_number).padStart(3, '0')
     onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customer, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason)
     setLoading(false)
   }

@@ -409,10 +409,20 @@ export async function testPrint(shopName = 'ALAN COFFEE & TRAVEL'): Promise<void
   })
 }
 
+// Center a string within w bytes (using byte-length for Thai awareness)
+function centerStr(s: string, w: number): string {
+  const bl = byteLen(s)
+  if (bl >= w) return s
+  return ' '.repeat(Math.floor((w - bl) / 2)) + s
+}
+
 /** Build ESC/POS receipt and send to printer.
  *  Tries in order: WiFi (port 9100) → local print server → WebUSB → window.print() */
 export async function printReceipt(data: PrintReceiptData): Promise<void> {
-  const W        = charWidth(getPaperWidth()) // 32 or 48 depending on paper setting
+  const mm       = getPaperWidth()
+  const W        = charWidth(mm)            // 48 for 80mm, 32 for 58mm
+  const NAME_W   = mm === 80 ? 35 : 20     // item name column width
+  const PRICE_W  = W - NAME_W              // price column (right-aligned)
   const now      = new Date()
   const dateStr  = now.toLocaleDateString('en-GB')
   const timeStr  = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -428,46 +438,53 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   // Init + code page for Thai
   p(CMD.init, CMD.codePage874)
 
-  // Shop name — center, large, bold
-  // Large text = 2× width, so max chars = W / 2
+  // Shop name — centered, large, bold (ESC/POS path); manual center for plain-text path
   p(CMD.alignCenter, CMD.sizeLarge, CMD.boldOn)
-  p(line(data.shopName.substring(0, Math.floor(W / 2))))
-  p(CMD.boldOff, CMD.sizeNormal)
+  p(line(centerStr(data.shopName.substring(0, Math.floor(W / 2)), Math.floor(W / 2))))
+  p(CMD.boldOff, CMD.sizeNormal, CMD.alignLeft)
 
-  // Date / time / order number
+  // Date / time / order info
   p(line(`${dateStr} ${timeStr}`))
   p(line(data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`))
   if (data.customer) p(line(data.customer.substring(0, W)))
 
-  // Items
-  p(CMD.alignLeft)
+  // ── Queue number — prominent box ──────────────────────────────────────────
+  const queueStr   = `#${String(data.queue).padStart(3, '0')}`
+  const queueLabel = '** คิว / QUEUE **'
+  p(line(sep1))
+  p(CMD.boldOn)
+  p(line(centerStr(queueLabel, W)))
+  p(CMD.boldOff)
+  // Large double-height for ESC/POS path; manual-centered string preserved for plain-text path
+  p(CMD.alignCenter, CMD.sizeLarge, CMD.boldOn)
+  p(line(centerStr(queueStr, W)))
+  p(CMD.boldOff, CMD.sizeNormal, CMD.alignLeft)
+  p(line(sep1))
+
+  // ── Items ─────────────────────────────────────────────────────────────────
   p(line(sep2))
 
   for (const item of data.cartSnapshot) {
-    const name  = item.recipe.product_name
-    const price = fmtLak((item.recipe.price_lak || 0) * item.qty)
-    const qty   = `x${item.qty}`
-    // Row 1: name + qty
-    p(line(padR(name, W - qty.length - 1) + ' ' + qty))
-    // Row 2: customization + price
-    const cust = item.customization ? `  ${item.customization}` : ''
-    p(line(padR(cust, W - price.length - 1) + ' ' + price))
+    const nameQty  = item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : '')
+    const priceStr = fmtLak((item.recipe.price_lak || 0) * item.qty)
+    // Name (left, NAME_W chars) + price (right-aligned, PRICE_W chars)
+    p(line(padR(nameQty, NAME_W) + priceStr.padStart(PRICE_W)))
+    // Customization indented 2 spaces on next line
+    if (item.customization) p(line(('  ' + item.customization).substring(0, W)))
   }
 
-  // Totals
+  // ── Totals — right-aligned ────────────────────────────────────────────────
   p(line(sep2))
   p(line(twoCol('ยอดรวม', fmtLak(data.subtotal), W)))
   if (data.discountAmt > 0) {
     const lbl = data.discountReason ? `ส่วนลด (${data.discountReason})` : 'ส่วนลด'
-    p(line(twoCol(lbl, fmtLak(data.discountAmt), W)))
-  } else {
-    p(line(twoCol('ส่วนลด', '0', W)))
+    p(line(twoCol(lbl, `-${fmtLak(data.discountAmt)}`, W)))
   }
   p(CMD.boldOn)
   p(line(twoCol('ยอดสุทธิ', fmtLak(data.finalTotal), W)))
   p(CMD.boldOff)
 
-  // Payment
+  // ── Payment ───────────────────────────────────────────────────────────────
   p(line(sep1))
   p(line(twoCol('ชำระด้วย:', payLabel, W)))
   if (data.method === 'cash' && data.received > 0) {
@@ -475,17 +492,19 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     p(line(twoCol('เงินทอน:', fmtLak(data.change), W)))
   }
 
-  // Footer
+  // ── Footer ────────────────────────────────────────────────────────────────
   p(line(sep1))
   p(CMD.alignCenter)
-  p(line((data.footerText || 'ขอบคุณที่ใช้บริการ').substring(0, W)))
-  p(line('Thank you & come back'))
-  if (data.address) p(line(data.address.substring(0, W)))
-  if (data.phone)   p(line(data.phone.substring(0, W)))
+  p(line(centerStr(data.footerText || 'ขอบคุณที่ใช้บริการ', W)))
+  p(line(centerStr('Thank you & come back', W)))
+  if (data.address) p(line(centerStr(data.address.substring(0, W), W)))
+  if (data.phone)   p(line(centerStr(data.phone.substring(0, W), W)))
+  p(CMD.alignLeft)
   p(line(sep1))
 
-  // Feed + partial cut
-  p(CMD.feed3, CMD.cutPartial)
+  // 4 blank lines + partial cut
+  p([LF, LF, LF, LF])
+  p(CMD.cutPartial)
 
   const bytes  = concat(...parts)
   const ip     = getPrinterIp()
