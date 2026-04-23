@@ -6,7 +6,7 @@ import { MoneyInput } from '@/components/MoneyInput'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
-  isSupported as printerIsSupported, debugDevices,
+  isSupported as printerIsSupported, debugDevices, setPrinterName as saveServerPrinterName,
 } from '@/lib/thermal-printer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -971,13 +971,17 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
   const [currency,    setCurrency]    = useState(() => ls('pos_currency', 'LAK'))
   const [printerIp,   setPrinterIpState] = useState(() => ls('printer_ip'))
-  const [paperWidth,  setPaperWidth]  = useState<'58' | '80'>(() => ls('pos_paper_width', '58') === '80' ? '80' : '58')
+  const [paperWidth,  setPaperWidth]  = useState<'58' | '80'>(() => ls('pos_paper_width', '80') === '80' ? '80' : '58')
   const [shopName,   setShopName]   = useState(() => ls('receipt_shop_name'))
   const [footerText, setFooterText] = useState(() => ls('receipt_footer_text', 'ขอบคุณที่ใช้บริการ'))
   const [phone,      setPhone]      = useState(() => ls('receipt_phone'))
   const [address,    setAddress]    = useState(() => ls('receipt_address'))
   const [showQr,     setShowQr]     = useState(() => ls('receipt_show_qr',  'true') === 'true')
   const [showVat,    setShowVat]    = useState(() => ls('receipt_show_vat', 'true') === 'true')
+
+  const [serverPrinterName, setServerPrinterName] = useState(() => ls('pos_printer_name'))
+  const [serverPrinters,    setServerPrinters]    = useState<string[]>([])
+  const [printersLoading,   setPrintersLoading]   = useState(false)
 
   const [printerName,      setPrinterName]      = useState<string | null>(null)
   const [printerConnected, setPrinterConnected] = useState(false)
@@ -998,8 +1002,18 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function fetchPrinters() {
+    setPrintersLoading(true)
+    try {
+      const res = await fetch('http://127.0.0.1:12345/printers', { signal: AbortSignal.timeout(3000) })
+      const json = await res.json()
+      if (json.ok && Array.isArray(json.printers)) setServerPrinters(json.printers)
+    } catch { /* server not running */ }
+    finally { setPrintersLoading(false) }
+  }
+
   useEffect(() => {
-    checkServer()
+    checkServer().then(ok => { if (ok) fetchPrinters() })
     if (!printerIsSupported()) { setWebUsbSupported(false); return }
     getPrinterStatus().then(s => {
       setPrinterConnected(s.connected)
@@ -1037,9 +1051,15 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
   async function handleTestPrint() {
     setPrinterBusy(true)
-    // Check print server first so status indicator updates before printing
-    await checkServer()
-    try { await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL') } catch { /* ignore */ }
+    const ok = await checkServer()
+    try {
+      if (ok && serverPrinterName.trim()) {
+        await fetch(`http://127.0.0.1:12345/test-ascii?printer=${encodeURIComponent(serverPrinterName.trim())}`,
+          { signal: AbortSignal.timeout(8000) })
+      } else {
+        await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL')
+      }
+    } catch { /* ignore */ }
     setPrinterBusy(false)
   }
 
@@ -1051,9 +1071,10 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   function save() {
     try {
       localStorage.setItem('pos_currency',        currency)
-      localStorage.setItem('pos_paper_width',    paperWidth)
+      localStorage.setItem('pos_paper_width',     paperWidth)
       if (printerIp.trim()) localStorage.setItem('printer_ip', printerIp.trim())
       else                  localStorage.removeItem('printer_ip')
+      saveServerPrinterName(serverPrinterName)
       localStorage.setItem('receipt_shop_name',   shopName)
       localStorage.setItem('receipt_footer_text', footerText)
       localStorage.setItem('receipt_phone',       phone)
@@ -1102,6 +1123,35 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
                 ระบบจะลองพิมพ์ตามลำดับ: WiFi → Print Server → WebUSB → หน้าจอ
               </div>
+            </div>
+
+            {/* Windows printer name selector */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>เลือกเครื่องพิมพ์ (Print Server)</div>
+              {serverOk && serverPrinters.length > 0 ? (
+                <select
+                  value={serverPrinterName}
+                  onChange={e => setServerPrinterName(e.target.value)}
+                  style={{ ...popupInput, cursor: 'pointer' }}
+                >
+                  <option value="">— ไม่ระบุ (ใช้ USB auto) —</option>
+                  {serverPrinters.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={serverPrinterName}
+                  onChange={e => setServerPrinterName(e.target.value)}
+                  style={popupInput}
+                  placeholder={
+                    serverOk === null ? 'กำลังโหลด...'
+                    : printersLoading ? 'กำลังโหลดรายการ...'
+                    : serverOk === false ? 'Print Server ไม่พร้อม — พิมพ์ชื่อเองได้'
+                    : 'ชื่อเครื่องพิมพ์ Windows'
+                  }
+                />
+              )}
             </div>
 
             {/* Paper size */}
