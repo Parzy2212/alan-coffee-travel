@@ -203,7 +203,7 @@ function buildTextTestJob(width = 48) {
 //
 // Out-Printer uses Windows default font (~12pt) with large margins → text fills
 // only the center 1/3 of 80mm paper.  System.Drawing lets us specify:
-//   • Courier New 8pt  — monospace, ~48 chars fit on 80mm at 0 margin
+//   • Courier New 7pt  — monospace, ~48 chars fit on 80mm at 0 margin
 //   • Margins = 0      — no left/right padding
 //   • Custom paper size matching the roll width
 
@@ -226,7 +226,7 @@ function printTextByName(text, printerName, paperMm) {
     const script = `
 Add-Type -AssemblyName System.Drawing
 $script:pLines = [System.IO.File]::ReadAllLines('${tmp}', [System.Text.Encoding]::UTF8)
-$script:pFont  = New-Object System.Drawing.Font('Courier New', 8, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Point)
+$script:pFont  = New-Object System.Drawing.Font('Courier New', 7, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Point)
 $pd = New-Object System.Drawing.Printing.PrintDocument
 $pd.PrinterSettings.PrinterName = '${safeName}'
 $pd.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
