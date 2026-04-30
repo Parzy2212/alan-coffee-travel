@@ -1,377 +1,783 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import {
+  BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, CARD, BORDER, RED, GREEN, ORANGE,
-  CashflowRow,
+  fmtLAK, todayISO, inputStyle,
 } from '@/components/cafe/shared'
 
-// ─── Constants & helpers ─────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const BUDGET_CATS = [
-  { key: 'cogs',      label: 'ต้นทุนสินค้า (COGS)',     color: ORANGE },
-  { key: 'labor',     label: 'ค่าแรงพนักงาน',            color: '#7fa8e8' },
-  { key: 'fixed',     label: 'ค่าใช้จ่ายคงที่',          color: '#b07fe8' },
-  { key: 'marketing', label: 'การตลาด',                  color: '#e87f9c' },
-  { key: 'growth',    label: 'การเติบโต / อื่นๆ',       color: '#7fe8b0' },
-] as const
-type BudgetKey = (typeof BUDGET_CATS)[number]['key']
-
-function loadBudgets(): Record<BudgetKey, number> {
-  try {
-    const raw = localStorage.getItem('alan_budgets')
-    if (raw) return JSON.parse(raw) as Record<BudgetKey, number>
-  } catch { /* ignore */ }
-  return { cogs: 0, labor: 0, fixed: 0, marketing: 0, growth: 0 }
-}
-function saveBudgets(b: Record<BudgetKey, number>) {
-  try { localStorage.setItem('alan_budgets', JSON.stringify(b)) } catch { /* ignore */ }
+type CFEntry = {
+  id: string
+  type: 'income' | 'expense'
+  category: string
+  amount_lak: number
+  description: string | null
+  payment_method: string
+  date: string
+  notes: string | null
+  created_at: string
 }
 
-// ─── FinanceTab ───────────────────────────────────────────────────────────────
+type BudgetRow = {
+  id: string
+  category: string
+  monthly_budget_lak: number
+  spent_this_month: number
+  start_date: string
+}
 
-export default function FinanceTab() {
-  const [cashflow7,   setCashflow7]   = useState<CashflowRow[]>([])
-  const [cashflow30,  setCashflow30]  = useState<CashflowRow[]>([])
-  const [purchases,   setPurchases]   = useState<{ created_at: string; unit_price_lak: number; qty_purchased: number }[]>([])
-  const [loading,     setLoading]     = useState(false)
-  const [form,        setForm]        = useState({ shift: 'morning', opening_cash: '', actual_cash: '' })
-  const [saving,      setSaving]      = useState(false)
-  const [msg,         setMsg]         = useState('')
-  const [budgets,     setBudgets]     = useState<Record<BudgetKey, number>>(loadBudgets)
-  const [editBudget,  setEditBudget]  = useState(false)
-  const [budgetDraft, setBudgetDraft] = useState<Record<BudgetKey, string>>({ cogs: '', labor: '', fixed: '', marketing: '', growth: '' })
+type DailyBar = { day: string; income: number; expense: number }
+
+type CFSummary = { total_income: number; total_expense: number; net: number }
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const INCOME_CATS  = ['ยอดขาย', 'บริการพิเศษ', 'เงินฝาก', 'อื่นๆ']
+const EXPENSE_CATS = ['วัตถุดิบ', 'ค่าแรง', 'ค่าเช่า', 'ค่าไฟ', 'ค่าน้ำ', 'การตลาด', 'อุปกรณ์', 'อื่นๆ']
+const PAY_METHODS  = ['cash', 'transfer', 'card', 'QR']
+
+function monthStart(): string {
+  const t = new Date()
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+function lbl(text: string) {
+  return (
+    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: 5 }}>
+      {text}
+    </div>
+  )
+}
+
+// ─── SetupWizard ──────────────────────────────────────────────────────────────
+
+function SetupWizard({ onDone }: { onDone: () => void }) {
+  const [amount, setAmount] = useState('')
+  const [notes,  setNotes]  = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState('')
+
+  async function save() {
+    const n = parseFloat(amount)
+    if (isNaN(n) || n < 0) { setErr('กรุณากรอกยอดทุนเริ่มต้น (0 หรือมากกว่า)'); return }
+    setSaving(true)
+    const { error } = await supabase.from('initial_capital').insert({
+      amount_lak: n, as_of_date: todayISO(), notes: notes.trim() || null,
+    })
+    if (error) { setErr(error.message); setSaving(false); return }
+    onDone()
+  }
+
+  return (
+    <div style={{ maxWidth: 440, margin: '60px auto', padding: 32, borderRadius: 16, backgroundColor: CARD, border: `1px solid ${GOLD}44` }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: GOLD, marginBottom: 6 }}>ตั้งค่าเงินทุนเริ่มต้น</div>
+      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginBottom: 28, lineHeight: 1.6 }}>
+        กรุณากรอกยอดเงินสดที่มีอยู่ ณ วันนี้เพื่อเริ่มระบบติดตามกระแสเงินสด
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        {lbl('ยอดเงินสดเริ่มต้น (LAK)')}
+        <MoneyInput value={amount} onChange={setAmount} placeholder="0"
+          style={{ ...inputStyle, fontSize: 18, fontWeight: 700 }} />
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        {lbl('หมายเหตุ (ไม่บังคับ)')}
+        <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="เช่น ยอดเงินในกล่องเก็บเงิน"
+          style={inputStyle} />
+      </div>
+      {err && <div style={{ color: RED, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+      <button onClick={() => void save()} disabled={saving}
+        style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 800, fontSize: 15, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+        {saving ? 'กำลังบันทึก...' : 'เริ่มต้นใช้งาน'}
+      </button>
+    </div>
+  )
+}
+
+// ─── AddEntryModal ────────────────────────────────────────────────────────────
+
+function AddEntryModal({ type, onSave, onClose }: {
+  type: 'income' | 'expense'
+  onSave: () => void
+  onClose: () => void
+}) {
+  const cats = type === 'income' ? INCOME_CATS : EXPENSE_CATS
+  const [form, setForm] = useState({
+    category: cats[0], amount: '', description: '', payment_method: 'cash', date: todayISO(), notes: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function save() {
+    const amt = parseFloat(form.amount)
+    if (isNaN(amt) || amt <= 0) { setErr('กรุณากรอกจำนวนเงินที่ถูกต้อง (> 0)'); return }
+    setSaving(true)
+    const { error } = await supabase.from('cash_flow').insert({
+      type, category: form.category, amount_lak: amt,
+      description: form.description.trim() || null,
+      payment_method: form.payment_method,
+      date: form.date,
+      notes: form.notes.trim() || null,
+    })
+    if (error) { setErr(error.message); setSaving(false); return }
+    onSave()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 420, backgroundColor: '#111', borderRadius: 16, border: `1px solid ${type === 'income' ? GREEN : RED}44`, padding: 28 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: type === 'income' ? GREEN : RED, marginBottom: 20 }}>
+          {type === 'income' ? '+ บันทึกเงินเข้า' : '− บันทึกเงินออก'}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            {lbl('หมวดหมู่')}
+            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
+              {cats.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            {lbl('จำนวนเงิน (LAK)')}
+            <MoneyInput value={form.amount} onChange={v => setForm(f => ({ ...f, amount: v }))} placeholder="0" style={inputStyle} />
+          </div>
+          <div>
+            {lbl('รายละเอียด')}
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="เช่น รายรับจากการขายกาแฟ" style={inputStyle} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              {lbl('วิธีชำระ')}
+              <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} style={inputStyle}>
+                {PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              {lbl('วันที่')}
+              <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} />
+            </div>
+          </div>
+          <div>
+            {lbl('หมายเหตุ')}
+            <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="(ไม่บังคับ)" style={inputStyle} />
+          </div>
+        </div>
+        {err && <div style={{ color: RED, fontSize: 12, marginTop: 10 }}>{err}</div>}
+        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <button onClick={() => void save()} disabled={saving}
+            style={{ flex: 1, padding: 10, borderRadius: 8, border: 'none', backgroundColor: type === 'income' ? GREEN : RED, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+          </button>
+          <button onClick={onClose}
+            style={{ padding: '10px 18px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── OverviewSection ──────────────────────────────────────────────────────────
+
+function OverviewSection() {
+  const [balance,  setBalance]  = useState<number | null>(null)
+  const [summary,  setSummary]  = useState<CFSummary | null>(null)
+  const [daily,    setDaily]    = useState<DailyBar[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [shiftOpen, setShiftOpen] = useState(false)
+  const [shiftForm, setShiftForm] = useState({ shift: 'morning', opening_cash: '', actual_cash: '' })
+  const [shiftSaving, setShiftSaving] = useState(false)
+  const [shiftMsg, setShiftMsg] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: d7 }, { data: d30 }, { data: dpurch }] = await Promise.all([
-      supabase.rpc('get_cashflow_summary', { p_days: 7 }),
-      supabase.rpc('get_cashflow_summary', { p_days: 30 }),
-      supabase.from('purchase_logs').select('created_at,unit_price_lak,qty_purchased').eq('status', 'approved')
-        .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()),
+    const now = new Date()
+    const [{ data: bal }, { data: sum }, { data: dc }] = await Promise.all([
+      supabase.rpc('get_current_cash_balance'),
+      supabase.rpc('get_cash_flow_summary', { p_start: monthStart(), p_end: todayISO() }),
+      supabase.rpc('get_daily_cashflow', { p_year: now.getFullYear(), p_month: now.getMonth() + 1 }),
     ])
-    setCashflow7((d7 as CashflowRow[]) ?? [])
-    setCashflow30((d30 as CashflowRow[]) ?? [])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setPurchases((dpurch as any[]) ?? [])
+    setBalance((bal as number | null) ?? 0)
+    setSummary((sum as CFSummary[] | null)?.[0] ?? null)
+    setDaily(((dc as { day: string; income: number; expense: number }[] | null) ?? []).map(r => ({
+      day: r.day.slice(5), income: r.income, expense: r.expense,
+    })))
     setLoading(false)
   }, [])
 
   useEffect(() => { void load() }, [load])
 
   async function closeShift() {
-    const opening = parseFloat(form.opening_cash), actual = parseFloat(form.actual_cash)
-    if (isNaN(opening) || isNaN(actual)) { setMsg('กรุณากรอกยอดเงินให้ถูกต้อง'); return }
-    setSaving(true); setMsg('')
+    const opening = parseFloat(shiftForm.opening_cash), actual = parseFloat(shiftForm.actual_cash)
+    if (isNaN(opening) || isNaN(actual)) { setShiftMsg('กรุณากรอกยอดเงินให้ถูกต้อง'); return }
+    setShiftSaving(true); setShiftMsg('')
     const { data: stats } = await supabase.rpc('get_dashboard_stats')
     const systemSales = (stats as { today_sales?: number } | null)?.today_sales ?? 0
     const { error } = await supabase.rpc('close_shift', {
-      p_staff_id: null, p_shift: form.shift,
+      p_staff_id: null, p_shift: shiftForm.shift,
       p_opening_cash: opening, p_actual_cash: actual, p_system_sales: systemSales,
     })
-    if (error) { setMsg(error.message) } else {
-      setForm(f => ({ ...f, opening_cash: '', actual_cash: '' }))
-      await load()
+    if (error) { setShiftMsg(error.message) } else {
+      setShiftForm(f => ({ ...f, opening_cash: '', actual_cash: '' }))
+      setShiftOpen(false)
     }
-    setSaving(false)
+    setShiftSaving(false)
   }
 
-  // ── Computed summary ──
-  const today = new Date().toISOString().slice(0, 10)
-  const todayRows   = cashflow30.filter(r => r.log_date === today)
-  const todaySales  = todayRows.reduce((s, r) => s + r.system_sales, 0)
-  const todayCash   = todayRows.reduce((s, r) => s + r.actual_cash, 0)
-  const todayVar    = todayRows.reduce((s, r) => s + r.variance_lak, 0)
-  const weekSales   = cashflow7.reduce((s, r) => s + r.system_sales, 0)
-  const totalCogs   = purchases.reduce((s, p) => s + p.unit_price_lak * p.qty_purchased, 0)
-  const grossProfit = weekSales - totalCogs
-  const grossPct    = weekSales > 0 ? Math.round((grossProfit / weekSales) * 100) : 0
-
-  // ── Weekly chart: group by date, sum sales+cash ──
-  const weekMap: Record<string, { ยอดขาย: number; เงินจริง: number; กำไรขั้นต้น: number }> = {}
-  for (const r of cashflow7) {
-    if (!weekMap[r.log_date]) weekMap[r.log_date] = { ยอดขาย: 0, เงินจริง: 0, กำไรขั้นต้น: 0 }
-    weekMap[r.log_date].ยอดขาย  += r.system_sales
-    weekMap[r.log_date].เงินจริง += r.actual_cash
-  }
-  const chartData = Object.entries(weekMap).sort(([a], [b]) => a.localeCompare(b)).map(([date, vals]) => ({
-    name: date.slice(5),
-    ยอดขาย:     vals.ยอดขาย,
-    เงินจริง:    vals.เงินจริง,
-    กำไรขั้นต้น: Math.max(0, vals.ยอดขาย - totalCogs / 7),
-  }))
-
-  // ── Budget actual: cogs from purchase_logs ──
-  const budgetActual: Record<BudgetKey, number> = {
-    cogs:      totalCogs,
-    labor:     0,
-    fixed:     0,
-    marketing: 0,
-    growth:    0,
-  }
-
-  function openBudgetEdit() {
-    setBudgetDraft(Object.fromEntries(BUDGET_CATS.map(c => [c.key, budgets[c.key] ? String(budgets[c.key]) : ''])) as Record<BudgetKey, string>)
-    setEditBudget(true)
-  }
-  function saveBudgetEdit() {
-    const next = Object.fromEntries(BUDGET_CATS.map(c => [c.key, parseFloat(budgetDraft[c.key]) || 0])) as Record<BudgetKey, number>
-    setBudgets(next); saveBudgets(next); setEditBudget(false)
-  }
-
-  const shiftName = (s: string) => s === 'morning' ? 'เช้า' : s === 'afternoon' ? 'บ่าย' : 'เย็น'
+  const kpis = [
+    { label: 'ยอดเงินสด (ปัจจุบัน)',  val: balance ?? 0,           color: GOLD  },
+    { label: 'รายรับเดือนนี้',          val: summary?.total_income ?? 0,  color: GREEN },
+    { label: 'รายจ่ายเดือนนี้',         val: summary?.total_expense ?? 0, color: RED   },
+    { label: 'กำไร/ขาดทุน เดือนนี้',   val: summary?.net ?? 0,           color: (summary?.net ?? 0) >= 0 ? GREEN : RED },
+  ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* ── Daily KPI summary ── */}
-      <div>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 14 }}>
-          สรุปวันนี้ · {today}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-          {[
-            { label: 'ยอดขาย', val: todaySales, color: GOLD, fmt: (n: number) => n.toLocaleString() + ' ₭' },
-            { label: 'เงินสดจริง', val: todayCash, color: '#fff', fmt: (n: number) => n.toLocaleString() + ' ₭' },
-            { label: 'ผลต่างเงินสด', val: todayVar, color: todayVar >= 0 ? GREEN : RED, fmt: (n: number) => (n >= 0 ? '+' : '') + n.toLocaleString() + ' ₭' },
-            { label: 'กำไรขั้นต้น (7วัน)', val: grossProfit, color: grossProfit >= 0 ? GREEN : RED, fmt: (n: number) => n.toLocaleString() + ' ₭' },
-            { label: 'Gross Margin', val: grossPct, color: GOLD, fmt: (n: number) => n + '%' },
-          ].map(item => (
-            <div key={item.label} style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>{item.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: item.color, fontVariantNumeric: 'tabular-nums' }}>{item.fmt(item.val)}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Close shift form ── */}
-      <div style={{ padding: 22, borderRadius: 14, border: `1px solid ${GOLD}33`, backgroundColor: CARD }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: GOLD, marginBottom: 14 }}>🔒 ปิดกะ</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '1px' }}>กะ</div>
-            <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14 }}>
-              <option value="morning">เช้า</option>
-              <option value="afternoon">บ่าย</option>
-              <option value="evening">เย็น</option>
-            </select>
+      {/* KPI cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+        {kpis.map(k => (
+          <div key={k.label} style={{ padding: '18px 20px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 8 }}>{k.label}</div>
+            {loading
+              ? <div style={{ height: 28, borderRadius: 6, backgroundColor: '#1a1a1a', animation: 'pulse 1.5s infinite' }} />
+              : <div style={{ fontSize: 20, fontWeight: 800, color: k.color, fontVariantNumeric: 'tabular-nums' }}>{fmtLAK(Math.abs(k.val))}</div>
+            }
           </div>
-          {[['opening_cash', 'เงินเปิดกะ'], ['actual_cash', 'เงินที่นับได้']].map(([key, lbl]) => (
-            <div key={key}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '1px' }}>{lbl} (LAK)</div>
-              <MoneyInput value={(form as Record<string, string>)[key]} onChange={v => setForm(f => ({ ...f, [key]: v }))}
-                placeholder="0" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
-            </div>
-          ))}
-        </div>
-        {form.opening_cash && form.actual_cash && (() => {
-          const v = parseFloat(form.actual_cash) - parseFloat(form.opening_cash)
-          return (
-            <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, backgroundColor: `${Math.abs(v) <= 5000 ? GREEN : RED}10`, border: `1px solid ${Math.abs(v) <= 5000 ? GREEN : RED}33` }}>
-              <span style={{ fontSize: 13, color: Math.abs(v) <= 5000 ? GREEN : RED, fontWeight: 600 }}>
-                ผลต่าง: {v >= 0 ? '+' : ''}{v.toLocaleString()} LAK
-              </span>
-            </div>
-          )
-        })()}
-        {msg && <div style={{ color: RED, fontSize: 13, marginTop: 8 }}>{msg}</div>}
-        <button onClick={() => void closeShift()} disabled={saving}
-          style={{ marginTop: 12, padding: '10px 26px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
-          {saving ? 'กำลังบันทึก...' : 'บันทึกปิดกะ'}
-        </button>
+        ))}
       </div>
 
-      {/* ── Weekly chart ── */}
+      {/* Daily bar chart */}
       <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: 'rgba(255,255,255,0.8)' }}>
-          แนวโน้ม 7 วัน
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 400, marginLeft: 10 }}>ยอดขาย / เงินจริง / กำไรขั้นต้น (ประมาณ)</span>
-        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16, color: 'rgba(255,255,255,0.8)' }}>รายรับ vs รายจ่าย — เดือนนี้ (รายวัน)</div>
         {loading ? (
           <div style={{ height: 200, borderRadius: 10, backgroundColor: '#0f0f0f', animation: 'pulse 1.5s infinite' }} />
-        ) : chartData.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีข้อมูล</div>
+        ) : daily.every(d => d.income === 0 && d.expense === 0) ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีข้อมูลเดือนนี้</div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="name" tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 11 }} />
-              <YAxis tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }} />
-              <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}44`, borderRadius: 8 }} labelStyle={{ color: GOLD }} />
-              <Legend wrapperStyle={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }} />
-              <Line type="monotone" dataKey="ยอดขาย"     stroke={GOLD}  strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="เงินจริง"    stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="กำไรขั้นต้น" stroke="#7fa8e8" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 3" />
-            </LineChart>
+            <BarChart data={daily} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="day" tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} />
+              <YAxis tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9 }} width={52}
+                tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000)+'k' : String(v)} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}44`, borderRadius: 8 }}
+                labelStyle={{ color: GOLD }}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              formatter={(v: any) => [fmtLAK(Number(v ?? 0))]}
+              />
+              <Bar dataKey="income"  name="รายรับ"  fill={GREEN} radius={[3,3,0,0]} />
+              <Bar dataKey="expense" name="รายจ่าย" fill={RED}   radius={[3,3,0,0]} />
+            </BarChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      {/* ── Budget section ── */}
-      <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>งบประมาณรายสัปดาห์</div>
-          <button onClick={openBudgetEdit} style={{ padding: '5px 14px', borderRadius: 7, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>ตั้งงบ</button>
-        </div>
-
-        {editBudget ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {BUDGET_CATS.map(c => (
-              <div key={c.key} style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 12, alignItems: 'center' }}>
-                <div style={{ fontSize: 13, color: c.color }}>{c.label}</div>
-                <MoneyInput value={budgetDraft[c.key]} onChange={v => setBudgetDraft(d => ({ ...d, [c.key]: v }))}
-                  placeholder="0 LAK" style={{ padding: '8px 10px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 13, boxSizing: 'border-box' }} />
+      {/* Shift close (collapsible) */}
+      <div style={{ borderRadius: 14, border: `1px solid ${GOLD}33`, backgroundColor: CARD, overflow: 'hidden' }}>
+        <button onClick={() => setShiftOpen(o => !o)}
+          style={{ width: '100%', padding: '14px 22px', backgroundColor: 'transparent', border: 'none', color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 14, transform: shiftOpen ? 'rotate(90deg)' : 'none', transition: 'transform .2s', display: 'inline-block' }}>▶</span>
+          ปิดกะ (Shift Close)
+        </button>
+        {shiftOpen && (
+          <div style={{ padding: '0 22px 22px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div>
+                {lbl('กะ')}
+                <select value={shiftForm.shift} onChange={e => setShiftForm(f => ({ ...f, shift: e.target.value }))} style={inputStyle}>
+                  <option value="morning">เช้า</option>
+                  <option value="afternoon">บ่าย</option>
+                  <option value="evening">เย็น</option>
+                </select>
               </div>
-            ))}
-            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-              <button onClick={saveBudgetEdit} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
-              <button onClick={() => setEditBudget(false)} style={{ padding: '9px 18px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+              {(['opening_cash', 'actual_cash'] as const).map(k => (
+                <div key={k}>
+                  {lbl(k === 'opening_cash' ? 'เงินเปิดกะ (LAK)' : 'เงินที่นับได้ (LAK)')}
+                  <MoneyInput value={shiftForm[k]} onChange={v => setShiftForm(f => ({ ...f, [k]: v }))} placeholder="0" style={inputStyle} />
+                </div>
+              ))}
             </div>
+            {shiftForm.opening_cash && shiftForm.actual_cash && (() => {
+              const v = parseFloat(shiftForm.actual_cash) - parseFloat(shiftForm.opening_cash)
+              const ok = Math.abs(v) <= 5000
+              return (
+                <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, backgroundColor: `${ok ? GREEN : RED}10`, border: `1px solid ${ok ? GREEN : RED}33` }}>
+                  <span style={{ fontSize: 13, color: ok ? GREEN : RED, fontWeight: 600 }}>
+                    ผลต่าง: {v >= 0 ? '+' : ''}{v.toLocaleString()} LAK
+                  </span>
+                </div>
+              )
+            })()}
+            {shiftMsg && <div style={{ color: RED, fontSize: 13, marginTop: 8 }}>{shiftMsg}</div>}
+            <button onClick={() => void closeShift()} disabled={shiftSaving}
+              style={{ marginTop: 12, padding: '10px 26px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', opacity: shiftSaving ? 0.6 : 1 }}>
+              {shiftSaving ? 'กำลังบันทึก...' : 'บันทึกปิดกะ'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── EntriesSection ───────────────────────────────────────────────────────────
+
+const DATE_FILTERS = [
+  { key: 'today', label: 'วันนี้'  },
+  { key: 'week',  label: '7 วัน'  },
+  { key: 'month', label: 'เดือนนี้' },
+  { key: 'all',   label: 'ทั้งหมด' },
+] as const
+type DateFilter = (typeof DATE_FILTERS)[number]['key']
+
+function EntriesSection() {
+  const [entries,    setEntries]    = useState<CFEntry[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [addType,    setAddType]    = useState<'income' | 'expense' | null>(null)
+  const [dateFilter, setDateFilter] = useState<DateFilter>('month')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all')
+  const [deleting,   setDeleting]   = useState<string | null>(null)
+
+  function getRange(): { start: string | null; end: string | null } {
+    const today = todayISO()
+    if (dateFilter === 'today') return { start: today, end: today }
+    if (dateFilter === 'week') {
+      const d = new Date(); d.setDate(d.getDate() - 6)
+      return { start: d.toISOString().slice(0, 10), end: today }
+    }
+    if (dateFilter === 'month') return { start: monthStart(), end: today }
+    return { start: null, end: null }
+  }
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { start, end } = getRange()
+    const { data } = await supabase.rpc('get_cash_flow_entries', {
+      p_start:  start,
+      p_end:    end,
+      p_type:   typeFilter === 'all' ? null : typeFilter,
+      p_limit:  50,
+      p_offset: 0,
+    })
+    setEntries((data as CFEntry[] | null) ?? [])
+    setLoading(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter, typeFilter])
+
+  useEffect(() => { void load() }, [load])
+
+  async function deleteEntry(id: string) {
+    setDeleting(id)
+    await supabase.from('cash_flow').delete().eq('id', id)
+    setEntries(e => e.filter(r => r.id !== id))
+    setDeleting(null)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {addType && (
+        <AddEntryModal type={addType} onClose={() => setAddType(null)} onSave={() => { setAddType(null); void load() }} />
+      )}
+
+      {/* Actions + filters */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+        <button onClick={() => setAddType('income')}
+          style={{ padding: '9px 18px', borderRadius: 8, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+          + รายรับ
+        </button>
+        <button onClick={() => setAddType('expense')}
+          style={{ padding: '9px 18px', borderRadius: 8, border: 'none', backgroundColor: RED, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+          − รายจ่าย
+        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {DATE_FILTERS.map(f => (
+            <button key={f.key} onClick={() => setDateFilter(f.key)}
+              style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${dateFilter === f.key ? GOLD : BORDER}`, backgroundColor: dateFilter === f.key ? `${GOLD}18` : 'transparent', color: dateFilter === f.key ? GOLD : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer' }}>
+              {f.label}
+            </button>
+          ))}
+          {(['all', 'income', 'expense'] as const).map(t => (
+            <button key={t} onClick={() => setTypeFilter(t)}
+              style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${typeFilter === t ? GOLD : BORDER}`, backgroundColor: typeFilter === t ? `${GOLD}18` : 'transparent', color: typeFilter === t ? GOLD : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer' }}>
+              {t === 'all' ? 'ทั้งหมด' : t === 'income' ? 'รายรับ' : 'รายจ่าย'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+        {loading ? (
+          <div style={{ height: 120, borderRadius: 10, backgroundColor: '#0f0f0f', animation: 'pulse 1.5s infinite' }} />
+        ) : entries.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีรายการ</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
+              <thead>
+                <tr style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  {['วันที่', 'ประเภท', 'หมวด', 'รายละเอียด', 'จำนวน (LAK)', ''].map((h, i) => (
+                    <th key={i} style={{ padding: '7px 10px', textAlign: i >= 4 ? 'right' : 'left', fontWeight: 500, borderBottom: `1px solid ${BORDER}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map(r => (
+                  <tr key={r.id} style={{ borderBottom: `1px solid ${BORDER}22` }}>
+                    <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>{r.date}</td>
+                    <td style={{ padding: '8px 10px' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: r.type === 'income' ? GREEN : RED, backgroundColor: r.type === 'income' ? `${GREEN}18` : `${RED}18`, padding: '2px 8px', borderRadius: 99 }}>
+                        {r.type === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.6)' }}>{r.category}</td>
+                    <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.4)', fontSize: 12, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description || '—'}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', color: r.type === 'income' ? GREEN : RED, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {r.type === 'income' ? '+' : '−'}{fmtLAK(r.amount_lak)}
+                    </td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                      <button onClick={() => void deleteEntry(r.id)} disabled={deleting === r.id}
+                        style={{ padding: '3px 8px', borderRadius: 5, border: `1px solid ${RED}33`, backgroundColor: 'transparent', color: RED, fontSize: 11, cursor: 'pointer', opacity: deleting === r.id ? 0.4 : 0.65 }}>
+                        ลบ
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── BudgetSection ────────────────────────────────────────────────────────────
+
+function BudgetSection() {
+  const [rows,    setRows]    = useState<BudgetRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [addOpen, setAddOpen] = useState(false)
+  const [newCat,  setNewCat]  = useState('')
+  const [newAmt,  setNewAmt]  = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [editId,  setEditId]  = useState<string | null>(null)
+  const [editAmt, setEditAmt] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.rpc('get_budget_summary')
+    setRows((data as BudgetRow[] | null) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function addBudget() {
+    const amt = parseFloat(newAmt)
+    if (!newCat.trim() || isNaN(amt) || amt <= 0) return
+    setSaving(true)
+    await supabase.from('budgets').insert({ category: newCat.trim(), monthly_budget_lak: amt })
+    setNewCat(''); setNewAmt(''); setAddOpen(false); setSaving(false)
+    void load()
+  }
+
+  async function saveEdit(id: string) {
+    const amt = parseFloat(editAmt)
+    if (isNaN(amt) || amt <= 0) { setEditId(null); return }
+    await supabase.from('budgets').update({ monthly_budget_lak: amt }).eq('id', id)
+    setEditId(null)
+    void load()
+  }
+
+  async function deleteBudget(id: string) {
+    await supabase.from('budgets').delete().eq('id', id)
+    setRows(r => r.filter(b => b.id !== id))
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>งบประมาณรายเดือน — ใช้จ่ายจริงอ้างอิงจาก cash_flow</div>
+        <button onClick={() => setAddOpen(o => !o)}
+          style={{ padding: '7px 16px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          + เพิ่มหมวด
+        </button>
+      </div>
+
+      {addOpen && (
+        <div style={{ padding: 18, borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'grid', gridTemplateColumns: '1fr 160px auto', gap: 10, alignItems: 'end' }}>
+          <div>
+            {lbl('ชื่อหมวดหมู่')}
+            <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="เช่น ค่าไฟ, วัตถุดิบ" style={inputStyle} />
+          </div>
+          <div>
+            {lbl('งบ/เดือน (LAK)')}
+            <MoneyInput value={newAmt} onChange={setNewAmt} placeholder="0" style={inputStyle} />
+          </div>
+          <button onClick={() => void addBudget()} disabled={saving}
+            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+            บันทึก
+          </button>
+        </div>
+      )}
+
+      <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+        {loading ? (
+          <div style={{ height: 100, borderRadius: 10, backgroundColor: '#0f0f0f', animation: 'pulse 1.5s infinite' }} />
+        ) : rows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>
+            ยังไม่มีงบประมาณ — กด &quot;+ เพิ่มหมวด&quot; เพื่อเริ่มต้น
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {BUDGET_CATS.map(c => {
-              const budget = budgets[c.key]
-              const actual = budgetActual[c.key]
-              const pct = budget > 0 ? Math.min(100, Math.round((actual / budget) * 100)) : 0
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {rows.map(b => {
+              const pct = b.monthly_budget_lak > 0
+                ? Math.min(100, Math.round((b.spent_this_month / b.monthly_budget_lak) * 100))
+                : 0
+              const over = b.spent_this_month > b.monthly_budget_lak
+              const barColor = pct >= 100 ? RED : pct >= 80 ? ORANGE : GREEN
+              const remaining = b.monthly_budget_lak - b.spent_this_month
               return (
-                <div key={c.key}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <span style={{ fontSize: 12, color: c.color }}>{c.label}</span>
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
-                      {actual.toLocaleString()} / {budget > 0 ? budget.toLocaleString() : '—'} LAK
-                    </span>
+                <div key={b.id}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{b.category}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {editId === b.id ? (
+                        <>
+                          <MoneyInput value={editAmt} onChange={setEditAmt} placeholder="0"
+                            style={{ ...inputStyle, width: 140, padding: '4px 8px', fontSize: 12 }} />
+                          <button onClick={() => void saveEdit(b.id)}
+                            style={{ padding: '4px 12px', borderRadius: 6, border: 'none', backgroundColor: GOLD, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                            บันทึก
+                          </button>
+                          <button onClick={() => setEditId(null)}
+                            style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.3)', fontSize: 12, cursor: 'pointer' }}>
+                            ยกเลิก
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtLAK(b.spent_this_month)} / {fmtLAK(b.monthly_budget_lak)}
+                          </span>
+                          <button onClick={() => { setEditId(b.id); setEditAmt(String(b.monthly_budget_lak)) }}
+                            style={{ padding: '3px 8px', borderRadius: 5, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}>
+                            แก้ไข
+                          </button>
+                          <button onClick={() => void deleteBudget(b.id)}
+                            style={{ padding: '3px 8px', borderRadius: 5, border: `1px solid ${RED}33`, backgroundColor: 'transparent', color: RED, fontSize: 11, cursor: 'pointer', opacity: 0.65 }}>
+                            ลบ
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ height: 7, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                    {budget > 0 && (
-                      <div style={{ height: '100%', width: `${pct}%`, borderRadius: 99, backgroundColor: pct >= 90 ? RED : pct >= 70 ? ORANGE : c.color, transition: 'width .4s' }} />
-                    )}
+                  <div style={{ height: 8, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, borderRadius: 99, backgroundColor: barColor, transition: 'width .4s' }} />
                   </div>
-                  {budget > 0 && <div style={{ fontSize: 10, color: pct >= 90 ? RED : 'rgba(255,255,255,0.3)', marginTop: 3 }}>{pct}% ใช้ไปแล้ว</div>}
+                  <div style={{ fontSize: 10, marginTop: 4, color: over ? RED : 'rgba(255,255,255,0.3)' }}>
+                    {pct}% ใช้ไปแล้ว
+                    {over
+                      ? ` · เกินงบ ${fmtLAK(Math.abs(remaining))}`
+                      : ` · เหลือ ${fmtLAK(remaining)}`}
+                  </div>
                 </div>
               )
             })}
           </div>
         )}
       </div>
+    </div>
+  )
+}
 
-      {/* ── P&L Statement (30 days) ── */}
-      {(() => {
-        const rev30      = cashflow30.reduce((s, r) => s + r.system_sales, 0)
-        const cogs30     = totalCogs
-        const grossP     = rev30 - cogs30
-        const grossM     = rev30 > 0 ? Math.round((grossP / rev30) * 100) : 0
-        const laborCost  = budgets.labor
-        const fixedCost  = budgets.fixed
-        const netProfit  = grossP - laborCost - fixedCost
-        const netMargin  = rev30 > 0 ? Math.round((netProfit / rev30) * 100) : 0
+// ─── PlanningSection ──────────────────────────────────────────────────────────
 
-        const rows: { label: string; value: number; indent?: boolean; highlight?: boolean; separator?: boolean; dimLabel?: string }[] = [
-          { label: 'รายได้รวม (Revenue)',            value: rev30,     highlight: false },
-          { label: 'ต้นทุนขาย (COGS)',               value: -cogs30,   indent: true, dimLabel: 'จากการซื้อวัตถุดิบ 30 วัน' },
-          { label: 'กำไรขั้นต้น (Gross Profit)',     value: grossP,    highlight: true },
-          { label: `  Gross Margin`,                  value: grossM,    highlight: false, dimLabel: '%', separator: false },
-          { label: 'ค่าแรงพนักงาน (Labor)',           value: -laborCost, indent: true, dimLabel: 'จากงบประมาณ' },
-          { label: 'ต้นทุนคงที่ (Fixed)',             value: -fixedCost, indent: true, dimLabel: 'จากงบประมาณ' },
-          { label: 'กำไรสุทธิ (Net Profit est.)',    value: netProfit, highlight: true },
-          { label: `  Net Margin`,                    value: netMargin, highlight: false, dimLabel: '%' },
-        ]
+function PlanningSection() {
+  const [avgPrice,  setAvgPrice]  = useState('25000')
+  const [cupsDay,   setCupsDay]   = useState('50')
+  const [daysMonth, setDaysMonth] = useState('26')
+  const [costPct,   setCostPct]   = useState('35')
+  const [bePrice,   setBePrice]   = useState('25000')
+  const [beCostCup, setBeCostCup] = useState('8750')
+  const [beFixed,   setBeFixed]   = useState('5000000')
+  const [mktSpend,  setMktSpend]  = useState('')
+  const [mktNewCust,setMktNewCust]= useState('')
+  const [mktVisits, setMktVisits] = useState('3')
+  const [mktMargin, setMktMargin] = useState('15000')
+  const [monthlyNet,setMonthlyNet]= useState<number | null>(null)
+  const [cashBal,   setCashBal]   = useState<number | null>(null)
 
-        return (
-          <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>งบกำไรขาดทุน (P&L) — 30 วัน</div>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px' }}>ESTIMATED</span>
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <tbody>
-                {rows.map((row, i) => {
-                  const isMargin = row.dimLabel === '%'
-                  const displayVal = isMargin
-                    ? `${row.value}%`
-                    : (row.value < 0 ? `(${Math.abs(row.value).toLocaleString()})` : row.value.toLocaleString()) + ' ₭'
-                  const valueColor = isMargin
-                    ? (row.value >= 50 ? GREEN : row.value >= 30 ? GOLD : ORANGE)
-                    : row.highlight
-                      ? (row.value >= 0 ? GREEN : RED)
-                      : row.value < 0 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.8)'
-                  return (
-                    <tr key={i} style={{
-                      borderTop: row.highlight ? `1px solid ${BORDER}` : 'none',
-                      borderBottom: row.highlight ? `1px solid ${BORDER}` : 'none',
-                      backgroundColor: row.highlight ? `${GOLD}06` : 'transparent',
-                    }}>
-                      <td style={{ padding: row.highlight ? '10px 12px' : '7px 12px', color: row.indent ? 'rgba(255,255,255,0.45)' : row.highlight ? GOLD : 'rgba(255,255,255,0.75)', paddingLeft: row.indent ? 28 : 12, fontWeight: row.highlight ? 700 : 400 }}>
-                        {row.label}
-                        {row.dimLabel && row.dimLabel !== '%' && (
-                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginLeft: 8 }}>{row.dimLabel}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: row.highlight ? '10px 12px' : '7px 12px', textAlign: 'right', color: valueColor, fontWeight: row.highlight ? 800 : 500, fontVariantNumeric: 'tabular-nums' }}>
-                        {displayVal}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
-      })()}
+  useEffect(() => {
+    Promise.all([
+      supabase.rpc('get_cash_flow_summary', { p_start: monthStart(), p_end: todayISO() }),
+      supabase.rpc('get_current_cash_balance'),
+    ]).then(([{ data: sum }, { data: bal }]) => {
+      setMonthlyNet((sum as CFSummary[] | null)?.[0]?.net ?? 0)
+      setCashBal((bal as number | null) ?? 0)
+    })
+  }, [])
 
-      {/* ── 30-day cashflow table ── */}
-      <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>ประวัติ Cashflow 30 วัน</div>
-        {loading ? (
-          <div style={{ height: 120, borderRadius: 10, backgroundColor: '#0f0f0f', animation: 'pulse 1.5s infinite' }} />
-        ) : cashflow30.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีข้อมูล</div>
+  const scenRevenue = parseFloat(avgPrice || '0') * parseFloat(cupsDay || '0') * parseFloat(daysMonth || '0')
+  const scenCost    = scenRevenue * (parseFloat(costPct || '0') / 100)
+  const scenProfit  = scenRevenue - scenCost
+
+  const beContrib   = parseFloat(bePrice || '0') - parseFloat(beCostCup || '0')
+  const beCups      = beContrib > 0 ? Math.ceil(parseFloat(beFixed || '0') / beContrib) : null
+  const beDays      = beCups != null ? Math.ceil(beCups / Math.max(1, parseFloat(cupsDay || '50'))) : null
+
+  const mktSpendN   = parseFloat(mktSpend || '0')
+  const mktRevenue  = parseFloat(mktNewCust || '0') * parseFloat(mktVisits || '0') * parseFloat(mktMargin || '0')
+  const mktROI      = mktSpendN > 0 ? Math.round(((mktRevenue - mktSpendN) / mktSpendN) * 100) : null
+
+  const forecast = cashBal != null && monthlyNet != null
+    ? [1, 2, 3].map(m => ({ month: m, balance: cashBal + monthlyNet * m }))
+    : []
+
+  const cardSt: React.CSSProperties = { padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }
+
+  function numInput(val: string, set: (v: string) => void, ph: string, unit?: string) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input type="number" value={val} onChange={e => set(e.target.value)} placeholder={ph} style={{ ...inputStyle, flex: 1 }} />
+        {unit && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{unit}</span>}
+      </div>
+    )
+  }
+
+  function resultRow(label2: string, val: string, color?: string) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: `1px solid ${BORDER}33` }}>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>{label2}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: color ?? GOLD, fontVariantNumeric: 'tabular-nums' }}>{val}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Scenario calculator */}
+      <div style={cardSt}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 18, color: 'rgba(255,255,255,0.85)' }}>เครื่องคำนวณสถานการณ์ (Scenario)</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div>{lbl('ราคาขายเฉลี่ย (LAK)')}{numInput(avgPrice, setAvgPrice, '25000')}</div>
+          <div>{lbl('แก้วต่อวัน')}{numInput(cupsDay, setCupsDay, '50', 'แก้ว')}</div>
+          <div>{lbl('วันทำงาน/เดือน')}{numInput(daysMonth, setDaysMonth, '26', 'วัน')}</div>
+          <div>{lbl('สัดส่วนต้นทุน')}{numInput(costPct, setCostPct, '35', '%')}</div>
+        </div>
+        {resultRow('รายได้เดือน (ประมาณ)', fmtLAK(scenRevenue))}
+        {resultRow('ต้นทุนรวม (ประมาณ)', fmtLAK(scenCost), RED)}
+        {resultRow('กำไรสุทธิ (ประมาณ)', fmtLAK(scenProfit), scenProfit >= 0 ? GREEN : RED)}
+      </div>
+
+      {/* Break-even */}
+      <div style={cardSt}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 18, color: 'rgba(255,255,255,0.85)' }}>จุดคุ้มทุน (Break-even)</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div>{lbl('ราคาขายต่อแก้ว (LAK)')}{numInput(bePrice, setBePrice, '25000')}</div>
+          <div>{lbl('ต้นทุนต่อแก้ว (LAK)')}{numInput(beCostCup, setBeCostCup, '8750')}</div>
+          <div>{lbl('ต้นทุนคงที่/เดือน (LAK)')}{numInput(beFixed, setBeFixed, '5000000')}</div>
+        </div>
+        {resultRow('กำไรส่วนเพิ่มต่อแก้ว', beContrib > 0 ? fmtLAK(beContrib) : '—')}
+        {resultRow('แก้วที่ต้องขาย/เดือน', beCups != null ? `${beCups.toLocaleString()} แก้ว` : '—', ORANGE)}
+        {resultRow('วันที่ถึงจุดคุ้มทุน', beDays != null ? `${beDays} วัน` : '—', ORANGE)}
+      </div>
+
+      {/* Marketing ROI */}
+      <div style={cardSt}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 18, color: 'rgba(255,255,255,0.85)' }}>ROI การตลาด</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div>{lbl('งบการตลาด (LAK)')}{numInput(mktSpend, setMktSpend, '500000')}</div>
+          <div>{lbl('ลูกค้าใหม่')}{numInput(mktNewCust, setMktNewCust, '20', 'คน')}</div>
+          <div>{lbl('ครั้ง/เดือน/คน')}{numInput(mktVisits, setMktVisits, '3', 'ครั้ง')}</div>
+          <div>{lbl('กำไรต่อครั้ง (LAK)')}{numInput(mktMargin, setMktMargin, '15000')}</div>
+        </div>
+        {resultRow('รายได้จากลูกค้าใหม่', fmtLAK(mktRevenue))}
+        {resultRow('Marketing ROI', mktROI != null ? `${mktROI}%` : '—', mktROI != null ? (mktROI >= 0 ? GREEN : RED) : undefined)}
+      </div>
+
+      {/* 3-month forecast */}
+      <div style={cardSt}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: 'rgba(255,255,255,0.85)' }}>คาดการณ์เงินสด 3 เดือน</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>
+          อิงจากกระแสเงินสดสุทธิเดือนปัจจุบัน ({monthlyNet != null ? fmtLAK(monthlyNet) : '...'}/เดือน)
+        </div>
+        {forecast.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 20, color: 'rgba(255,255,255,0.2)' }}>กำลังโหลด...</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 500 }}>
-              <thead>
-                <tr style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  {['วันที่', 'กะ', 'ยอดขาย (LAK)', 'เงินจริง (LAK)', 'ผลต่าง (LAK)'].map((h, i) => (
-                    <th key={h} style={{ padding: '7px 12px', textAlign: i < 2 ? 'left' : 'right', fontWeight: 500, borderBottom: `1px solid ${BORDER}` }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {cashflow30.map((r, i) => {
-                  const bigVar = Math.abs(r.variance_lak) > 10000
-                  return (
-                    <tr key={i} style={{ borderBottom: `1px solid ${BORDER}22`, backgroundColor: bigVar ? `${RED}08` : 'transparent' }}>
-                      <td style={{ padding: '8px 12px', color: 'rgba(255,255,255,0.7)' }}>{r.log_date}</td>
-                      <td style={{ padding: '8px 12px', color: 'rgba(255,255,255,0.45)' }}>{shiftName(r.shift)}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right', color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{r.system_sales.toLocaleString()}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.actual_cash.toLocaleString()}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right', color: r.variance_lak >= 0 ? GREEN : RED, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {bigVar && <span style={{ fontSize: 10, marginRight: 4 }}>⚠</span>}
-                        {r.variance_lak >= 0 ? '+' : ''}{r.variance_lak.toLocaleString()}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot>
-                <tr style={{ borderTop: `1px solid ${BORDER}` }}>
-                  <td colSpan={2} style={{ padding: '8px 12px', fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>รวม</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', color: GOLD, fontWeight: 700 }}>{cashflow30.reduce((s, r) => s + r.system_sales, 0).toLocaleString()}</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>{cashflow30.reduce((s, r) => s + r.actual_cash, 0).toLocaleString()}</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: cashflow30.reduce((s, r) => s + r.variance_lak, 0) >= 0 ? GREEN : RED }}>
-                    {(() => { const t = cashflow30.reduce((s, r) => s + r.variance_lak, 0); return (t >= 0 ? '+' : '') + t.toLocaleString() })()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {forecast.map(f => {
+              const neg = f.balance < 0
+              return (
+                <div key={f.month} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 10, backgroundColor: neg ? `${RED}10` : `${GREEN}08`, border: `1px solid ${neg ? RED : GREEN}22` }}>
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>เดือน +{f.month}</span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: neg ? RED : GREEN, fontVariantNumeric: 'tabular-nums' }}>{fmtLAK(f.balance)}</span>
+                  {neg && <span style={{ fontSize: 10, color: RED, fontWeight: 600 }}>⚠ คาดว่าขาดทุน</span>}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Main FinanceTab ──────────────────────────────────────────────────────────
+
+const TABS = [
+  { key: 'overview', label: 'ภาพรวมเงินสด'    },
+  { key: 'entries',  label: 'บันทึกเงินเข้า-ออก' },
+  { key: 'budgets',  label: 'งบประมาณ'         },
+  { key: 'planning', label: 'วางแผนธุรกิจ'     },
+] as const
+type SubTab = (typeof TABS)[number]['key']
+
+export default function FinanceTab() {
+  const [hasCapital, setHasCapital] = useState<boolean | null>(null)
+  const [subTab,     setSubTab]     = useState<SubTab>('overview')
+
+  const checkCapital = useCallback(async () => {
+    const { count } = await supabase.from('initial_capital').select('id', { count: 'exact', head: true })
+    setHasCapital((count ?? 0) > 0)
+  }, [])
+
+  useEffect(() => { void checkCapital() }, [checkCapital])
+
+  if (hasCapital === null) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>กำลังโหลด...</div>
+  }
+
+  if (!hasCapital) {
+    return <SetupWizard onDone={() => setHasCapital(true)} />
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setSubTab(t.key)}
+            style={{ padding: '8px 18px', borderRadius: 9, border: `1px solid ${subTab === t.key ? GOLD : BORDER}`, backgroundColor: subTab === t.key ? `${GOLD}18` : 'transparent', color: subTab === t.key ? GOLD : 'rgba(255,255,255,0.45)', fontWeight: subTab === t.key ? 700 : 400, fontSize: 13, cursor: 'pointer' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'overview' && <OverviewSection />}
+      {subTab === 'entries'  && <EntriesSection />}
+      {subTab === 'budgets'  && <BudgetSection />}
+      {subTab === 'planning' && <PlanningSection />}
     </div>
   )
 }
