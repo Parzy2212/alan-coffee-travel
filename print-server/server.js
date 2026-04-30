@@ -1,8 +1,7 @@
 'use strict'
 
-// AlanPOS Print Server v1.1
-// Listens on http://127.0.0.1:12345
-// Named-printer path: strips ESC/POS bytes → plain text → Out-Printer
+// AlanPOS Print Server v2.0
+// Named-printer path: RAW ESC/POS bytes via Win32 winspool.drv P/Invoke
 // USB path: raw binary via `copy /b` (direct port, no GDI driver)
 // WiFi path: raw TCP socket to port 9100
 
@@ -19,232 +18,95 @@ const WIFI_PORT = 9100
 
 let cachedUsbPort = null
 
-// ── Thai label → ASCII substitution table ────────────────────────────────────
-// Courier New has no Thai glyphs — replace known receipt labels with English.
-// Longer strings must come before shorter ones to avoid partial replacements.
-const THAI_MAP = [
-  // Footer
-  ['ขอบคุณที่ใช้บริการ', 'THANK YOU FOR VISITING'],
-  // Totals
-  ['ยอดสุทธิ',           'TOTAL'],
-  ['ยอดรวม',             'SUBTOTAL'],
-  ['ส่วนลด',             'DISCOUNT'],
-  // Payment labels
-  ['ชำระด้วย:',          'PAYMENT:'],
-  ['ชำระด้วย',           'PAYMENT'],
-  ['เงินทอน:',           'CHANGE:'],
-  ['เงินทอน',            'CHANGE'],
-  ['รับมา:',             'RECEIVED:'],
-  ['รับมา',              'RECEIVED'],
-  // Payment methods
-  ['เงินสด',             'CASH'],
-  ['โอนเงิน',            'TRANSFER'],
-  // Queue
-  ['** คิว / QUEUE **',  '** QUEUE **'],
-  ['คิว',                'QUEUE'],
-  // Staff
-  ['พนักงาน:',           'STAFF:'],
-  ['พนักงาน',            'STAFF'],
-  // Generic thank-you
-  ['ขอบคุณ',             'THANK YOU'],
-  // Special chars not in Courier New
-  ['\u00B7', '-'],   // · middle dot
-  ['\u2022', '*'],   // • bullet
-  ['\u00D7', 'x'],   // × multiplication sign
-  ['\u2013', '-'],   // – en dash
-  ['\u2014', '-'],   // — em dash
-]
+// ── ESC/POS test job ──────────────────────────────────────────────────────────
 
-function applyThaiMap(text) {
-  let out = text
-  for (const [thai, ascii] of THAI_MAP) out = out.split(thai).join(ascii)
-  return out
-}
-
-// Re-format two-column lines after Thai→ASCII label substitution.
-// Thai labels are shorter in TIS-620 bytes than their ASCII replacements, so
-// the original spacing (computed client-side for Thai byte widths) is too wide.
-// Detect lines with pattern "label  <2+ spaces>  price" and recompute spacing.
-function reformatTwoCol(text, W) {
-  const re = /^(.+?)\s{2,}(-?[\d,]+)\s*$/
-  return text.split('\n').map(ln => {
-    const m = ln.match(re)
-    if (!m) return ln
-    const label = m[1].trimEnd()
-    const price = m[2]
-    const spaces = W - label.length - price.length
-    if (spaces < 1) return label.substring(0, W - price.length - 1) + ' ' + price
-    return label + ' '.repeat(spaces) + price
-  }).join('\n')
-}
-
-// Customization Thai → English mapping (mirrors thaiToReceipt in thermal-printer.ts).
-// Longer/more-specific phrases first to avoid partial substitutions.
-const CUSTOM_MAP = [
-  [' · ', ' / '],
-  [' × ', 'x'],
-  // Sweetness
-  ['\u0E2B\u0E27\u0E32\u0E19\u0E19\u0E49\u0E2D\u0E22', 'Less sugar'],    // หวานน้อย
-  ['\u0E2B\u0E27\u0E32\u0E19\u0E1B\u0E01\u0E15\u0E34', 'Normal sugar'],  // หวานปกติ
-  ['\u0E2B\u0E27\u0E32\u0E19\u0E01\u0E25\u0E32\u0E07', 'Normal sugar'],  // หวานกลาง
-  ['\u0E2B\u0E27\u0E32\u0E19\u0E21\u0E32\u0E01', 'Extra sugar'],         // หวานมาก
-  ['\u0E44\u0E21\u0E48\u0E2B\u0E27\u0E32\u0E19', 'No sugar'],            // ไม่หวาน
-  // Temperature
-  ['\u0E40\u0E22\u0E47\u0E19', 'Cold'],   // เย็น
-  ['\u0E23\u0E49\u0E2D\u0E19', 'Hot'],    // ร้อน
-  ['\u0E2D\u0E38\u0E48\u0E19', 'Warm'],   // อุ่น
-  // Size
-  ['\u0E43\u0E2B\u0E0D\u0E48', 'Large'],  // ใหญ่
-  ['\u0E40\u0E25\u0E47\u0E01', 'Small'],  // เล็ก
-  ['\u0E01\u0E25\u0E32\u0E07', 'Medium'], // กลาง
-  // Generic
-  ['\u0E1B\u0E01\u0E15\u0E34', 'Normal'], // ปกติ
-]
-
-// Replace any Unicode Thai chars not handled by THAI_MAP — Courier New has no
-// Thai glyphs so they render as boxes. Apply CUSTOM_MAP for known customizations
-// first, then drop any remaining Thai glyphs.
-function dropRemainingThai(text) {
-  let out = text
-  for (const [thai, eng] of CUSTOM_MAP) out = out.split(thai).join(eng)
-  return out.replace(/[\u0E00-\u0E7F]/g, '?')
-}
-
-// Truncate any line that still exceeds W chars after all reformatting.
-function clampLines(text, W) {
-  return text.split('\n').map(ln => {
-    if (ln.length > W) {
-      console.warn(`[alan-pos] Line overflow (${ln.length}>${W}): "${ln.substring(0, 40)}"`)
-      return ln.substring(0, W)
-    }
-    return ln
-  }).join('\n')
-}
-
-// ── ESC/POS → plain text converter ───────────────────────────────────────────
-// Strips all ESC/GS control sequences and returns a Unicode string.
-// TIS-620 high bytes (0xA1-0xFB) are decoded to Unicode Thai U+0E01-U+0E5B.
-
-function escPosToText(buf) {
+function buildRawTestJob(paperMm = 80) {
   const ESC = 0x1B
   const GS  = 0x1D
-  const LF  = 0x0A
-
-  let i   = 0
-  let out = ''
-
-  while (i < buf.length) {
-    const b = buf[i]
-
-    if (b === ESC) {
-      const cmd = buf[i + 1]
-      if      (cmd === 0x40) i += 2           // ESC @  reset
-      else if (cmd === 0x61) i += 3           // ESC a N  align
-      else if (cmd === 0x74) i += 3           // ESC t N  code page
-      else if (cmd === 0x45) i += 3           // ESC E N  bold
-      else if (cmd === 0x4D) i += 3           // ESC M N  font
-      else if (cmd === 0x21) i += 3           // ESC ! N  font select
-      else if (cmd === 0x32) i += 2           // ESC 2    line spacing default
-      else if (cmd === 0x33) i += 3           // ESC 3 N  line spacing
-      else if (cmd === 0x64) i += 3           // ESC d N  feed N lines
-      else                   i += 2           // unknown — skip cmd byte
-    } else if (b === GS) {
-      const cmd = buf[i + 1]
-      if      (cmd === 0x56) i += 3           // GS V N  cut
-      else if (cmd === 0x68) i += 3           // GS h N  barcode height
-      else if (cmd === 0x77) i += 3           // GS w N  barcode width
-      else if (cmd === 0x21) i += 3           // GS ! N  magnify
-      else                   i += 2
-    } else if (b === LF) {
-      out += '\n'
-      i++
-    } else if (b >= 0x20 && b <= 0x7E) {
-      out += String.fromCharCode(b)
-      i++
-    } else if (b >= 0xA1 && b <= 0xFB) {
-      // TIS-620 Thai byte → Unicode: codepoint = byte + 0x0D60
-      out += String.fromCodePoint(b + 0x0D60)
-      i++
-    } else {
-      i++ // skip other control / non-printable bytes
-    }
-  }
-
-  return out
+  const W   = paperMm === 58 ? 32 : 48
+  const div = (c) => Buffer.from(c.repeat(W) + '\n', 'ascii')
+  const cen = (s) => Buffer.from(s.padStart(Math.floor((W + s.length) / 2)).padEnd(W) + '\n', 'ascii')
+  const lft = (s) => Buffer.from(s + '\n', 'ascii')
+  return Buffer.concat([
+    Buffer.from([ESC, 0x40]),
+    Buffer.from([ESC, 0x61, 0x01]),
+    div('='),
+    cen('ALAN POS - TEST PRINT'),
+    cen(`${paperMm}mm / Font A / ${W} chars`),
+    cen('RAW ESC/POS via winspool.drv'),
+    div('='),
+    Buffer.from([ESC, 0x61, 0x00]),
+    lft('Printer: OK'),
+    lft('Spooler: OK (RAW)'),
+    lft('Driver:  OK'),
+    div('='),
+    Buffer.from('\n\n\n\n', 'ascii'),
+    Buffer.from([GS, 0x56, 0x01]),
+  ])
 }
 
-// ── Plain-text receipt builder ────────────────────────────────────────────────
-// width: 48 for 80mm paper, 32 for 58mm paper
+// ── Named-printer via Win32 winspool.drv RAW P/Invoke ────────────────────────
+// ESC/POS bytes go directly to the printer; it renders text with its native Font A.
+// OpenPrinter → StartDocPrinter("RAW") → WritePrinter → EndDocPrinter
 
-function buildTextTestJob(width = 48) {
-  const W       = width
-  const center  = s => s.padStart(Math.floor((W + s.length) / 2)).padEnd(W)
-  const divider = c => c.repeat(W)
-
-  return [
-    divider('='),
-    center('ALAN POS - TEST PRINT'),
-    divider('='),
-    center(`Paper: ${W === 48 ? '80mm (48 chars)' : '58mm (32 chars)'}`),
-    center('If you see this, Out-Printer works!'),
-    divider('-'),
-    'Printer: OK',
-    'Spooler: OK',
-    'Driver:  OK',
-    divider('='),
-    '',
-    '',
-    '',
-    '',
-  ].join('\r\n')
-}
-
-// ── Named-printer via System.Drawing.Printing (GDI, fixed-width font, zero margins) ──
-//
-// Out-Printer uses Windows default font (~12pt) with large margins → text fills
-// only the center 1/3 of 80mm paper.  System.Drawing lets us specify:
-//   • Courier New 7pt  — monospace, ~48 chars fit on 80mm at 0 margin
-//   • Margins = 0      — no left/right padding
-//   • Custom paper size matching the roll width
-
-function printTextByName(text, printerName, paperMm) {
+function printRawByName(data, printerName) {
   return new Promise((resolve, reject) => {
     const ts       = Date.now()
-    const tmp      = path.join(os.tmpdir(), `alan_pos_${ts}.txt`)
+    const bin      = path.join(os.tmpdir(), `alan_pos_${ts}.bin`)
     const ps1      = path.join(os.tmpdir(), `alan_pos_${ts}.ps1`)
     const safeName = printerName.replace(/'/g, "''")
-    // Paper width in 1/100 inch: 80mm = 315, 58mm = 228
-    const paperW   = (paperMm === 58) ? 228 : 315
-    // Estimate height: ~14 hundredths/line + buffer (thermal cuts at content end)
-    const lineCount = text.split('\n').length
-    const paperH   = Math.max(lineCount * 14 + 150, 300)
 
-    try { fs.writeFileSync(tmp, text, 'utf8') } catch (e) { return reject(e) }
+    try { fs.writeFileSync(bin, data) } catch (e) { return reject(e) }
 
-    // PS uses $script: scope so event handler can read the variables.
-    // Single-quoted strings: backslashes are literal — no escaping needed for paths.
     const script = `
-Add-Type -AssemblyName System.Drawing
-$script:pLines = [System.IO.File]::ReadAllLines('${tmp}', [System.Text.Encoding]::UTF8)
-$script:pFont  = New-Object System.Drawing.Font('Courier New', 7, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Point)
-$pd = New-Object System.Drawing.Printing.PrintDocument
-$pd.PrinterSettings.PrinterName = '${safeName}'
-$pd.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
-$pd.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('Receipt', ${paperW}, ${paperH})
-$pd.add_PrintPage({
-    param($s, $e)
-    $lh = [Math]::Max($script:pFont.GetHeight($e.Graphics), 8)
-    $y  = [float]0
-    foreach ($ln in $script:pLines) {
-        $e.Graphics.DrawString($ln, $script:pFont, [System.Drawing.Brushes]::Black, [float]0, $y)
-        $y += $lh
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class WinSpool {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public class DOCINFOA {
+        [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+        [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+        [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
     }
-    $e.HasMorePages = $false
-})
-$pd.Print()
-$script:pFont.Dispose()
-$pd.Dispose()
-Write-Output 'OK'
+    [DllImport("winspool.Drv", EntryPoint="OpenPrinterA", SetLastError=true, CharSet=CharSet.Ansi)]
+    public static extern bool OpenPrinter(string szPrinter, out IntPtr hPrinter, IntPtr pd);
+    [DllImport("winspool.Drv", EntryPoint="ClosePrinter")]
+    public static extern bool ClosePrinter(IntPtr hPrinter);
+    [DllImport("winspool.Drv", EntryPoint="StartDocPrinterA", SetLastError=true, CharSet=CharSet.Ansi)]
+    public static extern int StartDocPrinter(IntPtr hPrinter, int level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
+    [DllImport("winspool.Drv", EntryPoint="EndDocPrinter")]
+    public static extern bool EndDocPrinter(IntPtr hPrinter);
+    [DllImport("winspool.Drv", EntryPoint="WritePrinter", SetLastError=true)]
+    public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+}
+'@
+$bytes = [System.IO.File]::ReadAllBytes('${bin}')
+$hPrinter = [IntPtr]::Zero
+if (-not [WinSpool]::OpenPrinter('${safeName}', [ref]$hPrinter, [IntPtr]::Zero)) {
+    throw "OpenPrinter failed: error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+}
+try {
+    $di = New-Object WinSpool+DOCINFOA
+    $di.pDocName  = 'AlanPOS'
+    $di.pDataType = 'RAW'
+    $jobId = [WinSpool]::StartDocPrinter($hPrinter, 1, $di)
+    if ($jobId -le 0) { throw "StartDocPrinter failed: error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
+    $ptr = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
+    try {
+        [System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $ptr, $bytes.Length)
+        $written = 0
+        if (-not [WinSpool]::WritePrinter($hPrinter, $ptr, $bytes.Length, [ref]$written)) {
+            throw "WritePrinter failed: error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+        }
+    } finally {
+        [System.Runtime.InteropServices.Marshal]::FreeHGlobal($ptr)
+    }
+    [WinSpool]::EndDocPrinter($hPrinter) | Out-Null
+    Write-Output "OK $written"
+} finally {
+    [WinSpool]::ClosePrinter($hPrinter) | Out-Null
+}
 `.trim()
 
     try { fs.writeFileSync(ps1, script, 'utf8') } catch (e) { return reject(e) }
@@ -253,10 +115,10 @@ Write-Output 'OK'
       'powershell',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1],
       (err, stdout, stderr) => {
-        try { fs.unlinkSync(tmp) } catch {}
+        try { fs.unlinkSync(bin) } catch {}
         try { fs.unlinkSync(ps1) } catch {}
         if (err) return reject(new Error(`Print failed: ${stderr.trim() || err.message}`))
-        if (!stdout.trim().includes('OK')) return reject(new Error(`Spool error: ${stdout.trim() || stderr.trim()}`))
+        if (!stdout.trim().startsWith('OK')) return reject(new Error(`Spool error: ${stdout.trim() || stderr.trim()}`))
         resolve()
       }
     )
@@ -264,19 +126,9 @@ Write-Output 'OK'
 }
 
 async function printByName(data, printerName, paperMm = 80) {
-  const W = paperMm === 58 ? 32 : 48
-  console.log(`[alan-pos] printByName paperMm=${paperMm} W=${W}`)
-  let text = escPosToText(data)
-  text = applyThaiMap(text)           // known Thai labels → ASCII
-  text = reformatTwoCol(text, W)      // fix two-col spacing after label expansion
-  text = dropRemainingThai(text)      // remaining Thai glyphs → '?' (Courier New has none)
-  text = clampLines(text, W)          // final safety clamp
-  text.split('\n').forEach((ln, i) => {
-    const flag = ln.length > W ? ' *** OVERFLOW ***' : ''
-    console.log(`[alan-pos] L${String(i + 1).padStart(2, '0')} (${ln.length}/${W}): "${ln}"${flag}`)
-  })
-  await printTextByName(text, printerName, paperMm)
-  console.log(`[alan-pos] Printed "${printerName}" via System.Drawing (${paperMm}mm)`)
+  console.log(`[alan-pos] printByName printer="${printerName}" paperMm=${paperMm} bytes=${data.length}`)
+  await printRawByName(data, printerName)
+  console.log(`[alan-pos] Printed "${printerName}" via RAW winspool (${paperMm}mm)`)
 }
 
 // ── USB printing via Windows copy /b ─────────────────────────────────────────
@@ -336,14 +188,13 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Printer-IP, X-Printer-Name, X-Paper-Width')
-  // Chrome Private Network Access: required when an https page calls http://127.0.0.1
   res.setHeader('Access-Control-Allow-Private-Network', 'true')
 
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
   if (req.method === 'GET' && req.url === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, version: '1.1.0', usbPort: cachedUsbPort }))
+    res.end(JSON.stringify({ ok: true, version: '2.0.0', usbPort: cachedUsbPort }))
     return
   }
 
@@ -365,24 +216,22 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // GET /test-ascii?printer=XP-T80A&width=80 — sends plain-text test job via Out-Printer
+  // GET /test-ascii?printer=XP-T80A&width=80
   if (req.method === 'GET' && req.url.startsWith('/test-ascii')) {
     const qs          = new URL(req.url, 'http://localhost').searchParams
     const printerName = qs.get('printer') || ''
     const paperMm     = parseInt(qs.get('width') || '80', 10)
-    const charWidth   = paperMm === 58 ? 32 : 48
-    const testText    = buildTextTestJob(charWidth)
+    const testData    = buildRawTestJob(paperMm)
 
     try {
       if (printerName) {
-        await printTextByName(testText, printerName, paperMm)
+        await printRawByName(testData, printerName)
       } else {
-        // Fall back to USB raw for port-based printers
-        await printToUsb(Buffer.from(testText, 'ascii'))
+        await printToUsb(testData)
       }
-      console.log(`[alan-pos] Text test sent to "${printerName || 'USB auto-detect'}"`)
+      console.log(`[alan-pos] RAW test sent to "${printerName || 'USB auto-detect'}"`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, msg: 'Text test job sent', printer: printerName || 'USB auto-detect' }))
+      res.end(JSON.stringify({ ok: true, msg: 'RAW test job sent', printer: printerName || 'USB auto-detect' }))
     } catch (err) {
       console.error('[alan-pos] Test failed:', err.message)
       res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -431,9 +280,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log('╔══════════════════════════════════════╗')
-  console.log('║   AlanPOS Print Server v1.1          ║')
+  console.log('║   AlanPOS Print Server v2.0          ║')
   console.log(`║   http://127.0.0.1:${PORT}           ║`)
-  console.log('║   Out-Printer mode (GDI-safe)        ║')
+  console.log('║   RAW ESC/POS mode (winspool.drv)    ║')
   console.log('╚══════════════════════════════════════╝')
 })
 
