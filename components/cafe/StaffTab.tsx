@@ -637,6 +637,7 @@ function StaffProfileView({
   const [deleteStep,   setDeleteStep]   = useState<0 | 1 | 2 | 3>(0)
   const [deleteNameInput, setDeleteNameInput] = useState('')
   const [deleting,     setDeleting]     = useState(false)
+  const [toggleErr,    setToggleErr]    = useState('')
 
   useEffect(() => {
     // Compute current week Monday–Sunday
@@ -714,6 +715,7 @@ function StaffProfileView({
   async function saveEdit() {
     if (!form.name.trim()) { setErrMsg('กรุณากรอกชื่อ'); return }
     if (form.pin && !/^\d{4}$/.test(form.pin)) { setErrMsg('PIN ต้องเป็นตัวเลข 4 หลัก'); return }
+    if (form.salary && parseFloat(form.salary) <= 0) { setErrMsg('เงินเดือนต้องมากกว่า 0'); return }
     setSaving(true); setErrMsg('')
     try {
       const skillsArr = form.skills.split(',').map(s => s.trim()).filter(Boolean)
@@ -741,6 +743,11 @@ function StaffProfileView({
   }
 
   async function toggleActive() {
+    if (staff.is_active && todayStatus?.clock_in && !todayStatus?.clock_out) {
+      setToggleErr('ปิดการใช้งานไม่ได้: พนักงานยังลงชื่อเข้างานอยู่')
+      return
+    }
+    setToggleErr('')
     setToggling(true)
     await supabase.rpc('toggle_staff_active', { p_id: staff.id })
     // If deactivating, remove from all future schedule slots
@@ -992,6 +999,9 @@ function StaffProfileView({
               ลบพนักงาน
             </button>
           )}
+          {toggleErr && (
+            <div style={{ width: '100%', fontSize: 11, color: RED, marginTop: 2 }}>{toggleErr}</div>
+          )}
         </div>
       )}
 
@@ -1133,6 +1143,7 @@ function AddStaffWizard({ onDone, onCancel }: { onDone: () => void; onCancel: ()
     if (!name.trim()) { setStep1Err('กรุณากรอกชื่อพนักงาน'); return false }
     if (!pin) { setStep1Err('กรุณากรอก PIN 4 หลัก'); return false }
     if (!/^\d{4}$/.test(pin)) { setStep1Err('PIN ต้องเป็นตัวเลข 4 หลักเท่านั้น'); return false }
+    if (salary && parseFloat(salary) <= 0) { setStep1Err('เงินเดือนต้องมากกว่า 0'); return false }
     return true
   }
 

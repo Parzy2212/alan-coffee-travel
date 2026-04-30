@@ -504,7 +504,7 @@ function RecipeCard({
 
   async function saveEdit() {
     const price = parseFloat(editData.price_str)
-    if (isNaN(price) || price < 0) { showMsg('ราคาไม่ถูกต้อง'); return }
+    if (isNaN(price) || price <= 0) { showMsg('ราคาต้องมากกว่า 0 ₭'); return }
     setSaving(true)
     const { error } = await supabase.rpc('update_recipe_full', {
       p_recipe_id:      r.id,
@@ -952,7 +952,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
     const name = newData.product_name.trim() || newData.product_name_th.trim()
     if (!name) { showMsg('กรุณาระบุชื่อเมนู'); return }
     const price = parseFloat(newData.price_str)
-    if (isNaN(price) || price < 0) { showMsg('ราคาไม่ถูกต้อง'); return }
+    if (isNaN(price) || price <= 0) { showMsg('ราคาต้องมากกว่า 0 ₭'); return }
     setSaving(true)
     const { error } = await supabase.rpc('create_recipe_full', {
       p_product_name:   name,

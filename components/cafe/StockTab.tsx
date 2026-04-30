@@ -119,6 +119,11 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
 
   async function saveEdit() {
     if (!editData.name.trim()) { showMsg('กรุณาระบุชื่อ'); return }
+    const reorder = parseFloat(editData.reorder_point)
+    const maxQty  = parseFloat(editData.max_quantity)
+    if (!isNaN(reorder) && !isNaN(maxQty) && maxQty > 0 && reorder > maxQty) {
+      showMsg('Reorder Point ต้องไม่เกินค่า Max Quantity'); return
+    }
     setSaving(true)
     const { error } = await supabase.rpc('update_inventory_item', {
       p_id:                       item.id,
@@ -363,17 +368,25 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
 
 // ─── ConfirmDeleteModal ───────────────────────────────────────────────────────
 
-function ConfirmDeleteModal({ item, onConfirm, onCancel, deleting }: { item: StockDetail; onConfirm: () => void; onCancel: () => void; deleting: boolean }) {
-  const hasStock = item.current_qty > 0
+function ConfirmDeleteModal({ item, recipeCount, onConfirm, onCancel, deleting }: { item: StockDetail; recipeCount: number; onConfirm: () => void; onCancel: () => void; deleting: boolean }) {
+  const hasStock     = item.current_qty > 0
+  const usedInRecipe = recipeCount > 0
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ backgroundColor: '#161616', borderRadius: 16, border: `1px solid ${hasStock ? 'rgba(255,153,51,0.35)' : 'rgba(201,168,76,0.15)'}`, padding: 28, maxWidth: 400, width: '100%', textAlign: 'center' }}>
-        <div style={{ fontSize: 32, marginBottom: 12 }}>{hasStock ? '⚠️' : '🗑️'}</div>
+      <div style={{ backgroundColor: '#161616', borderRadius: 16, border: `1px solid ${usedInRecipe ? 'rgba(255,77,77,0.35)' : hasStock ? 'rgba(255,153,51,0.35)' : 'rgba(201,168,76,0.15)'}`, padding: 28, maxWidth: 400, width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>{usedInRecipe ? '🚫' : hasStock ? '⚠️' : '🗑️'}</div>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>
           ลบ {item.name_th || item.name} ออกจากสต็อก?
         </div>
 
-        {hasStock && (
+        {usedInRecipe && (
+          <div style={{ margin: '0 0 16px', padding: '12px 16px', backgroundColor: 'rgba(255,77,77,0.1)', borderRadius: 10, border: '1px solid rgba(255,77,77,0.3)' }}>
+            <div style={{ fontSize: 13, color: '#ff4d4d', fontWeight: 700 }}>ใช้อยู่ใน {recipeCount} สูตรเมนู</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,77,77,0.7)', marginTop: 4 }}>ต้องลบออกจากสูตรก่อนจึงจะลบได้</div>
+          </div>
+        )}
+
+        {!usedInRecipe && hasStock && (
           <div style={{ margin: '0 0 16px', padding: '12px 16px', backgroundColor: 'rgba(255,153,51,0.1)', borderRadius: 10, border: '1px solid rgba(255,153,51,0.3)' }}>
             <div style={{ fontSize: 13, color: '#ff9933', fontWeight: 700 }}>สต็อกยังเหลืออยู่ {item.current_qty} {item.unit}</div>
             <div style={{ fontSize: 12, color: 'rgba(255,153,51,0.7)', marginTop: 4 }}>ควรใช้จนหมดก่อนลบ</div>
@@ -388,8 +401,8 @@ function ConfirmDeleteModal({ item, onConfirm, onCancel, deleting }: { item: Sto
           <button onClick={onCancel} disabled={deleting} style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.12)', background: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 14 }}>
             ยกเลิก
           </button>
-          <button onClick={onConfirm} disabled={deleting} style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: 'none', backgroundColor: '#ff4d4d', color: '#fff', fontWeight: 700, fontSize: 14, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.7 : 1 }}>
-            {deleting ? 'กำลังลบ...' : hasStock ? 'ยืนยัน ลบทิ้ง' : 'ยืนยัน ลบ'}
+          <button onClick={onConfirm} disabled={deleting || usedInRecipe} style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: 'none', backgroundColor: usedInRecipe ? 'rgba(255,77,77,0.3)' : '#ff4d4d', color: '#fff', fontWeight: 700, fontSize: 14, cursor: (deleting || usedInRecipe) ? 'not-allowed' : 'pointer', opacity: (deleting || usedInRecipe) ? 0.5 : 1 }}>
+            {deleting ? 'กำลังลบ...' : usedInRecipe ? 'ลบไม่ได้' : hasStock ? 'ยืนยัน ลบทิ้ง' : 'ยืนยัน ลบ'}
           </button>
         </div>
       </div>
@@ -407,8 +420,9 @@ export default function StockTab() {
   const [saving,       setSaving]       = useState(false)
   const [msg,          setMsg]          = useState<string | null>(null)
   const [search,       setSearch]       = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<StockDetail | null>(null)
-  const [deleting,     setDeleting]     = useState(false)
+  const [deleteTarget,      setDeleteTarget]      = useState<StockDetail | null>(null)
+  const [deleting,          setDeleting]          = useState(false)
+  const [deleteRecipeCount, setDeleteRecipeCount] = useState(0)
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
 
@@ -421,8 +435,20 @@ export default function StockTab() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    if (!deleteTarget) { setDeleteRecipeCount(0); return }
+    supabase.from('recipe_ingredients').select('id', { count: 'exact', head: true })
+      .eq('inventory_id', deleteTarget.id)
+      .then(({ count }) => setDeleteRecipeCount(count ?? 0))
+  }, [deleteTarget])
+
   async function createItem() {
     if (!newData.name.trim()) { showMsg('กรุณาระบุชื่อวัตถุดิบ'); return }
+    const reorder = parseFloat(newData.reorder_point)
+    const maxQty  = parseFloat(newData.max_quantity)
+    if (!isNaN(reorder) && !isNaN(maxQty) && maxQty > 0 && reorder > maxQty) {
+      showMsg('Reorder Point ต้องไม่เกินค่า Max Quantity'); return
+    }
     setSaving(true)
     const { error } = await supabase.rpc('create_inventory_item', {
       p_name:                     newData.name,
@@ -500,6 +526,7 @@ export default function StockTab() {
       {deleteTarget && (
         <ConfirmDeleteModal
           item={deleteTarget}
+          recipeCount={deleteRecipeCount}
           onConfirm={() => void deleteItem(deleteTarget.id)}
           onCancel={() => setDeleteTarget(null)}
           deleting={deleting}

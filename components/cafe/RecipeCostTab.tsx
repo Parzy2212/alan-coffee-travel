@@ -426,6 +426,7 @@ export default function RecipeCostTab() {
 
     async function save() {
       if (!recipeId) { setMsg('เลือกเมนูก่อน'); return }
+      if (items.length === 0) { setMsg('กรุณาเพิ่มส่วนผสมอย่างน้อย 1 รายการก่อนบันทึก'); return }
       setSaving(true)
       try {
         // Persist uses_ice
