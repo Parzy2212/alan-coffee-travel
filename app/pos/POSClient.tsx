@@ -336,7 +336,7 @@ function DigitalReceiptPopup({
   async function handleThermalPrint() {
     setPrintState('printing')
     try {
-      const footerText = localStorage.getItem('receipt_footer_text') || 'ขอบคุณที่ใช้บริการ'
+      const footerText = localStorage.getItem('receipt_footer_text') || 'Thank you for visiting'
       const phone      = localStorage.getItem('receipt_phone') || ''
       const address    = localStorage.getItem('receipt_address') || ''
       const shopName   = localStorage.getItem('receipt_shop_name') || settings.shop_name || 'ALAN COFFEE & TRAVEL'
@@ -990,7 +990,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const [printerIp,   setPrinterIpState] = useState(() => ls('printer_ip'))
   const [paperWidth,  setPaperWidth]  = useState<'58' | '80'>(() => ls('pos_paper_width', '80') === '80' ? '80' : '58')
   const [shopName,   setShopName]   = useState(() => ls('receipt_shop_name'))
-  const [footerText, setFooterText] = useState(() => ls('receipt_footer_text', 'ขอบคุณที่ใช้บริการ'))
+  const [footerText, setFooterText] = useState(() => ls('receipt_footer_text', 'Thank you for visiting'))
   const [phone,      setPhone]      = useState(() => ls('receipt_phone'))
   const [address,    setAddress]    = useState(() => ls('receipt_address'))
   const [showQr,     setShowQr]     = useState(() => ls('receipt_show_qr',  'true') === 'true')
@@ -1304,7 +1304,15 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>ข้อความท้ายใบเสร็จ</div>
-                <input value={footerText} onChange={e => setFooterText(e.target.value)} style={popupInput} placeholder="ขอบคุณที่ใช้บริการ" />
+                <input value={footerText} onChange={e => setFooterText(e.target.value)} style={popupInput} placeholder="Thank you for visiting" />
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
+                  ข้อความนี้แสดงเป็นภาษาอังกฤษบนใบเสร็จเท่านั้น
+                </div>
+                {/[^\x00-\x7F]/.test(footerText) && (
+                  <div style={{ fontSize: 10, color: '#e07070', marginTop: 3 }}>
+                    ⚠ ตัวอักษรที่ไม่ใช่ภาษาอังกฤษจะแสดงเป็น ?
+                  </div>
+                )}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
@@ -1376,10 +1384,20 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
             {/* Extra text lines */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-              <input value={extraLine1} onChange={e => setExtraLine1(e.target.value)}
-                style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 1 (เว้นว่างเพื่อซ่อน)" />
-              <input value={extraLine2} onChange={e => setExtraLine2(e.target.value)}
-                style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 2" />
+              <div>
+                <input value={extraLine1} onChange={e => setExtraLine1(e.target.value)}
+                  style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 1 (เว้นว่างเพื่อซ่อน)" />
+                {/[^\x00-\x7F]/.test(extraLine1) && (
+                  <div style={{ fontSize: 10, color: '#e07070', marginTop: 3 }}>⚠ ตัวอักษรที่ไม่ใช่ภาษาอังกฤษจะแสดงเป็น ?</div>
+                )}
+              </div>
+              <div>
+                <input value={extraLine2} onChange={e => setExtraLine2(e.target.value)}
+                  style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 2" />
+                {/[^\x00-\x7F]/.test(extraLine2) && (
+                  <div style={{ fontSize: 10, color: '#e07070', marginTop: 3 }}>⚠ ตัวอักษรที่ไม่ใช่ภาษาอังกฤษจะแสดงเป็น ?</div>
+                )}
+              </div>
             </div>
 
             {/* Blank feed lines */}
@@ -1409,7 +1427,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
               ],
               subtotal: 85000, discountAmt: 0, discountReason: '', finalTotal: 85000,
               method: 'cash', received: 100000, change: 15000, vatPct: 0,
-              footerText: footerText || 'ขอบคุณที่ใช้บริการ',
+              footerText: footerText || 'Thank you for visiting',
               phone: phone || '', address: address || '',
             }, design)
             return (

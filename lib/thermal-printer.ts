@@ -117,7 +117,7 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
     L(tc('RECEIVED:', fmtLak(data.received)), tc('CHANGE:', fmtLak(data.change)))
   }
   L(sep1)
-  L(ctr(toAscii(data.footerText || 'THANK YOU FOR VISITING')), ctr('Thank you & come back'))
+  L(ctr(footerSafe(data.footerText || '')), ctr('Thank you & come back'))
   if (data.address) L(ctr(toAscii(data.address).substring(0, W)))
   if (data.phone)   L(ctr(data.phone.substring(0, W)))
   if (d.extraLine1) L(ctr(toAscii(d.extraLine1).substring(0, W)))
@@ -199,6 +199,12 @@ function toAscii(s: string): string {
     .replace(/ปกติ/g, 'Normal')
     // Strip any remaining non-ASCII
     .replace(/[^\x00-\x7F]/g, '?')
+}
+
+// Returns footer text as ASCII; falls back to default if no real letters remain.
+function footerSafe(s: string): string {
+  const cleaned = toAscii(s).trim()
+  return /[A-Za-z0-9]/.test(cleaned) ? cleaned : 'Thank you & come back'
 }
 
 // ── ASCII encoding ────────────────────────────────────────────────────────────
@@ -545,7 +551,7 @@ export async function testPrint(shopName = 'ALAN COFFEE & TRAVEL'): Promise<void
     ],
     subtotal: 0, discountAmt: 0, discountReason: '', finalTotal: 0,
     method: 'cash', received: 0, change: 0, vatPct: 0,
-    footerText: 'THANK YOU FOR VISITING',
+    footerText: 'Thank you & come back',
   })
 }
 
@@ -641,7 +647,7 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   // ── Footer ────────────────────────────────────────────────────────────────
   p(line(sep1))
   p(CMD.alignCenter)
-  p(line(centerStr(toAscii(data.footerText || 'THANK YOU FOR VISITING'), W)))
+  p(line(centerStr(footerSafe(data.footerText || ''), W)))
   p(line(centerStr('Thank you & come back', W)))
   if (data.address) p(line(centerStr(toAscii(data.address).substring(0, W), W)))
   if (data.phone)   p(line(centerStr(data.phone.substring(0, W), W)))
