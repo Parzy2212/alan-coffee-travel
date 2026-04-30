@@ -1294,6 +1294,9 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
           {/* Receipt customization */}
           <div>
             <div style={sectionLabel}>ปรับแต่งใบเสร็จ</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 6 }}>
+              ใบเสร็จแสดงภาษาอังกฤษเท่านั้น (รองรับหลายภาษาในเวอร์ชั่นถัดไป)
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>ชื่อร้านบนใบเสร็จ</div>
