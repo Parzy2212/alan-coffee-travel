@@ -143,6 +143,10 @@ type FullSettings = {
   qr_payment_name: string
   shop_lat: string
   shop_lng: string
+  // Telegram notifications
+  telegram_bot_token: string; telegram_chat_id: string; telegram_enabled: string
+  telegram_notify_low_stock: string; telegram_notify_daily_report: string
+  telegram_notify_large_order: string; telegram_large_order_threshold: string
   // Cost Management
   cost_cup_lid: string; cost_straw: string; cost_bag: string; cost_bag_pct: string
   cost_other_pkg: string; cost_waste_pct: string
@@ -170,6 +174,9 @@ const DEFAULT_SETTINGS: FullSettings = {
   qr_payment_name: '',
   shop_lat: '',
   shop_lng: '',
+  telegram_bot_token: '', telegram_chat_id: '', telegram_enabled: 'false',
+  telegram_notify_low_stock: 'true', telegram_notify_daily_report: 'true',
+  telegram_notify_large_order: 'true', telegram_large_order_threshold: '500000',
   cost_cup_lid: '2500', cost_straw: '210', cost_bag: '500', cost_bag_pct: '30',
   cost_other_pkg: '0', cost_waste_pct: '15',
   cost_ice_bag_price: '20000', cost_ice_melt_pct: '30', cost_ice_per_cup_g: '175',
@@ -1873,6 +1880,27 @@ function SettingsTab() {
   const [importError,    setImportError]    = useState<string | null>(null)
   const [importing,      setImporting]      = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [testingTg,  setTestingTg]  = useState(false)
+  const [tgTestMsg,  setTgTestMsg]  = useState('')
+
+  async function testTelegram() {
+    setTgTestMsg(''); setTestingTg(true)
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/telegram-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({
+          message: '✅ <b>Alan Cafe OS</b>\nทดสอบการแจ้งเตือน Telegram สำเร็จ! 🎉',
+          type: 'test',
+          _token:   settings.telegram_bot_token,
+          _chat_id: settings.telegram_chat_id,
+        }),
+      })
+      const data = await res.json() as { ok: boolean; error?: string; reason?: string }
+      setTgTestMsg(data.ok ? '✓ ส่งสำเร็จ!' : `ผิดพลาด: ${data.error ?? data.reason ?? 'unknown'}`)
+    } catch (e) { setTgTestMsg(`Error: ${String(e)}`) }
+    setTestingTg(false)
+  }
 
   useEffect(() => {
     supabase.rpc('get_site_settings').then(({ data }) => {
@@ -2153,7 +2181,81 @@ function SettingsTab() {
         </div>
       </SettingSection>
 
-      {/* ── 5. AI Analyst ── */}
+      {/* ── 5. Telegram ── */}
+      <SettingSection icon="✈️" title="แจ้งเตือน Telegram">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ padding: '10px 12px', backgroundColor: CARD2, borderRadius: 8, fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.7 }}>
+            สร้าง Bot ที่ <span style={{ color: GOLD }}>@BotFather</span> → คัดลอก Token → หา Chat ID ด้วย <span style={{ color: GOLD }}>@userinfobot</span>
+          </div>
+
+          <SettingsToggle
+            value={isOn('telegram_enabled')}
+            onChange={toggle('telegram_enabled')}
+            label="เปิดใช้งาน Telegram"
+            sub="เปิด/ปิดการแจ้งเตือนทั้งหมด"
+          />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Bot Token">
+              <input type="password" value={settings.telegram_bot_token} onChange={set('telegram_bot_token')}
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="1234567890:AAFxxx..." />
+            </Field>
+            <Field label="Chat ID">
+              <input value={settings.telegram_chat_id} onChange={set('telegram_chat_id')}
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="-1001234567890" />
+            </Field>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={() => void testTelegram()}
+              disabled={testingTg || !settings.telegram_bot_token || !settings.telegram_chat_id}
+              style={{ padding: '9px 20px', borderRadius: 8, border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}15`, color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: (testingTg || !settings.telegram_bot_token || !settings.telegram_chat_id) ? 0.45 : 1 }}>
+              {testingTg ? 'กำลังส่ง...' : 'ส่งข้อความทดสอบ'}
+            </button>
+            {tgTestMsg && (
+              <span style={{ fontSize: 13, color: tgTestMsg.startsWith('✓') ? GREEN : RED, fontWeight: 600 }}>{tgTestMsg}</span>
+            )}
+          </div>
+
+          <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 14 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10 }}>เลือกการแจ้งเตือน</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <SettingsToggle
+                value={isOn('telegram_notify_low_stock')}
+                onChange={toggle('telegram_notify_low_stock')}
+                label="⚠️ สต็อกใกล้หมด"
+                sub="แจ้งเตือนเมื่อวัตถุดิบต่ำกว่า reorder point"
+              />
+              <SettingsToggle
+                value={isOn('telegram_notify_daily_report')}
+                onChange={toggle('telegram_notify_daily_report')}
+                label="📊 รายงานประจำวัน"
+                sub="สรุปยอดขายทุกคืน 22:00 (Asia/Vientiane)"
+              />
+              <SettingsToggle
+                value={isOn('telegram_notify_large_order')}
+                onChange={toggle('telegram_notify_large_order')}
+                label="🎉 ออเดอร์ใหญ่"
+                sub="แจ้งเมื่อออเดอร์เกินยอดที่กำหนด"
+              />
+            </div>
+          </div>
+
+          {isOn('telegram_notify_large_order') && (
+            <Field label="ยอดขั้นต่ำสำหรับออเดอร์ใหญ่ (LAK)">
+              <MoneyInput
+                value={settings.telegram_large_order_threshold}
+                onChange={raw => setSettings(s => ({ ...s, telegram_large_order_threshold: raw }))}
+                placeholder="500000"
+                style={inputStyle}
+              />
+            </Field>
+          )}
+        </div>
+      </SettingSection>
+
+      {/* ── 6. AI Analyst ── */}
       <SettingSection icon="🤖" title="AI Analyst">
         <SettingsToggle
           value={isOn('ai_analyst_enabled')}
