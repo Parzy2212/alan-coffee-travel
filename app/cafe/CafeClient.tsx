@@ -110,7 +110,13 @@ type PurchaseEntry = {
 
 type AuditLog = {
   id: string; created_at: string; action: string; table_name: string
-  record_id: string | null; payload: Record<string, unknown>
+  record_id: string | null; payload: Record<string, unknown>; staff_name: string | null
+}
+
+type Alert = {
+  id: string; type: string; severity: 'low' | 'medium' | 'high' | 'critical'
+  message: string; data: Record<string, unknown> | null
+  created_at: string; acknowledged_at: string | null; status: string
 }
 
 type LeaveRequest = {
@@ -2806,6 +2812,99 @@ function renderMdContent(text: string) {
   })
 }
 
+// ─── AlertsSection ────────────────────────────────────────────────────────────
+
+const SEV_COLOR: Record<string, string> = { critical: '#ff2020', high: '#ff4d4d', medium: '#ff9933', low: '#4cba7f' }
+const SEV_LABEL: Record<string, string> = { critical: 'วิกฤต', high: 'สูง', medium: 'กลาง', low: 'ต่ำ' }
+
+function AlertsSection() {
+  const [alerts,    setAlerts]    = useState<Alert[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [showAll,   setShowAll]   = useState(false)
+  const [noTable,   setNoTable]   = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('alerts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if ((error as { code?: string } | null)?.code === '42P01') { setNoTable(true); setLoading(false); return }
+    setAlerts((data as Alert[] | null) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function acknowledge(id: string) {
+    await supabase.from('alerts').update({ status: 'acknowledged', acknowledged_at: new Date().toISOString() }).eq('id', id)
+    setAlerts(as => as.map(a => a.id === id ? { ...a, status: 'acknowledged', acknowledged_at: new Date().toISOString() } : a))
+  }
+
+  const active = alerts.filter(a => a.status === 'active')
+  const shown  = showAll ? alerts : alerts.filter(a => a.status === 'active')
+
+  if (noTable) return (
+    <div style={{ padding: '30px 20px', textAlign: 'center', backgroundColor: CARD, borderRadius: 14, border: `1px solid ${BORDER}`, color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
+      🚨 ยังไม่มีตาราง alerts — กรุณา run SQL migration ก่อน
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>การแจ้งเตือน</span>
+          {active.length > 0 && (
+            <span style={{ marginLeft: 8, padding: '1px 8px', borderRadius: 99, backgroundColor: `${RED}22`, color: RED, fontSize: 11, fontWeight: 700 }}>{active.length} ใหม่</span>
+          )}
+        </div>
+        <button onClick={() => setShowAll(v => !v)}
+          style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', background: 'none', border: 'none', cursor: 'pointer' }}>
+          {showAll ? 'ซ่อนที่รับทราบแล้ว' : 'ดูทั้งหมด'}
+        </button>
+      </div>
+
+      {loading ? (
+        [1,2].map(k => <div key={k} style={{ height: 80, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)
+      ) : shown.length === 0 ? (
+        <div style={{ padding: '30px 20px', textAlign: 'center', backgroundColor: CARD, borderRadius: 12, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>ไม่มีการแจ้งเตือนที่รอดำเนินการ</div>
+        </div>
+      ) : (
+        shown.map(alert => {
+          const sc  = SEV_COLOR[alert.severity] ?? ORANGE
+          const acked = alert.status === 'acknowledged'
+          return (
+            <div key={alert.id} style={{ padding: '14px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${acked ? BORDER : sc + '44'}`, opacity: acked ? 0.55 : 1, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div style={{ flexShrink: 0, marginTop: 2 }}>
+                <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, color: sc, backgroundColor: sc + '18', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {SEV_LABEL[alert.severity] ?? alert.severity}
+                </span>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: acked ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.85)', lineHeight: 1.6, marginBottom: 4 }}>{alert.message}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
+                  {new Date(alert.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Vientiane', dateStyle: 'short', timeStyle: 'short' })}
+                  {acked && <span style={{ marginLeft: 8 }}>· รับทราบแล้ว</span>}
+                </div>
+              </div>
+              {!acked && (
+                <button onClick={() => void acknowledge(alert.id)}
+                  style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  รับทราบ ✓
+                </button>
+              )}
+            </div>
+          )
+        })
+      )}
+    </div>
+  )
+}
+
 // ─── QuestsSection ────────────────────────────────────────────────────────────
 
 const QUEST_CATEGORY_ICON: Record<string, string> = {
@@ -3696,9 +3795,10 @@ ${context}`
   )
 }
 function AITab() {
-  type SubTab = 'quests' | 'insights' | 'chat' | 'log' | 'settings'
-  const [subTab, setSubTab] = useState<SubTab>('quests')
+  type SubTab = 'alerts' | 'quests' | 'insights' | 'chat' | 'log' | 'settings'
+  const [subTab, setSubTab] = useState<SubTab>('alerts')
   const SUB_TABS = [
+    { key: 'alerts'   as const, label: '🚨 แจ้งเตือน' },
     { key: 'quests'   as const, label: '🎯 เควส' },
     { key: 'insights' as const, label: '📋 Insights' },
     { key: 'chat'     as const, label: '💬 ถาม Alan' },
@@ -3715,6 +3815,7 @@ function AITab() {
           </button>
         ))}
       </div>
+      {subTab === 'alerts'   && <AlertsSection />}
       {subTab === 'quests'   && <QuestsSection />}
       {subTab === 'insights' && <InsightsSection />}
       {subTab === 'chat'     && <ChatSection />}
@@ -3726,33 +3827,46 @@ function AITab() {
 
 // ─── Audit Tab ─────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50
+
 function AuditTab() {
   const [logs,         setLogs]         = useState<AuditLog[]>([])
   const [loading,      setLoading]      = useState(true)
-  const [dateFilter,   setDateFilter]   = useState('')
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
   const [actionFilter, setActionFilter] = useState('all')
+  const [staffFilter,  setStaffFilter]  = useState('')
+  const [search,       setSearch]       = useState('')
+  const [page,         setPage]         = useState(0)
   const [noTable,      setNoTable]      = useState(false)
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(300)
-      if ((error as { code?: string } | null)?.code === '42P01') { setNoTable(true); setLoading(false); return }
-      setLogs((data as AuditLog[]) ?? [])
-      setLoading(false)
-    }
-    void load()
-  }, [])
+  const load = useCallback(async () => {
+    setLoading(true)
+    let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(2000)
+    if (dateFrom) q = q.gte('created_at', dateFrom)
+    if (dateTo)   q = q.lte('created_at', dateTo + 'T23:59:59')
+    const { data, error } = await q
+    if ((error as { code?: string } | null)?.code === '42P01') { setNoTable(true); setLoading(false); return }
+    setLogs((data as AuditLog[]) ?? [])
+    setPage(0)
+    setLoading(false)
+  }, [dateFrom, dateTo])
+
+  useEffect(() => { void load() }, [load])
 
   const filtered = logs.filter(l => {
     if (actionFilter !== 'all' && l.action !== actionFilter) return false
-    if (dateFilter && !l.created_at.startsWith(dateFilter)) return false
+    if (staffFilter && !(l.staff_name ?? '').toLowerCase().includes(staffFilter.toLowerCase())) return false
+    if (search) {
+      const q = search.toLowerCase()
+      const hay = `${l.table_name} ${l.record_id ?? ''} ${JSON.stringify(l.payload)} ${l.staff_name ?? ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
     return true
   })
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const pageRows   = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const actionColor = (a: string) =>
     a === 'insert' || a === 'insert_many' ? GREEN
@@ -3760,77 +3874,126 @@ function AuditTab() {
     : a === 'delete' || a === 'delete_match' ? RED
     : 'rgba(255,255,255,0.4)'
 
+  function exportCSV() {
+    const rows = [
+      ['เวลา', 'พนักงาน', 'Action', 'ตาราง', 'Record ID', 'Payload'],
+      ...filtered.map(l => [
+        new Date(l.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Vientiane' }),
+        l.staff_name ?? '',
+        l.action,
+        l.table_name,
+        l.record_id ?? '',
+        JSON.stringify(l.payload),
+      ]),
+    ]
+    const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `audit_log_${new Date().toISOString().slice(0, 10)}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (noTable) return (
     <div style={{ padding: '60px 0', textAlign: 'center', color: 'rgba(255,255,255,0.35)' }}>
-      <div style={{ fontSize: 36, marginBottom: 14 }}>🔍</div>
+      <div style={{ fontSize: 36, marginBottom: 14 }}>📋</div>
       <div style={{ fontSize: 15, marginBottom: 8 }}>ยังไม่มีตาราง audit_logs</div>
       <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
-        CREATE TABLE audit_logs (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, created_at timestamptz DEFAULT now(), action text, table_name text, record_id text, payload jsonb);
+        CREATE TABLE audit_logs (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, created_at timestamptz DEFAULT now(), staff_name text, action text, table_name text, record_id text, payload jsonb);
       </div>
     </div>
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Filters row 1 */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} placeholder="จากวันที่"
           style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 13 }} />
-        <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
+        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>→</span>
+        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} placeholder="ถึงวันที่"
+          style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 13 }} />
+        <select value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(0) }}
           style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 13, cursor: 'pointer' }}>
           <option value="all">ทุก Action</option>
           {['insert', 'update', 'delete', 'upsert', 'insert_many', 'delete_match'].map(a => (
             <option key={a} value={a}>{a}</option>
           ))}
         </select>
-        {(dateFilter || actionFilter !== 'all') && (
-          <button onClick={() => { setDateFilter(''); setActionFilter('all') }}
+      </div>
+      {/* Filters row 2 */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} placeholder="🔍 ค้นหา..."
+          style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 13, minWidth: 200 }} />
+        <input value={staffFilter} onChange={e => { setStaffFilter(e.target.value); setPage(0) }} placeholder="กรอง พนักงาน"
+          style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 13, minWidth: 160 }} />
+        {(dateFrom || dateTo || actionFilter !== 'all' || search || staffFilter) && (
+          <button onClick={() => { setDateFrom(''); setDateTo(''); setActionFilter('all'); setSearch(''); setStaffFilter(''); setPage(0) }}
             style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>
-            ล้าง
+            ล้างทั้งหมด
           </button>
         )}
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>{filtered.length} รายการ</span>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>{filtered.length.toLocaleString()} รายการ</span>
+        <button onClick={exportCSV}
+          style={{ marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}12`, color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          ⬇ CSV
+        </button>
       </div>
 
-      {loading ? <LoadingSpinner /> : filtered.length === 0 ? (
+      {loading ? <LoadingSpinner /> : pageRows.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>ไม่พบรายการ</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
-                {['เวลา', 'Action', 'ตาราง', 'Record ID', 'Payload'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(log => (
-                <tr key={log.id} style={{ borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
-                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)', fontSize: 12, whiteSpace: 'nowrap' }}>
-                    {new Date(log.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Vientiane', dateStyle: 'short', timeStyle: 'short' })}
-                  </td>
-                  <td style={{ padding: '9px 12px' }}>
-                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: actionColor(log.action), backgroundColor: actionColor(log.action) + '18' }}>
-                      {log.action}
-                    </span>
-                  </td>
-                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.65)' }}>{log.table_name}</td>
-                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', fontSize: 11 }}>{log.record_id ? log.record_id.slice(0, 8) + '…' : '—'}</td>
-                  <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.28)', fontFamily: 'monospace', fontSize: 11, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {JSON.stringify(log.payload)}
-                  </td>
+        <>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  {['เวลา', 'พนักงาน', 'Action', 'ตาราง', 'Record ID', 'รายละเอียด'].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {pageRows.map(log => (
+                  <tr key={log.id} style={{ borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+                    <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {new Date(log.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Vientiane', dateStyle: 'short', timeStyle: 'short' })}
+                    </td>
+                    <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>{log.staff_name ?? '—'}</td>
+                    <td style={{ padding: '9px 12px' }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: actionColor(log.action), backgroundColor: actionColor(log.action) + '18' }}>
+                        {log.action}
+                      </span>
+                    </td>
+                    <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.65)' }}>{log.table_name}</td>
+                    <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', fontSize: 11 }}>{log.record_id ? log.record_id.slice(0, 8) + '…' : '—'}</td>
+                    <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.28)', fontFamily: 'monospace', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {JSON.stringify(log.payload)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center' }}>
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: page === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)', cursor: page === 0 ? 'default' : 'pointer', fontSize: 13 }}>
+                ←
+              </button>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>หน้า {page + 1} / {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: page >= totalPages - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)', cursor: page >= totalPages - 1 ? 'default' : 'pointer', fontSize: 13 }}>
+                →
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
-
-// (LeavesView extracted to components/cafe/StaffTab.tsx)
 
 // ─── Recipe Cost Tab → see components/cafe/RecipeCostTab.tsx ───────────────────
 
@@ -3856,13 +4019,13 @@ const NAV_GROUPS: NavGroup[] = [
     { id: 'schedule', label: 'ตารางงาน', icon: '📅' },
   ]},
   { label: 'ลูกค้าและการเงิน', items: [
-    { id: 'customers', label: 'ลูกค้า',  icon: '🧑‍🤝‍🧑' },
-    { id: 'finance',   label: 'การเงิน', icon: '💰' },
+    { id: 'customers', label: 'ลูกค้า',         icon: '🧑‍🤝‍🧑' },
+    { id: 'finance',   label: 'การเงิน',         icon: '💰' },
+    { id: 'audit',     label: 'บันทึกระบบ',      icon: '📋' },
   ]},
   { label: 'ระบบ', items: [
     { id: 'settings', label: 'ตั้งค่า',    icon: '⚙️' },
     { id: 'ai',       label: 'AI Analyst', icon: '✨' },
-    { id: 'audit',    label: 'Audit Log',  icon: '🔍' },
   ]},
 ]
 

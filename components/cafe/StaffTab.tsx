@@ -6,6 +6,7 @@ import { getFaceApi } from '@/lib/faceapi'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
+  SUPABASE_URL, SUPABASE_ANON_KEY,
   StaffMember, StaffToday, StaffAnalytics, LeaveRequest, StaffForm,
   Badge, LoadingSpinner,
   inputStyle, btnStyle,
@@ -363,35 +364,133 @@ function FaceEnrollModal({ staff, onClose, onSaved }: { staff: StaffMember; onCl
 
 // ─── LeavesView ───────────────────────────────────────────────────────────────
 
+type LeaveForm = {
+  staff_id: string; leave_type: 'sick' | 'personal' | 'vacation'
+  start_date: string; end_date: string; reason: string
+}
+
+function daysBetween(a: string, b: string): number {
+  const ms = new Date(b).getTime() - new Date(a).getTime()
+  return Math.max(1, Math.floor(ms / 86400000) + 1)
+}
+
 function LeavesView() {
-  const [leaves,   setLeaves]   = useState<LeaveRequest[]>([])
-  const [loading,  setLoading]  = useState(true)
-  const [actingId, setActingId] = useState<string | null>(null)
-  const [noTable,  setNoTable]  = useState(false)
+  const [leaves,    setLeaves]    = useState<LeaveRequest[]>([])
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [actingId,  setActingId]  = useState<string | null>(null)
+  const [noTable,   setNoTable]   = useState(false)
+  const [showModal, setShowModal] = useState(false)
+  const [form,      setForm]      = useState<LeaveForm>({
+    staff_id: '', leave_type: 'sick', start_date: '', end_date: '', reason: '',
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [formErr,    setFormErr]    = useState('')
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('leave_requests')
       .select('*, staff:staff_id(name)')
       .order('created_at', { ascending: false })
-      .limit(100)
+      .limit(200)
     if ((error as { code?: string } | null)?.code === '42P01') { setNoTable(true); setLoading(false); return }
     setLeaves((data as LeaveRequest[]) ?? [])
     setLoading(false)
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    supabase.rpc('get_all_staff').then(({ data }) => setStaffList((data ?? []) as StaffMember[]))
+  }, [load])
 
-  async function updateStatus(id: string, status: 'approved' | 'rejected') {
-    setActingId(id)
-    await supabase.from('leave_requests').update({ status }).eq('id', id)
+  async function approve(lv: LeaveRequest) {
+    setActingId(lv.id)
+    await supabase.from('leave_requests').update({ status: 'approved' }).eq('id', lv.id)
+
+    // Auto-create attendance entries for each leave day
+    const days: { staff_id: string; date: string; status: string; clock_in: null; clock_out: null; late_minutes: null }[] = []
+    const start = new Date(lv.start_date)
+    const end   = new Date(lv.end_date)
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      days.push({ staff_id: lv.staff_id, date: d.toISOString().slice(0, 10), status: 'leave', clock_in: null, clock_out: null, late_minutes: null })
+    }
+    if (days.length > 0) {
+      await supabase.from('attendance').upsert(days, { onConflict: 'staff_id,date', ignoreDuplicates: true })
+    }
+
+    // Telegram notification to manager
+    await fetch(`${SUPABASE_URL}/functions/v1/telegram-send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({
+        message: `✅ <b>อนุมัติลาแล้ว</b>\n${lv.staff?.name ?? 'พนักงาน'} — ${leaveLabel(lv.leave_type)}\n${lv.start_date} ถึง ${lv.end_date} (${daysBetween(lv.start_date, lv.end_date)} วัน)`,
+        type: 'leave',
+      }),
+    }).catch(() => null)
+
     await load()
     setActingId(null)
+  }
+
+  async function reject(id: string) {
+    setActingId(id)
+    await supabase.from('leave_requests').update({ status: 'rejected' }).eq('id', id)
+    await load()
+    setActingId(null)
+  }
+
+  async function submitRequest() {
+    setFormErr('')
+    if (!form.staff_id)    return setFormErr('กรุณาเลือกพนักงาน')
+    if (!form.start_date)  return setFormErr('กรุณาระบุวันที่เริ่ม')
+    if (!form.end_date)    return setFormErr('กรุณาระบุวันที่สิ้นสุด')
+    if (form.end_date < form.start_date) return setFormErr('วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่ม')
+
+    const requestedDays = daysBetween(form.start_date, form.end_date)
+
+    // Calculate used leave days for this staff
+    const { data: usedRows } = await supabase
+      .from('leave_requests')
+      .select('start_date, end_date')
+      .eq('staff_id', form.staff_id)
+      .eq('status', 'approved')
+    const usedDays = (usedRows ?? []).reduce((sum, r) => sum + daysBetween((r as {start_date:string;end_date:string}).start_date, (r as {start_date:string;end_date:string}).end_date), 0)
+    const remaining = 30 - usedDays
+    if (requestedDays > remaining) {
+      return setFormErr(`วันลาไม่พอ: คงเหลือ ${remaining} วัน แต่ขอ ${requestedDays} วัน`)
+    }
+
+    setSubmitting(true)
+    const { error } = await supabase.from('leave_requests').insert({
+      staff_id: form.staff_id,
+      leave_type: form.leave_type,
+      start_date: form.start_date,
+      end_date: form.end_date,
+      reason: form.reason || null,
+      status: 'pending',
+    })
+    if (error) { setFormErr(error.message); setSubmitting(false); return }
+
+    const staffName = staffList.find(s => s.id === form.staff_id)?.name ?? 'พนักงาน'
+    await fetch(`${SUPABASE_URL}/functions/v1/telegram-send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({
+        message: `📋 <b>คำขอลาใหม่</b>\n${staffName} — ${leaveLabel(form.leave_type)}\n${form.start_date} ถึง ${form.end_date} (${requestedDays} วัน)${form.reason ? '\nเหตุผล: ' + form.reason : ''}`,
+        type: 'leave',
+      }),
+    }).catch(() => null)
+
+    setShowModal(false)
+    setForm({ staff_id: '', leave_type: 'sick', start_date: '', end_date: '', reason: '' })
+    setSubmitting(false)
+    await load()
   }
 
   const leaveLabel = (t: string) => t === 'sick' ? 'ลาป่วย' : t === 'personal' ? 'ลากิจ' : t === 'vacation' ? 'ลาพักร้อน' : t
   const statusColor = (s: string) => s === 'approved' ? GREEN : s === 'rejected' ? RED : GOLD
   const statusLabel = (s: string) => s === 'approved' ? 'อนุมัติแล้ว' : s === 'rejected' ? 'ปฏิเสธแล้ว' : 'รอดำเนินการ'
+  const cardBorder = (s: string) => s === 'pending' ? GOLD + '44' : s === 'approved' ? GREEN + '33' : s === 'rejected' ? RED + '22' : BORDER
 
   if (noTable) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>
@@ -400,39 +499,117 @@ function LeavesView() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>คำขอลาทั้งหมด {leaves.length} รายการ · รอดำเนินการ {leaves.filter(l => l.status === 'pending').length} รายการ</span>
-      </div>
-      {loading ? <LoadingSpinner /> : leaves.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>ไม่มีคำขอลา</div>
-      ) : (
-        leaves.map(lv => (
-          <div key={lv.id} style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${lv.status === 'pending' ? GOLD + '33' : BORDER}`, display: 'flex', gap: 16, alignItems: 'center' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 5, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{lv.staff?.name ?? lv.staff_id.slice(0, 8)}</span>
-                <Badge label={leaveLabel(lv.leave_type)} bg={GOLD + '18'} color={GOLD} />
-                <Badge label={statusLabel(lv.status)} bg={statusColor(lv.status) + '18'} color={statusColor(lv.status)} />
+    <>
+      {/* New request modal */}
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 28, width: '100%', maxWidth: 480, border: `1px solid ${BORDER}` }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 20 }}>+ ขอลาใหม่</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 6, display: 'block' }}>พนักงาน *</label>
+                <select value={form.staff_id} onChange={e => setForm(f => ({ ...f, staff_id: e.target.value }))}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#111', color: '#fff', fontSize: 14 }}>
+                  <option value="">เลือกพนักงาน</option>
+                  {staffList.filter(s => s.is_active).map(s => (
+                    <option key={s.id} value={s.id}>{s.name}{s.name_th ? ` (${s.name_th})` : ''}</option>
+                  ))}
+                </select>
               </div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
-                {lv.start_date} → {lv.end_date}
-                {lv.reason && <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.3)' }}>· {lv.reason}</span>}
-                <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>{new Date(lv.created_at).toLocaleDateString('th-TH')}</span>
+              <div>
+                <label style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 6, display: 'block' }}>ประเภทการลา *</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(['sick', 'personal', 'vacation'] as const).map(t => (
+                    <button key={t} onClick={() => setForm(f => ({ ...f, leave_type: t }))}
+                      style={{ flex: 1, padding: '9px 4px', borderRadius: 8, border: `1px solid ${form.leave_type === t ? GOLD : BORDER}`, backgroundColor: form.leave_type === t ? GOLD + '18' : 'transparent', color: form.leave_type === t ? GOLD : 'rgba(255,255,255,0.5)', fontSize: 13, cursor: 'pointer', fontWeight: form.leave_type === t ? 700 : 400 }}>
+                      {leaveLabel(t)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 6, display: 'block' }}>วันที่เริ่ม *</label>
+                  <input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#111', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 6, display: 'block' }}>วันที่สิ้นสุด *</label>
+                  <input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} min={form.start_date}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#111', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              {form.start_date && form.end_date && form.end_date >= form.start_date && (
+                <div style={{ fontSize: 12, color: GOLD }}>รวม {daysBetween(form.start_date, form.end_date)} วัน</div>
+              )}
+              <div>
+                <label style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 6, display: 'block' }}>เหตุผล</label>
+                <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
+                  rows={3} placeholder="ระบุเหตุผล (ถ้ามี)"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#111', color: '#fff', fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+              {formErr && <div style={{ fontSize: 12, color: RED }}>{formErr}</div>}
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button onClick={() => void submitRequest()} disabled={submitting}
+                  style={{ flex: 1, padding: '12px', borderRadius: 9, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
+                  {submitting ? 'กำลังบันทึก...' : 'ส่งคำขอลา'}
+                </button>
+                <button onClick={() => { setShowModal(false); setFormErr('') }}
+                  style={{ padding: '12px 20px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 14, cursor: 'pointer' }}>
+                  ยกเลิก
+                </button>
               </div>
             </div>
-            {lv.status === 'pending' && (
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <button onClick={() => void updateStatus(lv.id, 'approved')} disabled={actingId === lv.id}
-                  style={{ padding: '7px 16px', borderRadius: 7, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: actingId === lv.id ? 0.6 : 1 }}>อนุมัติ</button>
-                <button onClick={() => void updateStatus(lv.id, 'rejected')} disabled={actingId === lv.id}
-                  style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${RED}44`, backgroundColor: `${RED}10`, color: RED, fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: actingId === lv.id ? 0.6 : 1 }}>ปฏิเสธ</button>
-              </div>
-            )}
           </div>
-        ))
+        </div>
       )}
-    </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+            คำขอลาทั้งหมด {leaves.length} รายการ · รอดำเนินการ {leaves.filter(l => l.status === 'pending').length} รายการ
+          </span>
+          <button onClick={() => setShowModal(true)}
+            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            + ขอลาใหม่
+          </button>
+        </div>
+
+        {loading ? <LoadingSpinner /> : leaves.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>ไม่มีคำขอลา</div>
+        ) : (
+          leaves.map(lv => (
+            <div key={lv.id} style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${cardBorder(lv.status)}`, display: 'flex', gap: 16, alignItems: 'center' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 5, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{lv.staff?.name ?? lv.staff_id.slice(0, 8)}</span>
+                  <Badge label={leaveLabel(lv.leave_type)} bg={GOLD + '18'} color={GOLD} />
+                  <Badge label={statusLabel(lv.status)} bg={statusColor(lv.status) + '18'} color={statusColor(lv.status)} />
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{daysBetween(lv.start_date, lv.end_date)} วัน</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
+                  {lv.start_date} → {lv.end_date}
+                  {lv.reason && <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.3)' }}>· {lv.reason}</span>}
+                  <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>{new Date(lv.created_at).toLocaleDateString('th-TH')}</span>
+                </div>
+              </div>
+              {lv.status === 'pending' && (
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <button onClick={() => void approve(lv)} disabled={actingId === lv.id}
+                    style={{ padding: '7px 16px', borderRadius: 7, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: actingId === lv.id ? 0.6 : 1 }}>
+                    อนุมัติ
+                  </button>
+                  <button onClick={() => void reject(lv.id)} disabled={actingId === lv.id}
+                    style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${RED}44`, backgroundColor: `${RED}10`, color: RED, fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: actingId === lv.id ? 0.6 : 1 }}>
+                    ปฏิเสธ
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </>
   )
 }
 
