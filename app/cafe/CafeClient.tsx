@@ -2748,6 +2748,19 @@ type AlanInsight = {
   action_steps: string[]; status: string; created_at: string
 }
 
+type AlanQuest = {
+  id: string; type: 'daily' | 'weekly' | 'special'
+  category: 'inventory' | 'marketing' | 'upsell' | 'customer' | 'staff' | 'cost'
+  title: string; description: string
+  action_steps: string[]
+  estimated_reward_lak: number; estimated_outcome: string | null
+  required_investment_lak: number
+  difficulty: 'easy' | 'medium' | 'hard'
+  expires_at: string | null; status: string
+  accepted_at: string | null; completed_at: string | null
+  actual_outcome_lak: number | null; created_at: string
+}
+
 // Markdown inline renderer — bold (**text**) support
 function renderInlineMd(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/)
@@ -2791,6 +2804,283 @@ function renderMdContent(text: string) {
     if (line.trim() === '') return <div key={i} style={{ height: 5 }} />
     return <div key={i} style={{ marginBottom: 1 }}>{renderInlineMd(line)}</div>
   })
+}
+
+// ─── QuestsSection ────────────────────────────────────────────────────────────
+
+const QUEST_CATEGORY_ICON: Record<string, string> = {
+  inventory: '📦', marketing: '📣', upsell: '💵', customer: '👥', staff: '👤', cost: '💰',
+}
+const QUEST_CATEGORY_LABEL: Record<string, string> = {
+  inventory: 'สต็อก', marketing: 'การตลาด', upsell: 'อัพเซลล์', customer: 'ลูกค้า', staff: 'พนักงาน', cost: 'ต้นทุน',
+}
+const QUEST_DIFF_COLOR: Record<string, string> = { easy: '#4cba7f', medium: '#ff9933', hard: '#ff4d4d' }
+const QUEST_DIFF_LABEL: Record<string, string> = { easy: '🟢 ง่าย', medium: '🟡 ปานกลาง', hard: '🔴 ยาก' }
+
+function QuestsSection() {
+  const [quests,     setQuests]     = useState<AlanQuest[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [genMsg,     setGenMsg]     = useState('')
+  const [expanded,   setExpanded]   = useState<string | null>(null)
+  const [typeFilter, setTypeFilter] = useState<'all' | 'daily' | 'weekly'>('all')
+  const [catFilter,  setCatFilter]  = useState<string>('all')
+  const [completing, setCompleting] = useState<string | null>(null)
+  const [actualInput, setActualInput] = useState('')
+  const [celebrate,  setCelebrate]  = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('alan_quests')
+      .select('*')
+      .in('status', ['active', 'accepted', 'in_progress', 'completed'])
+      .order('created_at', { ascending: false })
+    setQuests((data as AlanQuest[] | null) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function generate() {
+    setGenerating(true); setGenMsg('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/alan-quests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ source: 'manual' }),
+      })
+      const data = await res.json() as { ok: boolean; count?: number; error?: string }
+      if (data.ok) { setGenMsg(`✓ สร้าง ${data.count} เควส`); await load() }
+      else setGenMsg(`ผิดพลาด: ${data.error ?? 'unknown'}`)
+    } catch (e) { setGenMsg(`Error: ${String(e)}`) }
+    setGenerating(false)
+  }
+
+  async function acceptQuest(id: string) {
+    await supabase.from('alan_quests').update({ status: 'in_progress', accepted_at: new Date().toISOString() }).eq('id', id)
+    setQuests(qs => qs.map(q => q.id === id ? { ...q, status: 'in_progress', accepted_at: new Date().toISOString() } : q))
+  }
+
+  async function completeQuest(id: string, actualLak: number) {
+    await supabase.from('alan_quests').update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      actual_outcome_lak: actualLak,
+    }).eq('id', id)
+    setQuests(qs => qs.map(q => q.id === id ? { ...q, status: 'completed', actual_outcome_lak: actualLak } : q))
+    setCelebrate(id)
+    setCompleting(null)
+    setActualInput('')
+    setTimeout(() => setCelebrate(null), 3000)
+  }
+
+  async function rejectQuest(id: string) {
+    await supabase.from('alan_quests').update({ status: 'rejected' }).eq('id', id)
+    setQuests(qs => qs.filter(q => q.id !== id))
+  }
+
+  const CATS = ['all', 'inventory', 'marketing', 'upsell', 'customer', 'staff', 'cost']
+
+  const visible = quests.filter(q => {
+    if (typeFilter !== 'all' && q.type !== typeFilter) return false
+    if (catFilter  !== 'all' && q.category !== catFilter) return false
+    return true
+  })
+
+  const doneCount = quests.filter(q => q.status === 'completed').length
+  const totalReward = quests.filter(q => q.status === 'completed' && q.actual_outcome_lak)
+    .reduce((sum, q) => sum + (q.actual_outcome_lak ?? 0), 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>เควสวันนี้ — Alan AI</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>ภารกิจที่ทำได้จริง วัดผลได้ อิงข้อมูลร้านจริง</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {genMsg && <span style={{ fontSize: 12, color: genMsg.startsWith('✓') ? GREEN : RED }}>{genMsg}</span>}
+          <button onClick={() => void generate()} disabled={generating}
+            style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}12`, color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: generating ? 0.5 : 1 }}>
+            {generating ? 'กำลังสร้าง...' : '🔄 สร้างเควส'}
+          </button>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      {doneCount > 0 && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ padding: '10px 16px', borderRadius: 10, backgroundColor: `${GREEN}18`, border: `1px solid ${GREEN}33`, fontSize: 12, color: GREEN }}>
+            ✓ เสร็จแล้ว {doneCount} เควส
+          </div>
+          {totalReward > 0 && (
+            <div style={{ padding: '10px 16px', borderRadius: 10, backgroundColor: `${GOLD}18`, border: `1px solid ${GOLD}33`, fontSize: 12, color: GOLD }}>
+              💰 กำไรจริง {totalReward.toLocaleString()} ₭
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Type filter */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {(['all', 'daily', 'weekly'] as const).map(t => (
+          <button key={t} onClick={() => setTypeFilter(t)}
+            style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${typeFilter === t ? GOLD : BORDER}`, backgroundColor: typeFilter === t ? `${GOLD}18` : 'transparent', color: typeFilter === t ? GOLD : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer' }}>
+            {t === 'all' ? 'ทั้งหมด' : t === 'daily' ? 'วันนี้' : 'สัปดาห์นี้'}
+          </button>
+        ))}
+      </div>
+
+      {/* Category filter */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {CATS.map(c => (
+          <button key={c} onClick={() => setCatFilter(c)}
+            style={{ padding: '5px 12px', borderRadius: 7, border: `1px solid ${catFilter === c ? GOLD : BORDER}`, backgroundColor: catFilter === c ? `${GOLD}18` : 'transparent', color: catFilter === c ? GOLD : 'rgba(255,255,255,0.38)', fontSize: 11, cursor: 'pointer' }}>
+            {c === 'all' ? 'ทั้งหมด' : `${QUEST_CATEGORY_ICON[c]} ${QUEST_CATEGORY_LABEL[c]}`}
+          </button>
+        ))}
+      </div>
+
+      {/* Quest cards */}
+      {loading ? (
+        [1,2,3].map(k => <div key={k} style={{ height: 170, borderRadius: 14, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)
+      ) : visible.length === 0 ? (
+        <div style={{ padding: '50px 20px', textAlign: 'center', backgroundColor: CARD, borderRadius: 14, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🎯</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ยังไม่มีเควส</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>กด &quot;สร้างเควส&quot; เพื่อให้ Alan วิเคราะห์และสร้างภารกิจวันนี้</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {visible.map(q => {
+            const isExp      = expanded === q.id
+            const steps      = Array.isArray(q.action_steps) ? q.action_steps as string[] : []
+            const isDone     = q.status === 'completed'
+            const isActive   = q.status === 'in_progress' || q.status === 'accepted'
+            const diffColor  = QUEST_DIFF_COLOR[q.difficulty] ?? GOLD
+            const isCelebrating = celebrate === q.id
+            const isCompleting  = completing === q.id
+
+            return (
+              <div key={q.id} style={{
+                padding: 20, borderRadius: 14, backgroundColor: CARD,
+                border: `1px solid ${isDone ? `${GREEN}44` : isActive ? `${GOLD}44` : BORDER}`,
+                opacity: isDone ? 0.8 : 1,
+                transition: 'all 0.3s ease',
+                position: 'relative',
+                overflow: 'hidden',
+              }}>
+                {/* Celebration overlay */}
+                {isCelebrating && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: `${GREEN}22`, borderRadius: 14, zIndex: 10, fontSize: 40, animation: 'pulse 0.5s ease' }}>
+                    🎉
+                  </div>
+                )}
+
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 18 }}>{QUEST_CATEGORY_ICON[q.category] ?? '🎯'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: diffColor, backgroundColor: `${diffColor}18`, padding: '2px 10px', borderRadius: 99, letterSpacing: '0.5px' }}>
+                      {QUEST_DIFF_LABEL[q.difficulty] ?? q.difficulty}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', backgroundColor: '#1a1a1a', padding: '2px 8px', borderRadius: 6 }}>
+                      {q.type === 'weekly' ? '📅 สัปดาห์' : '⚡ วันนี้'}
+                    </span>
+                    {isDone && <span style={{ fontSize: 11, color: GREEN, fontWeight: 700 }}>✓ เสร็จแล้ว</span>}
+                    {isActive && !isDone && <span style={{ fontSize: 11, color: GOLD, fontWeight: 700 }}>⚡ กำลังทำ</span>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                    {q.estimated_reward_lak > 0 && (
+                      <span style={{ fontSize: 12, color: GREEN, fontWeight: 700 }}>+{q.estimated_reward_lak.toLocaleString()} ₭</span>
+                    )}
+                    {q.required_investment_lak > 0 && (
+                      <span style={{ fontSize: 11, color: ORANGE }}>ลงทุน {q.required_investment_lak.toLocaleString()} ₭</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Title + description */}
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 5 }}>{q.title}</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: 10 }}>{q.description}</div>
+
+                {/* Estimated outcome */}
+                {q.estimated_outcome && (
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 12, fontStyle: 'italic' }}>
+                    📈 {q.estimated_outcome}
+                  </div>
+                )}
+
+                {/* Steps — collapsible */}
+                {steps.length > 0 && isExp && (
+                  <div style={{ marginBottom: 14, padding: '12px 16px', backgroundColor: '#1a1a1a', borderRadius: 10, border: `1px solid ${BORDER}` }}>
+                    <div style={{ fontSize: 10, color: GOLD, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '1px' }}>ขั้นตอนปฏิบัติ</div>
+                    {steps.map((step, si) => (
+                      <div key={si} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>
+                        <span style={{ color: GOLD, flexShrink: 0, minWidth: 22, fontWeight: 700 }}>{si + 1}.</span>
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Complete form */}
+                {isCompleting && (
+                  <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      type="number"
+                      placeholder="กำไรจริง (LAK)"
+                      value={actualInput}
+                      onChange={e => setActualInput(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: '#1a1a1a', color: '#fff', fontSize: 13, width: 180 }}
+                    />
+                    <button onClick={() => void completeQuest(q.id, Number(actualInput) || 0)}
+                      style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                      ยืนยัน ✓
+                    </button>
+                    <button onClick={() => { setCompleting(null); setActualInput('') }}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer' }}>
+                      ยกเลิก
+                    </button>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {!isDone && !isActive && (
+                    <button onClick={() => void acceptQuest(q.id)}
+                      style={{ padding: '7px 18px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                      ลงมือทำ →
+                    </button>
+                  )}
+                  {isActive && !isDone && !isCompleting && (
+                    <button onClick={() => setCompleting(q.id)}
+                      style={{ padding: '7px 16px', borderRadius: 8, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                      ทำเสร็จแล้ว ✓
+                    </button>
+                  )}
+                  {steps.length > 0 && (
+                    <button onClick={() => setExpanded(isExp ? null : q.id)}
+                      style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.45)', fontSize: 12, cursor: 'pointer' }}>
+                      {isExp ? 'ซ่อน ▲' : 'ดูขั้นตอน ▾'}
+                    </button>
+                  )}
+                  {!isDone && (
+                    <button onClick={() => void rejectQuest(q.id)}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${RED}33`, backgroundColor: 'transparent', color: RED, fontSize: 12, cursor: 'pointer', opacity: 0.55 }}>
+                      ข้าม
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── InsightsSection ──────────────────────────────────────────────────────────
@@ -3010,10 +3300,11 @@ function ActionLogSection() {
 // ─── AISettingsSection ────────────────────────────────────────────────────────
 
 function AISettingsSection() {
-  const [enabled,    setEnabled]    = useState<boolean | null>(null)
-  const [saving,     setSaving]     = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [genMsg,     setGenMsg]     = useState('')
+  const [enabled,       setEnabled]       = useState<boolean | null>(null)
+  const [saving,        setSaving]        = useState(false)
+  const [genInsight,    setGenInsight]    = useState(false)
+  const [genQuest,      setGenQuest]      = useState(false)
+  const [genMsg,        setGenMsg]        = useState('')
 
   useEffect(() => {
     supabase.from('site_settings').select('value').eq('key', 'alan_insights_enabled').single()
@@ -3026,8 +3317,8 @@ function AISettingsSection() {
     setEnabled(v); setSaving(false)
   }
 
-  async function generateNow() {
-    setGenerating(true); setGenMsg('')
+  async function generateInsights() {
+    setGenInsight(true); setGenMsg('')
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/alan-insights`, {
         method: 'POST',
@@ -3037,19 +3328,33 @@ function AISettingsSection() {
       const data = await res.json() as { ok: boolean; count?: number; error?: string }
       setGenMsg(data.ok ? `✓ สร้าง ${data.count} insights เรียบร้อย` : `ผิดพลาด: ${data.error ?? 'unknown'}`)
     } catch (e) { setGenMsg(`Error: ${String(e)}`) }
-    setGenerating(false)
+    setGenInsight(false)
+  }
+
+  async function generateQuests() {
+    setGenQuest(true); setGenMsg('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/alan-quests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ source: 'manual' }),
+      })
+      const data = await res.json() as { ok: boolean; count?: number; error?: string }
+      setGenMsg(data.ok ? `✓ สร้าง ${data.count} เควส เรียบร้อย` : `ผิดพลาด: ${data.error ?? 'unknown'}`)
+    } catch (e) { setGenMsg(`Error: ${String(e)}`) }
+    setGenQuest(false)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
       <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 18, color: 'rgba(255,255,255,0.85)' }}>ตั้งค่า Alan Insights</div>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 18, color: 'rgba(255,255,255,0.85)' }}>ตั้งค่า Alan AI</div>
         {enabled !== null && (
           <SettingsToggle
             value={enabled}
             onChange={v => void toggleEnabled(v)}
             label={saving ? 'กำลังบันทึก...' : 'สร้าง Insights อัตโนมัติ'}
-            sub="ทุกวัน 09:00 Asia/Vientiane — ต้องการ pg_cron + alan-insights deployed"
+            sub="ทุกวัน 02:00 Asia/Vientiane — ต้องการ pg_cron + alan-insights deployed"
           />
         )}
         <div style={{ marginTop: 20, padding: '12px 16px', backgroundColor: '#1a1a1a', borderRadius: 10, fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.8 }}>
@@ -3058,12 +3363,16 @@ function AISettingsSection() {
           • งบประมาณคงเหลือในแต่ละหมวด<br />
           • สต็อกวิกฤต / ใกล้หมด<br />
           • Margin ต่ำกว่าเกณฑ์<br />
-          • เมนูขายน้อย / ขายดี 30 วัน
+          • เมนูขายน้อย / ขายดี 7-30 วัน
         </div>
-        <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => void generateNow()} disabled={generating}
-            style={{ padding: '10px 22px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: generating ? 0.6 : 1 }}>
-            {generating ? 'กำลังวิเคราะห์...' : '🔄 สร้าง Insights ตอนนี้'}
+        <div style={{ marginTop: 18, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <button onClick={() => void generateInsights()} disabled={genInsight || genQuest}
+            style={{ padding: '10px 18px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}12`, color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: genInsight ? 0.6 : 1 }}>
+            {genInsight ? 'กำลังวิเคราะห์...' : '🔄 สร้าง Insights ตอนนี้'}
+          </button>
+          <button onClick={() => void generateQuests()} disabled={genInsight || genQuest}
+            style={{ padding: '10px 18px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: genQuest ? 0.6 : 1 }}>
+            {genQuest ? 'กำลังสร้าง...' : '🎯 สร้าง Quests ตอนนี้'}
           </button>
           {genMsg && <span style={{ fontSize: 12, color: genMsg.startsWith('✓') ? GREEN : RED }}>{genMsg}</span>}
         </div>
@@ -3387,9 +3696,10 @@ ${context}`
   )
 }
 function AITab() {
-  type SubTab = 'insights' | 'chat' | 'log' | 'settings'
-  const [subTab, setSubTab] = useState<SubTab>('insights')
+  type SubTab = 'quests' | 'insights' | 'chat' | 'log' | 'settings'
+  const [subTab, setSubTab] = useState<SubTab>('quests')
   const SUB_TABS = [
+    { key: 'quests'   as const, label: '🎯 เควส' },
     { key: 'insights' as const, label: '📋 Insights' },
     { key: 'chat'     as const, label: '💬 ถาม Alan' },
     { key: 'log'      as const, label: '📊 Action Log' },
@@ -3405,10 +3715,11 @@ function AITab() {
           </button>
         ))}
       </div>
-      {subTab === 'insights'  && <InsightsSection />}
-      {subTab === 'chat'      && <ChatSection />}
-      {subTab === 'log'       && <ActionLogSection />}
-      {subTab === 'settings'  && <AISettingsSection />}
+      {subTab === 'quests'   && <QuestsSection />}
+      {subTab === 'insights' && <InsightsSection />}
+      {subTab === 'chat'     && <ChatSection />}
+      {subTab === 'log'      && <ActionLogSection />}
+      {subTab === 'settings' && <AISettingsSection />}
     </div>
   )
 }
