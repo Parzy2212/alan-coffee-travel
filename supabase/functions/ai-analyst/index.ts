@@ -1,5 +1,5 @@
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://alancoffeetravel.com',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, content-type',
 }
@@ -24,9 +24,48 @@ Deno.serve(async (req) => {
 
     const { messages, context } = await req.json()
 
-    // Convert Gemini-format messages to OpenAI format and prepend system message
+    // Fetch live financial constraints from DB — independent of client context
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const H = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' }
+
+    let constraintBlock = ''
+    try {
+      const [balRes, budRes] = await Promise.all([
+        fetch(`${supabaseUrl}/rest/v1/rpc/get_current_cash_balance`, { method: 'POST', headers: H, body: '{}' }),
+        fetch(`${supabaseUrl}/rest/v1/rpc/get_budget_summary`,        { method: 'POST', headers: H, body: '{}' }),
+      ])
+      const cashBalance: number = await balRes.json()
+      const budgets: { category: string; monthly_budget_lak: number; spent_this_month: number }[] = await budRes.json()
+
+      const mktBudget = Array.isArray(budgets) ? budgets.find(b => b.category === 'การตลาด') : null
+      const mktRemaining = mktBudget ? Math.max(0, mktBudget.monthly_budget_lak - mktBudget.spent_this_month) : null
+
+      constraintBlock = `
+=== ⚠️ FINANCIAL CONSTRAINTS — VERIFIED FROM DATABASE (REAL-TIME) ===
+เงินสดในมือ (ห้ามแนะนำใช้มากกว่านี้): ${Number(cashBalance || 0).toLocaleString()} LAK
+งบการตลาดคงเหลือ: ${mktRemaining != null ? mktRemaining.toLocaleString() + ' LAK' : 'ไม่มีข้อมูล'}
+${Number(cashBalance || 0) < 1000000 ? '⚠️ เงินสดต่ำมาก — แนะนำเฉพาะวิธีฟรีหรือต้นทุนต่ำ' : ''}
+===`
+    } catch {
+      // Constraint fetch failed — continue without it
+    }
+
+    const constraintRules = `
+⚠️ CONSTRAINT RULES (NON-NEGOTIABLE):
+1. NEVER recommend spending more than the cash balance shown above
+2. If cash is critically low (<1M LAK), suggest only free strategies
+3. Always state the cost of any recommendation explicitly
+4. If a recommendation costs nothing, say "ไม่มีค่าใช้จ่าย"
+5. Reference specific numbers from the data — never give generic advice`
+
+    // Prepend constraints to the system context
+    const fullContext = constraintBlock
+      ? `${constraintRules}\n\n${constraintBlock}\n\n${context}`
+      : context
+
     const openaiMessages = [
-      { role: 'system', content: context },
+      { role: 'system', content: fullContext },
       ...messages.map((m: { role: string; parts?: { text: string }[]; content?: string }) => ({
         role: m.role === 'model' ? 'assistant' : m.role,
         content: m.content ?? m.parts?.[0]?.text ?? '',
@@ -47,8 +86,6 @@ Deno.serve(async (req) => {
     })
 
     const rawText = await orRes.text()
-    console.log('OpenRouter status:', orRes.status)
-    console.log('OpenRouter raw response:', rawText)
 
     let json: unknown
     try {

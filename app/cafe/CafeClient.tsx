@@ -138,6 +138,7 @@ type FullSettings = {
   low_stock_alert_line_token: string; daily_report_line_token: string
   low_stock_alert_enabled: string; daily_report_enabled: string
   ai_analyst_enabled: string
+  alan_insights_enabled: string
   payment_banks: string
   qr_payment_number: string
   qr_payment_name: string
@@ -169,6 +170,7 @@ const DEFAULT_SETTINGS: FullSettings = {
   low_stock_alert_line_token: '', daily_report_line_token: '',
   low_stock_alert_enabled: 'false', daily_report_enabled: 'false',
   ai_analyst_enabled: 'false',
+  alan_insights_enabled: 'true',
   payment_banks: '[]',
   qr_payment_number: '',
   qr_payment_name: '',
@@ -2738,6 +2740,14 @@ function PurchaseTab() {
 
 // ─── AI Tab ───────────────────────────────────────────────────────────────────
 
+type AlanInsight = {
+  id: string; date: string; type: string
+  priority: 'high' | 'medium' | 'low'
+  observation: string; recommendation: string
+  required_investment: number; expected_outcome: string | null
+  action_steps: string[]; status: string; created_at: string
+}
+
 // Markdown inline renderer — bold (**text**) support
 function renderInlineMd(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/)
@@ -2783,7 +2793,288 @@ function renderMdContent(text: string) {
   })
 }
 
-function AITab() {
+// ─── InsightsSection ──────────────────────────────────────────────────────────
+
+function InsightsSection() {
+  const [insights,   setInsights]   = useState<AlanInsight[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [genMsg,     setGenMsg]     = useState('')
+  const [expanded,   setExpanded]   = useState<string | null>(null)
+
+  const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.from('alan_insights')
+      .select('*').eq('date', todayVN).order('created_at', { ascending: true })
+    setInsights((data as AlanInsight[] | null) ?? [])
+    setLoading(false)
+  }, [todayVN])
+
+  useEffect(() => { void load() }, [load])
+
+  async function generate() {
+    setGenerating(true); setGenMsg('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/alan-insights`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ source: 'manual' }),
+      })
+      const data = await res.json() as { ok: boolean; count?: number; error?: string }
+      if (data.ok) { setGenMsg(`✓ สร้าง ${data.count} insights`); await load() }
+      else setGenMsg(`ผิดพลาด: ${data.error ?? 'unknown'}`)
+    } catch (e) { setGenMsg(`Error: ${String(e)}`) }
+    setGenerating(false)
+  }
+
+  async function updateStatus(id: string, status: string) {
+    await supabase.from('alan_insights').update({ status }).eq('id', id)
+    setInsights(ins => ins.map(i => i.id === id ? { ...i, status } : i))
+  }
+
+  const PCOLOR = { high: RED, medium: ORANGE, low: GREEN }
+  const PLABEL = { high: 'สำคัญมาก', medium: 'ปานกลาง', low: 'ทั่วไป' }
+  const TICON: Record<string, string> = { sales: '💰', stock: '📦', cash: '💵', margin: '📊', marketing: '📣', staff: '👥', general: '🔍' }
+
+  const active   = insights.filter(i => i.status !== 'rejected')
+  const rejCount = insights.filter(i => i.status === 'rejected').length
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>Insights วันนี้ — {todayVN}</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>วิเคราะห์โดย Alan AI — constraint-aware (เงินสด / งบ / สต็อก)</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {genMsg && <span style={{ fontSize: 12, color: genMsg.startsWith('✓') ? GREEN : RED }}>{genMsg}</span>}
+          <button onClick={() => void generate()} disabled={generating}
+            style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}12`, color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: generating ? 0.5 : 1 }}>
+            {generating ? 'กำลังวิเคราะห์...' : '🔄 สร้างใหม่'}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        [1,2].map(k => <div key={k} style={{ height: 160, borderRadius: 14, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)
+      ) : active.length === 0 ? (
+        <div style={{ padding: '50px 20px', textAlign: 'center', backgroundColor: CARD, borderRadius: 14, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>🤖</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>ยังไม่มี Insights วันนี้</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>กด &quot;สร้างใหม่&quot; เพื่อให้ Alan วิเคราะห์ข้อมูลล่าสุด</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {active.map(ins => {
+            const pc   = PCOLOR[ins.priority] ?? GOLD
+            const isExp = expanded === ins.id
+            const done  = ins.status === 'accepted' || ins.status === 'completed'
+            const steps = Array.isArray(ins.action_steps) ? ins.action_steps as string[] : []
+            return (
+              <div key={ins.id} style={{ padding: 20, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${pc}33`, opacity: done ? 0.72 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>{TICON[ins.type] ?? '🔍'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: pc, backgroundColor: `${pc}18`, padding: '2px 10px', borderRadius: 99, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      {PLABEL[ins.priority] ?? ins.priority}
+                    </span>
+                    {done && <span style={{ fontSize: 11, color: GREEN, fontWeight: 600 }}>✓ รับแล้ว</span>}
+                  </div>
+                  {ins.required_investment > 0 && (
+                    <span style={{ fontSize: 11, color: ORANGE }}>💰 {ins.required_investment.toLocaleString()} ₭</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 1.75, marginBottom: 7 }}>
+                  <span style={{ color: GOLD, fontWeight: 600 }}>🔍 พบ: </span>{ins.observation}
+                </div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.75, marginBottom: 10 }}>
+                  <span style={{ color: GREEN, fontWeight: 600 }}>💡 แนะนำ: </span>{ins.recommendation}
+                </div>
+                {ins.expected_outcome && (
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', marginBottom: 12, fontStyle: 'italic' }}>
+                    📈 {ins.expected_outcome}
+                  </div>
+                )}
+                {isExp && steps.length > 0 && (
+                  <div style={{ marginBottom: 14, padding: '12px 16px', backgroundColor: '#1a1a1a', borderRadius: 10, border: `1px solid ${BORDER}` }}>
+                    <div style={{ fontSize: 10, color: GOLD, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '1px' }}>ขั้นตอนปฏิบัติ</div>
+                    {steps.map((step, si) => (
+                      <div key={si} style={{ display: 'flex', gap: 8, marginBottom: 5, fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>
+                        <span style={{ color: GOLD, flexShrink: 0, minWidth: 20 }}>{si + 1}.</span><span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {!done && (
+                    <button onClick={() => void updateStatus(ins.id, 'accepted')}
+                      style={{ padding: '7px 16px', borderRadius: 8, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                      ลงมือทำ ✓
+                    </button>
+                  )}
+                  {ins.status === 'accepted' && (
+                    <button onClick={() => void updateStatus(ins.id, 'completed')}
+                      style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${GREEN}55`, backgroundColor: 'transparent', color: GREEN, fontSize: 12, cursor: 'pointer' }}>
+                      ทำเสร็จแล้ว
+                    </button>
+                  )}
+                  {steps.length > 0 && (
+                    <button onClick={() => setExpanded(isExp ? null : ins.id)}
+                      style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.45)', fontSize: 12, cursor: 'pointer' }}>
+                      {isExp ? 'ซ่อน ▲' : 'ดูรายละเอียด ▾'}
+                    </button>
+                  )}
+                  {!done && (
+                    <button onClick={() => void updateStatus(ins.id, 'rejected')}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${RED}33`, backgroundColor: 'transparent', color: RED, fontSize: 12, cursor: 'pointer', opacity: 0.6 }}>
+                      ไม่สนใจ
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {rejCount > 0 && (
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>
+          {rejCount} insight ถูกซ่อน (ไม่สนใจ)
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ActionLogSection ─────────────────────────────────────────────────────────
+
+function ActionLogSection() {
+  const [logs,    setLogs]    = useState<AlanInsight[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.from('alan_insights')
+      .select('*')
+      .in('status', ['accepted', 'completed', 'rejected'])
+      .order('created_at', { ascending: false })
+      .limit(60)
+      .then(({ data }) => { setLogs((data as AlanInsight[] | null) ?? []); setLoading(false) })
+  }, [])
+
+  const STATUS_C: Record<string, string> = { accepted: ORANGE, completed: GREEN, rejected: 'rgba(255,255,255,0.2)' }
+  const STATUS_L: Record<string, string> = { accepted: 'รับแล้ว', completed: 'เสร็จแล้ว', rejected: 'ไม่สนใจ', new: 'ใหม่', viewed: 'เปิดดู' }
+  const TICON: Record<string, string>    = { sales: '💰', stock: '📦', cash: '💵', margin: '📊', marketing: '📣', staff: '👥', general: '🔍' }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>ประวัติ Insights ที่ดำเนินการแล้ว (60 รายการล่าสุด)</div>
+      <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+        {loading ? (
+          <div style={{ height: 80, borderRadius: 10, backgroundColor: '#0f0f0f', animation: 'pulse 1.5s infinite' }} />
+        ) : logs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>ยังไม่มีประวัติการดำเนินการ</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 500 }}>
+              <thead>
+                <tr style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  {['วันที่', '', 'คำแนะนำ', 'ลงทุน (₭)', 'สถานะ'].map((h, i) => (
+                    <th key={i} style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 500, borderBottom: `1px solid ${BORDER}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map(ins => (
+                  <tr key={ins.id} style={{ borderBottom: `1px solid ${BORDER}22` }}>
+                    <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.4)', fontSize: 11, whiteSpace: 'nowrap' }}>{ins.date}</td>
+                    <td style={{ padding: '8px 10px', fontSize: 16 }}>{TICON[ins.type] ?? '🔍'}</td>
+                    <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.65)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ins.recommendation}</td>
+                    <td style={{ padding: '8px 10px', color: ORANGE, fontVariantNumeric: 'tabular-nums' }}>{ins.required_investment > 0 ? ins.required_investment.toLocaleString() : '—'}</td>
+                    <td style={{ padding: '8px 10px' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_C[ins.status] ?? 'rgba(255,255,255,0.3)' }}>
+                        {STATUS_L[ins.status] ?? ins.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── AISettingsSection ────────────────────────────────────────────────────────
+
+function AISettingsSection() {
+  const [enabled,    setEnabled]    = useState<boolean | null>(null)
+  const [saving,     setSaving]     = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [genMsg,     setGenMsg]     = useState('')
+
+  useEffect(() => {
+    supabase.from('site_settings').select('value').eq('key', 'alan_insights_enabled').single()
+      .then(({ data }) => setEnabled((data as { value: string } | null)?.value === 'true'))
+  }, [])
+
+  async function toggleEnabled(v: boolean) {
+    setSaving(true)
+    await supabase.rpc('update_site_setting', { p_key: 'alan_insights_enabled', p_value: v ? 'true' : 'false' })
+    setEnabled(v); setSaving(false)
+  }
+
+  async function generateNow() {
+    setGenerating(true); setGenMsg('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/alan-insights`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ source: 'manual' }),
+      })
+      const data = await res.json() as { ok: boolean; count?: number; error?: string }
+      setGenMsg(data.ok ? `✓ สร้าง ${data.count} insights เรียบร้อย` : `ผิดพลาด: ${data.error ?? 'unknown'}`)
+    } catch (e) { setGenMsg(`Error: ${String(e)}`) }
+    setGenerating(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
+      <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 18, color: 'rgba(255,255,255,0.85)' }}>ตั้งค่า Alan Insights</div>
+        {enabled !== null && (
+          <SettingsToggle
+            value={enabled}
+            onChange={v => void toggleEnabled(v)}
+            label={saving ? 'กำลังบันทึก...' : 'สร้าง Insights อัตโนมัติ'}
+            sub="ทุกวัน 09:00 Asia/Vientiane — ต้องการ pg_cron + alan-insights deployed"
+          />
+        )}
+        <div style={{ marginTop: 20, padding: '12px 16px', backgroundColor: '#1a1a1a', borderRadius: 10, fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.8 }}>
+          Alan AI วิเคราะห์โดยคำนึงถึง:<br />
+          • เงินสดในมือ (real-time)<br />
+          • งบประมาณคงเหลือในแต่ละหมวด<br />
+          • สต็อกวิกฤต / ใกล้หมด<br />
+          • Margin ต่ำกว่าเกณฑ์<br />
+          • เมนูขายน้อย / ขายดี 30 วัน
+        </div>
+        <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => void generateNow()} disabled={generating}
+            style={{ padding: '10px 22px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: generating ? 0.6 : 1 }}>
+            {generating ? 'กำลังวิเคราะห์...' : '🔄 สร้าง Insights ตอนนี้'}
+          </button>
+          {genMsg && <span style={{ fontSize: 12, color: genMsg.startsWith('✓') ? GREEN : RED }}>{genMsg}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── ChatSection ──────────────────────────────────────────────────────────────
+
+function ChatSection() {
   type Msg = { role: 'user' | 'assistant'; content: string; ts: number }
   const [messages,   setMessages]   = useState<Msg[]>([])
   const [input,      setInput]      = useState('')
@@ -2812,7 +3103,7 @@ function AITab() {
       const dow     = now.toLocaleDateString('en-US',  { timeZone: 'Asia/Vientiane', weekday: 'short' })
       const isWeekend = dow === 'Sat' || dow === 'Sun'
 
-      const [sRes, mRes, sdRes, stRes, saRes, cfRes, qRes] = await Promise.all([
+      const [sRes, mRes, sdRes, stRes, saRes, cfRes, qRes, cashRes, budgetRes] = await Promise.all([
         supabase.rpc('get_dashboard_stats'),
         supabase.rpc('get_menu_performance', { p_days: 30 }),
         supabase.rpc('get_stock_detail'),
@@ -2820,6 +3111,8 @@ function AITab() {
         supabase.rpc('get_staff_analytics'),
         supabase.rpc('get_cashflow_summary', { p_days: 30 }),
         supabase.rpc('get_queue_performance', { p_days: 1 }),
+        supabase.rpc('get_current_cash_balance'),
+        supabase.rpc('get_budget_summary'),
       ])
 
       const stats      = sRes.data  as ExtDashStats   | null
@@ -2829,6 +3122,11 @@ function AITab() {
       const staffAna   = (saRes.data as StaffAnalytics[]) ?? []
       const cashflow   = (cfRes.data as CashflowRow[] ) ?? []
       const queue      = qRes.data  as QueuePerf      | null
+      const cashBalance = Number(cashRes.data ?? 0)
+      type BudgetRow2 = { category: string; monthly_budget_lak: number; spent_this_month: number }
+      const budgets2   = (budgetRes.data as BudgetRow2[]) ?? []
+      const mktBudget2 = budgets2.find(b => b.category === 'การตลาด')
+      const mktRemaining2 = mktBudget2 ? Math.max(0, mktBudget2.monthly_budget_lak - mktBudget2.spent_this_month) : null
 
       const todaySales     = stats?.today_sales     ?? 0
       const yesterdaySales = stats?.yesterday_sales ?? 0
@@ -2851,6 +3149,11 @@ function AITab() {
         `=== ALAN CAFE — BUSINESS INTELLIGENCE REPORT ===`,
         `วันที่: ${today} (${dayName})${isWeekend ? ' [วันหยุดสุดสัปดาห์]' : ' [วันธรรมดา]'}`,
         `เวลา: ${timeStr} ICT (Vientiane)`,
+        ``,
+        `=== ⚠️ FINANCIAL CONSTRAINTS (HARD LIMITS) ===`,
+        `เงินสดในมือ: ${cashBalance.toLocaleString()} LAK${cashBalance < 1000000 ? ' ⚠️ ต่ำมาก — แนะนำเฉพาะวิธีฟรีหรือต้นทุนต่ำ' : ''}`,
+        mktRemaining2 != null ? `งบการตลาดคงเหลือ: ${mktRemaining2.toLocaleString()} LAK` : '',
+        `ห้ามแนะนำใช้เงินเกินเงินสดในมือ`,
         ``,
         `=== ยอดขายวันนี้ ===`,
         `ยอดขาย: ${todaySales.toLocaleString()} LAK`,
@@ -3083,6 +3386,33 @@ ${context}`
     </div>
   )
 }
+function AITab() {
+  type SubTab = 'insights' | 'chat' | 'log' | 'settings'
+  const [subTab, setSubTab] = useState<SubTab>('insights')
+  const SUB_TABS = [
+    { key: 'insights' as const, label: '📋 Insights' },
+    { key: 'chat'     as const, label: '💬 ถาม Alan' },
+    { key: 'log'      as const, label: '📊 Action Log' },
+    { key: 'settings' as const, label: '⚙️ ตั้งค่า' },
+  ]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {SUB_TABS.map(t => (
+          <button key={t.key} onClick={() => setSubTab(t.key)}
+            style={{ padding: '8px 16px', borderRadius: 9, border: `1px solid ${subTab === t.key ? GOLD : BORDER}`, backgroundColor: subTab === t.key ? `${GOLD}18` : 'transparent', color: subTab === t.key ? GOLD : 'rgba(255,255,255,0.45)', fontWeight: subTab === t.key ? 700 : 400, fontSize: 13, cursor: 'pointer' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {subTab === 'insights'  && <InsightsSection />}
+      {subTab === 'chat'      && <ChatSection />}
+      {subTab === 'log'       && <ActionLogSection />}
+      {subTab === 'settings'  && <AISettingsSection />}
+    </div>
+  )
+}
+
 // ─── Audit Tab ─────────────────────────────────────────────────────────────────
 
 function AuditTab() {
