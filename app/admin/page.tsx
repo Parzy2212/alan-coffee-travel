@@ -326,7 +326,7 @@ function toggleArr<T>(arr: T[], item: T): T[] {
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'destinations' | 'guides' | 'settings'>('destinations')
+  const [tab, setTab] = useState<'destinations' | 'guides' | 'settings' | 'ag-guides' | 'ag-experiences' | 'ag-inquiries'>('destinations')
 
   // ── Destination state ──────────────────────────────────────
   const [destinations, setDestinations] = useState<any[]>([])
@@ -350,6 +350,15 @@ export default function AdminPage() {
   const [deleteGuideId, setDeleteGuideId] = useState<string | null>(null)
   const [guideUploading, setGuideUploading] = useState(false)
 
+  // ── AlanGuide tourism state ────────────────────────────────
+  const [agGuides, setAgGuides]           = useState<any[]>([])
+  const [agGuidesLoaded, setAgGuidesLoaded] = useState(false)
+  const [agExps, setAgExps]               = useState<any[]>([])
+  const [agExpsLoaded, setAgExpsLoaded]   = useState(false)
+  const [agInquiries, setAgInquiries]     = useState<any[]>([])
+  const [agInqLoaded, setAgInqLoaded]     = useState(false)
+  const [agInqFilter, setAgInqFilter]     = useState<'all' | 'guide_application' | 'new' | 'contacted' | 'closed'>('all')
+
   // ── Site Settings state ────────────────────────────────────
   const [heroImageUrl, setHeroImageUrl] = useState('')
   const [heroImageFile, setHeroImageFile] = useState<File | null>(null)
@@ -358,6 +367,43 @@ export default function AdminPage() {
   const [settingsUploading, setSettingsUploading] = useState(false)
 
   useEffect(() => { fetchAll(); fetchGuides(); fetchSiteSettings() }, [])
+
+  useEffect(() => {
+    if (tab === 'ag-guides' && !agGuidesLoaded) fetchAgGuides()
+    if (tab === 'ag-experiences' && !agExpsLoaded) fetchAgExps()
+    if (tab === 'ag-inquiries' && !agInqLoaded) fetchAgInquiries()
+  }, [tab])
+
+  async function fetchAgGuides() {
+    const { data } = await supabase.from('guides').select('id,slug,name,profile_photo_url,photo_url,province,verified,is_verified,featured,active,status,rating_avg,review_count,languages,languages_spoken,years_experience,experience_years').order('created_at', { ascending: false })
+    setAgGuides(data ?? [])
+    setAgGuidesLoaded(true)
+  }
+
+  async function fetchAgExps() {
+    const { data } = await supabase.from('experiences').select('id,slug,title_en,category,region,price_per_person_lak,status,featured,rating_avg,review_count,created_at,guides(name)').order('created_at', { ascending: false })
+    setAgExps(data ?? [])
+    setAgExpsLoaded(true)
+  }
+
+  async function fetchAgInquiries() {
+    const { data } = await supabase.from('inquiries').select('*').order('created_at', { ascending: false }).limit(200)
+    setAgInquiries(data ?? [])
+    setAgInqLoaded(true)
+  }
+
+  async function agToggle(table: string, id: string, field: string, current: boolean) {
+    await adminDb({ table, action: 'update', id, data: { [field]: !current } })
+    if (table === 'guides') fetchAgGuides()
+    if (table === 'experiences') fetchAgExps()
+  }
+
+  async function agUpdateStatus(table: string, id: string, status: string) {
+    await adminDb({ table, action: 'update', id, data: { status } })
+    if (table === 'guides') fetchAgGuides()
+    if (table === 'experiences') fetchAgExps()
+    if (table === 'inquiries') fetchAgInquiries()
+  }
 
   useEffect(() => {
     return () => { imagePreviews.forEach(url => URL.revokeObjectURL(url)) }
@@ -711,16 +757,23 @@ export default function AdminPage() {
         </div>
 
         {/* Tab switcher */}
-        <div style={{ display: 'flex', marginBottom: '36px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          {(['destinations', 'guides', 'settings'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{
-              padding: '12px 28px', background: 'none', border: 'none', cursor: 'pointer',
-              borderBottom: tab === t ? '2px solid #c9a84c' : '2px solid transparent',
-              color: tab === t ? '#c9a84c' : 'rgba(255,255,255,0.4)',
-              fontWeight: tab === t ? 700 : 500, fontSize: '14px',
+        <div style={{ display: 'flex', marginBottom: '36px', borderBottom: '1px solid rgba(255,255,255,0.08)', overflowX: 'auto', gap: 0 }}>
+          {([
+            { key: 'destinations',   label: `Destinations (${destinations.length})` },
+            { key: 'guides',         label: `Guides (${guides.length})` },
+            { key: 'settings',       label: 'Site Settings' },
+            { key: 'ag-guides',      label: `AlanGuide — Guides (${agGuides.length || '…'})` },
+            { key: 'ag-experiences', label: `Experiences (${agExps.length || '…'})` },
+            { key: 'ag-inquiries',   label: `Inquiries (${agInquiries.length || '…'})` },
+          ] as const).map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              padding: '12px 22px', background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+              borderBottom: tab === t.key ? '2px solid #c9a84c' : '2px solid transparent',
+              color: tab === t.key ? '#c9a84c' : 'rgba(255,255,255,0.4)',
+              fontWeight: tab === t.key ? 700 : 500, fontSize: '13px',
               letterSpacing: '0.5px', marginBottom: '-1px',
             }}>
-              {t === 'destinations' ? `Destinations (${destinations.length})` : t === 'guides' ? `Guides (${guides.length})` : 'Site Settings'}
+              {t.label}
             </button>
           ))}
         </div>
@@ -1277,6 +1330,229 @@ export default function AdminPage() {
                 </p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════
+            ALANGU IDE — GUIDES TAB
+        ═══════════════════════════════════════════════════ */}
+        {tab === 'ag-guides' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ color: '#c9a84c', fontSize: '16px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', margin: 0 }}>
+                AlanGuide — Manage Guides
+              </h2>
+              <a href="/guides" target="_blank" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>View public page →</a>
+            </div>
+            {!agGuidesLoaded ? (
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px' }}>Loading…</p>
+            ) : agGuides.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.3)' }}>
+                <p style={{ marginBottom: '16px' }}>No guides yet.</p>
+                <a href="/become-a-guide" target="_blank" style={{ color: '#c9a84c', fontSize: '13px' }}>Share /become-a-guide →</a>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {agGuides.map(g => {
+                  const photo = g.profile_photo_url ?? g.photo_url
+                  const isVerif = g.verified ?? g.is_verified
+                  const isFeat  = g.featured ?? false
+                  const isActive = g.active !== false && (g.status === 'active' || g.status == null)
+                  const expYrs = g.years_experience ?? g.experience_years
+                  const langs = g.languages_spoken ?? g.languages ?? []
+                  return (
+                    <div key={g.id} style={{ backgroundColor: '#111', border: `1px solid ${isVerif ? 'rgba(201,168,76,0.25)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '18px 22px', display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {/* Avatar */}
+                      {photo ? (
+                        <img src={photo} alt={g.name} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                      ) : (
+                        <div style={{ width: 52, height: 52, borderRadius: '50%', backgroundColor: 'rgba(201,168,76,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>
+                      )}
+                      {/* Info */}
+                      <div style={{ flex: 1, minWidth: 160 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                          <span style={{ color: 'white', fontWeight: 700, fontSize: 15 }}>{g.name}</span>
+                          {isVerif && <span style={{ color: '#c9a84c', fontSize: 11, fontWeight: 700 }}>✓ Verified</span>}
+                          {isFeat  && <span style={{ color: '#c9a84c', fontSize: 11 }}>★ Featured</span>}
+                        </div>
+                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0 }}>
+                          {g.province}{expYrs ? ` · ${expYrs} yrs` : ''}{langs.length ? ` · ${langs.slice(0,2).join(', ')}` : ''}
+                          {(g.rating_avg ?? 0) > 0 ? ` · ★ ${Number(g.rating_avg).toFixed(1)} (${g.review_count ?? 0})` : ''}
+                        </p>
+                      </div>
+                      {/* Actions */}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button onClick={() => agToggle('guides', g.id, isVerif ? 'verified' : 'is_verified', isVerif ?? false)}
+                          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(201,168,76,0.3)', background: isVerif ? 'rgba(201,168,76,0.15)' : 'transparent', color: isVerif ? '#c9a84c' : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                          {isVerif ? '✓ Verified' : 'Verify'}
+                        </button>
+                        <button onClick={() => agToggle('guides', g.id, 'featured', isFeat)}
+                          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: isFeat ? 'rgba(255,255,255,0.08)' : 'transparent', color: isFeat ? 'white' : 'rgba(255,255,255,0.35)', fontSize: 12, cursor: 'pointer' }}>
+                          {isFeat ? '★ Featured' : '☆ Feature'}
+                        </button>
+                        <select value={isActive ? 'active' : 'inactive'} onChange={e => agUpdateStatus('guides', g.id, e.target.value)}
+                          style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a1a', color: isActive ? '#4caf50' : 'rgba(255,255,255,0.35)', fontSize: 12, cursor: 'pointer' }}>
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                        {g.slug && (
+                          <a href={`/guides/${g.slug}`} target="_blank" style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', fontSize: 12, textDecoration: 'none' }}>
+                            View →
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════
+            ALANGU IDE — EXPERIENCES TAB
+        ═══════════════════════════════════════════════════ */}
+        {tab === 'ag-experiences' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ color: '#c9a84c', fontSize: '16px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', margin: 0 }}>
+                AlanGuide — Experiences
+              </h2>
+              <a href="/experiences" target="_blank" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>View public page →</a>
+            </div>
+            {!agExpsLoaded ? (
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px' }}>Loading…</p>
+            ) : agExps.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.3)' }}>
+                <p>No experiences listed yet. Guides can add them from their dashboard.</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      {['Title', 'Guide', 'Category', 'Region', 'Price (₭)', 'Rating', 'Status', 'Featured', ''].map(h => (
+                        <th key={h} style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.35)', fontWeight: 600, textAlign: 'left', fontSize: 11, letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agExps.map(exp => (
+                      <tr key={exp.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '12px 14px', color: 'white', fontWeight: 600, maxWidth: 220 }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.title_en ?? '—'}</div>
+                        </td>
+                        <td style={{ padding: '12px 14px', color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap' }}>{(exp.guides as any)?.name ?? '—'}</td>
+                        <td style={{ padding: '12px 14px', color: 'rgba(255,255,255,0.45)' }}>{exp.category ?? '—'}</td>
+                        <td style={{ padding: '12px 14px', color: 'rgba(255,255,255,0.45)' }}>{exp.region ?? '—'}</td>
+                        <td style={{ padding: '12px 14px', color: '#c9a84c', fontWeight: 700 }}>{exp.price_per_person_lak ? Number(exp.price_per_person_lak).toLocaleString() : '—'}</td>
+                        <td style={{ padding: '12px 14px', color: 'rgba(255,255,255,0.45)' }}>{(exp.rating_avg ?? 0) > 0 ? `★ ${Number(exp.rating_avg).toFixed(1)} (${exp.review_count ?? 0})` : '—'}</td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <select value={exp.status ?? 'active'} onChange={e => agUpdateStatus('experiences', exp.id, e.target.value)}
+                            style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a1a', color: exp.status === 'active' ? '#4caf50' : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer' }}>
+                            <option value="active">Active</option>
+                            <option value="draft">Draft</option>
+                            <option value="inactive">Inactive</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <button onClick={() => agToggle('experiences', exp.id, 'featured', exp.featured ?? false)}
+                            style={{ padding: '4px 12px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: exp.featured ? 'rgba(201,168,76,0.15)' : 'transparent', color: exp.featured ? '#c9a84c' : 'rgba(255,255,255,0.35)', fontSize: 12, cursor: 'pointer' }}>
+                            {exp.featured ? '★ Yes' : '☆ No'}
+                          </button>
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          {exp.slug && <a href={`/experiences/${exp.slug}`} target="_blank" style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, textDecoration: 'none' }}>View →</a>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════
+            ALANGU IDE — INQUIRIES TAB
+        ═══════════════════════════════════════════════════ */}
+        {tab === 'ag-inquiries' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: 12 }}>
+              <h2 style={{ color: '#c9a84c', fontSize: '16px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', margin: 0 }}>
+                Inquiries & Applications ({agInquiries.length})
+              </h2>
+              <button onClick={fetchAgInquiries} style={{ padding: '6px 16px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer' }}>
+                Refresh
+              </button>
+            </div>
+            {/* Filter bar */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: '24px', flexWrap: 'wrap' }}>
+              {(['all', 'guide_application', 'new', 'contacted', 'closed'] as const).map(f => (
+                <button key={f} onClick={() => setAgInqFilter(f)}
+                  style={{ padding: '6px 14px', borderRadius: 99, border: '1px solid rgba(255,255,255,0.1)', background: agInqFilter === f ? '#c9a84c' : 'transparent', color: agInqFilter === f ? '#000' : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer', fontWeight: agInqFilter === f ? 700 : 400 }}>
+                  {f === 'guide_application' ? 'Guide Apps' : f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
+            {!agInqLoaded ? (
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px' }}>Loading…</p>
+            ) : (() => {
+              const filtered = agInquiries.filter(inq => {
+                if (agInqFilter === 'all') return true
+                if (agInqFilter === 'guide_application') return inq.contact_via === 'become_a_guide' || inq.contact_via === 'guide_application'
+                return inq.status === agInqFilter
+              })
+              if (filtered.length === 0) return <p style={{ color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: '40px 0' }}>No inquiries in this filter.</p>
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {filtered.map(inq => (
+                    <div key={inq.id} style={{ backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '16px 20px', display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                          <span style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>{inq.name ?? 'Anonymous'}</span>
+                          {inq.country && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>{inq.country}</span>}
+                          {inq.contact_via && (
+                            <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: '#c9a84c', padding: '1px 8px', borderRadius: 99, fontSize: 10, fontWeight: 600 }}>
+                              {inq.contact_via}
+                            </span>
+                          )}
+                          {inq.status === 'contacted' && <span style={{ color: '#4caf50', fontSize: 11, fontWeight: 700 }}>✓ Contacted</span>}
+                          {inq.status === 'closed' && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>Closed</span>}
+                        </div>
+                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+                          {inq.email && <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>✉ {inq.email}</span>}
+                          {inq.preferred_date && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>📅 {inq.preferred_date}</span>}
+                          {inq.group_size && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>👥 {inq.group_size} pax</span>}
+                        </div>
+                        {inq.message && (
+                          <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.6, margin: 0, maxWidth: 520, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {inq.message}
+                          </p>
+                        )}
+                        <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, margin: '8px 0 0' }}>
+                          {new Date(inq.created_at).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                        {inq.status !== 'contacted' && (
+                          <button onClick={() => agUpdateStatus('inquiries', inq.id, 'contacted')}
+                            style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid rgba(76,175,80,0.35)', background: 'rgba(76,175,80,0.1)', color: '#4caf50', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            ✓ Mark Contacted
+                          </button>
+                        )}
+                        {inq.status !== 'closed' && (
+                          <button onClick={() => agUpdateStatus('inquiries', inq.id, 'closed')}
+                            style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'rgba(255,255,255,0.3)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            Close
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         )}
 

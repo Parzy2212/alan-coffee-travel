@@ -133,6 +133,19 @@ export default function GuideProfileClient({
   const [activeTab, setActiveTab] = useState<Tab>('about')
   const [showInquiry, setShowInquiry] = useState(false)
 
+  const logContactClick = async (via: string) => {
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      await supabase.from('inquiries').insert({
+        guide_id: guide.id,
+        name: 'Direct Click',
+        message: `Contact click: ${via}`,
+        contact_via: via,
+        status: 'new',
+      })
+    } catch {}
+  }
+
   const photo     = guide.profile_photo_url ?? guide.photo_url
   const bio       = lang === 'th' ? (guide.bio_th ?? guide.bio_en ?? guide.bio) : lang === 'lo' ? (guide.bio_lo ?? guide.bio_en ?? guide.bio) : (guide.bio_en ?? guide.bio)
   const langs     = guide.languages_spoken ?? guide.languages ?? []
@@ -401,9 +414,21 @@ export default function GuideProfileClient({
             {tr('gp_contact', lang)}
           </button>
           {guide.contact_whatsapp && (
-            <a href={`https://wa.me/${guide.contact_whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+            <a
+              href={`https://wa.me/${guide.contact_whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(`Hi ${guide.name}, I found you on AlanGuide. I'd like to know more about your tours.`)}`}
+              target="_blank" rel="noopener noreferrer"
+              onClick={() => logContactClick('whatsapp')}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 50, height: 50, backgroundColor: '#25D366', borderRadius: 10, textDecoration: 'none', fontSize: 22 }}>
               💬
+            </a>
+          )}
+          {guide.contact_line && (
+            <a
+              href={`https://line.me/R/ti/p/${guide.contact_line}`}
+              target="_blank" rel="noopener noreferrer"
+              onClick={() => logContactClick('line')}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 50, height: 50, backgroundColor: '#00B900', borderRadius: 10, textDecoration: 'none', fontSize: 16, color: '#fff', fontWeight: 800 }}>
+              L
             </a>
           )}
         </div>

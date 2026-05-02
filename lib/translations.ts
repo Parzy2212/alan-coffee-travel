@@ -543,6 +543,19 @@ const strings: Record<string, S> = {
   gdash_login_btn:   { en: 'Sign In', lo: 'ເຂົ້າສູ່ລະບົບ', th: 'เข้าสู่ระบบ' },
   gdash_login_err:   { en: 'Email or phone not found. Contact AlanGuide support.', lo: 'ບໍ່ພົບ. ຕິດຕໍ່ AlanGuide.', th: 'ไม่พบข้อมูล กรุณาติดต่อ AlanGuide' },
 
+  // ── Homepage — AlanGuide sections ───────────────────────────────────
+  home_exp_eyebrow: { en: 'Popular Tours & Trips',            lo: 'ທ່ຽວທີ່ນິຍົມ',               th: 'ทัวร์ยอดนิยม'              },
+  home_exp_h2:      { en: 'Book a Real Laos Experience',      lo: 'ຈອງທ່ຽວລາວແທ້ໆ',             th: 'จองประสบการณ์ลาวแท้ๆ'      },
+  home_exp_sub: {
+    en: 'Day trips, multi-day treks, cultural encounters — curated by guides who live the land.',
+    lo: 'ທ່ຽວໜຶ່ງວັນ, ທ່ຽວຫຼາຍວັນ, ພົບປະວັດທະນະທຳ — ຈັດໂດຍໄກດ໌ທ້ອງຖິ່ນ.',
+    th: 'ทริปหนึ่งวัน เดินป่าหลายวัน สัมผัสวัฒนธรรม — คัดสรรโดยไกด์ท้องถิ่น',
+  },
+  view_all_exp:     { en: 'All experiences →',               lo: 'ເບິ່ງທັງໝົດ →',              th: 'ดูทั้งหมด →'               },
+  home_guide_cta:   { en: 'Find a Guide',                    lo: 'ຫາມັກກ້ຽວ',                  th: 'หาไกด์'                    },
+  home_exp_cta:     { en: 'Browse Experiences',              lo: 'ເບິ່ງທ່ຽວ',                  th: 'ดูทัวร์ทั้งหมด'            },
+  home_exp_empty:   { en: 'Tours coming soon — guides are building their listings.', lo: 'ກຳລັງເພີ່ມທ່ຽວ...', th: 'กำลังเพิ่มทัวร์เร็วๆ นี้' },
+
   // ── Footer ───────────────────────────────────────────────────────────
   footer_tagline: {
     en: "A café built for travelers in Attapeu — come for the coffee, leave knowing exactly where to go next.",

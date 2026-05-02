@@ -23,13 +23,33 @@ type Destination = {
 
 type Guide = {
   id: string
+  slug: string | null
   name: string
   photo_url: string | null
+  profile_photo_url: string | null
   province: string | null
   languages: string[] | null
+  languages_spoken: string[] | null
   specialties: string[] | null
   is_verified: boolean | null
+  verified: boolean | null
   experience_years: number | null
+  years_experience: number | null
+  rating_avg: number | null
+  review_count: number | null
+}
+
+type FeaturedExp = {
+  id: string
+  slug: string | null
+  title_en: string | null
+  cover_image_url: string | null
+  category: string | null
+  duration_hours: number | null
+  duration_days: number | null
+  price_per_person_lak: number | null
+  region: string | null
+  guides: { name: string } | null
 }
 
 function avgRating(d: Destination): number | null {
@@ -53,6 +73,7 @@ export default function HomeClient() {
   const { lang } = useLang()
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [guides, setGuides] = useState<Guide[]>([])
+  const [featuredExps, setFeaturedExps] = useState<FeaturedExp[]>([])
   const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -66,18 +87,27 @@ export default function HomeClient() {
         .limit(6),
       supabase
         .from('guides')
-        .select('id,name,photo_url,province,languages,specialties,is_verified,experience_years')
+        .select('id,slug,name,photo_url,profile_photo_url,province,languages,languages_spoken,specialties,is_verified,verified,experience_years,years_experience,rating_avg,review_count')
+        .or('status.eq.active,active.eq.true')
+        .or('is_verified.eq.true,verified.eq.true')
+        .order('featured', { ascending: false })
+        .limit(3),
+      supabase
+        .from('experiences')
+        .select('id,slug,title_en,cover_image_url,category,duration_hours,duration_days,price_per_person_lak,region,guides(name)')
         .eq('status', 'active')
-        .eq('is_verified', true)
+        .eq('featured', true)
+        .order('created_at', { ascending: false })
         .limit(3),
       supabase
         .from('site_settings')
         .select('value')
         .eq('key', 'hero_image_url')
         .maybeSingle(),
-    ]).then(([{ data: destData }, { data: guideData }, { data: heroSetting }]) => {
+    ]).then(([{ data: destData }, { data: guideData }, { data: expData }, { data: heroSetting }]) => {
       if (destData) setDestinations(destData)
-      if (guideData) setGuides(guideData)
+      if (guideData) setGuides(guideData as Guide[])
+      if (expData) setFeaturedExps(expData as unknown as FeaturedExp[])
       if (heroSetting?.value) setHeroImageUrl(heroSetting.value)
     }).catch(() => { /* render with empty data */ })
   }, [])
@@ -534,89 +564,103 @@ export default function HomeClient() {
 
             {/* Guide cards */}
             <div className="grid-3">
-              {guides.map((g, i) => (
-                <div
-                  key={g.id}
-                  className="fade-up"
-                  style={{
-                    backgroundColor: 'var(--color-white)',
-                    borderRadius: '10px',
-                    border: '1px solid var(--color-cream-border)',
-                    padding: '28px 24px',
-                    transition: 'transform 0.25s ease, box-shadow 0.25s ease',
-                    transitionDelay: `${i * 80}ms`,
-                  }}
-                  onMouseEnter={e => {
-                    const el = e.currentTarget as HTMLElement
-                    el.style.transform = 'translateY(-4px)'
-                    el.style.boxShadow = '0 14px 44px rgba(0,0,0,0.09)'
-                  }}
-                  onMouseLeave={e => {
-                    const el = e.currentTarget as HTMLElement
-                    el.style.transform = 'translateY(0)'
-                    el.style.boxShadow = 'none'
-                  }}
-                >
-                  {/* Photo + name */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
-                    {g.photo_url ? (
-                      <img
-                        src={g.photo_url} alt={g.name}
-                        style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(201,168,76,0.35)', flexShrink: 0 }}
-                      />
-                    ) : (
-                      <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'var(--color-cream-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', flexShrink: 0, border: '2px solid var(--color-cream-border)' }}>
-                        👤
+              {guides.map((g, i) => {
+                const photo = g.profile_photo_url ?? g.photo_url
+                const langs = g.languages_spoken ?? g.languages ?? []
+                const expYrs = g.years_experience ?? g.experience_years
+                const isVerif = g.verified ?? g.is_verified
+                const href = g.slug ? `/guides/${g.slug}` : '/guides'
+                return (
+                  <a
+                    key={g.id}
+                    href={href}
+                    className="fade-up"
+                    style={{
+                      display: 'block', textDecoration: 'none',
+                      backgroundColor: 'var(--color-white)',
+                      borderRadius: '10px',
+                      border: '1px solid var(--color-cream-border)',
+                      padding: '28px 24px',
+                      transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+                      transitionDelay: `${i * 80}ms`,
+                    }}
+                    onMouseEnter={e => {
+                      const el = e.currentTarget as HTMLElement
+                      el.style.transform = 'translateY(-4px)'
+                      el.style.boxShadow = '0 14px 44px rgba(0,0,0,0.09)'
+                    }}
+                    onMouseLeave={e => {
+                      const el = e.currentTarget as HTMLElement
+                      el.style.transform = 'translateY(0)'
+                      el.style.boxShadow = 'none'
+                    }}
+                  >
+                    {/* Photo + name */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
+                      {photo ? (
+                        <img
+                          src={photo} alt={g.name}
+                          style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(201,168,76,0.35)', flexShrink: 0 }}
+                        />
+                      ) : (
+                        <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'var(--color-cream-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', flexShrink: 0, border: '2px solid var(--color-cream-border)' }}>
+                          👤
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const, marginBottom: '4px' }}>
+                          <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '17px', fontWeight: 800, color: 'var(--color-black)', margin: 0 }}>
+                            {g.name}
+                          </h3>
+                          {isVerif && (
+                            <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: 'var(--color-gold)', padding: '2px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '1px', border: '1px solid rgba(201,168,76,0.22)' }}>
+                              ✓ VERIFIED
+                            </span>
+                          )}
+                        </div>
+                        <p style={{ color: 'var(--color-gray-400)', fontSize: '12px', margin: 0 }}>
+                          {g.province}{expYrs ? ` · ${expYrs} yrs exp` : ''}
+                          {(g.rating_avg ?? 0) > 0 ? ` · ★ ${g.rating_avg!.toFixed(1)}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ height: '1px', backgroundColor: 'var(--color-cream-border)', marginBottom: '18px' }} />
+
+                    {/* Languages */}
+                    {langs.length > 0 && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_languages', lang)}</p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
+                          {langs.map((l: string) => (
+                            <span key={l} style={{ backgroundColor: 'rgba(201,168,76,0.08)', color: 'var(--color-gold)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(201,168,76,0.18)' }}>
+                              {l}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const, marginBottom: '4px' }}>
-                        <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '17px', fontWeight: 800, color: 'var(--color-black)', margin: 0 }}>
-                          {g.name}
-                        </h3>
-                        {g.is_verified && (
-                          <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: 'var(--color-gold)', padding: '2px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '1px', border: '1px solid rgba(201,168,76,0.22)' }}>
-                            ✓ VERIFIED
-                          </span>
-                        )}
-                      </div>
-                      <p style={{ color: 'var(--color-gray-400)', fontSize: '12px', margin: 0 }}>
-                        {g.province}{g.experience_years ? ` · ${g.experience_years} yrs exp` : ''}
-                      </p>
-                    </div>
-                  </div>
 
-                  <div style={{ height: '1px', backgroundColor: 'var(--color-cream-border)', marginBottom: '18px' }} />
-
-                  {/* Languages */}
-                  {(g.languages ?? []).length > 0 && (
-                    <div style={{ marginBottom: '14px' }}>
-                      <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_languages', lang)}</p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
-                        {(g.languages ?? []).map(l => (
-                          <span key={l} style={{ backgroundColor: 'rgba(201,168,76,0.08)', color: 'var(--color-gold)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(201,168,76,0.18)' }}>
-                            {l}
-                          </span>
-                        ))}
+                    {/* Specialties */}
+                    {(g.specialties ?? []).slice(0, 3).length > 0 && (
+                      <div style={{ marginBottom: '18px' }}>
+                        <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_specialties', lang)}</p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
+                          {(g.specialties ?? []).slice(0, 3).map((s: string) => (
+                            <span key={s} style={{ backgroundColor: 'var(--color-cream-dark)', color: 'var(--color-gray-600)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px' }}>
+                              {s}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Specialties */}
-                  {(g.specialties ?? []).slice(0, 3).length > 0 && (
-                    <div>
-                      <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_specialties', lang)}</p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
-                        {(g.specialties ?? []).slice(0, 3).map(s => (
-                          <span key={s} style={{ backgroundColor: 'var(--color-cream-dark)', color: 'var(--color-gray-600)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px' }}>
-                            {s}
-                          </span>
-                        ))}
-                      </div>
+                    <div style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                      {tr('guides_view_profile', lang)} →
                     </div>
-                  )}
-                </div>
-              ))}
+                  </a>
+                )
+              })}
             </div>
 
             {/* Bottom CTA */}
@@ -634,6 +678,115 @@ export default function HomeClient() {
           </div>
         </section>
       )}
+
+      {/* ═══════════════════════════════════════════════════════
+          FEATURED EXPERIENCES
+      ═══════════════════════════════════════════════════════ */}
+      <section style={{ backgroundColor: '#0a0a0a', padding: 'clamp(64px, 9vw, 112px) clamp(24px, 4vw, 56px)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+          <div className="section-header fade-up" style={{ marginBottom: '52px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
+                <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('home_exp_eyebrow', lang)}</span>
+              </div>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(28px, 3.8vw, 52px)', fontWeight: 800, color: 'var(--color-white)', letterSpacing: '-1.5px', lineHeight: 1.08, margin: 0 }}>
+                {tr('home_exp_h2', lang)}
+              </h2>
+            </div>
+            <a href="/experiences" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '2px', alignSelf: 'flex-end', whiteSpace: 'nowrap' as const }}>
+              {tr('view_all_exp', lang)}
+            </a>
+          </div>
+
+          {featuredExps.length === 0 ? (
+            <div style={{ textAlign: 'center' as const, padding: '60px 0 40px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '24px' }}>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '15px' }}>{tr('home_exp_empty', lang)}</p>
+              <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' as const, justifyContent: 'center' }}>
+                <a href="/guides" style={{ backgroundColor: 'rgba(201,168,76,0.12)', color: 'var(--color-gold)', padding: '12px 28px', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '13px', border: '1px solid rgba(201,168,76,0.25)', letterSpacing: '0.5px' }}>
+                  {tr('home_guide_cta', lang)}
+                </a>
+                <a href="/become-a-guide" style={{ backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', padding: '12px 24px', borderRadius: '6px', textDecoration: 'none', fontSize: '13px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  {tr('bag_apply', lang)}
+                </a>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid-3">
+                {featuredExps.map((exp, i) => (
+                  <a key={exp.id} href={`/experiences/${exp.slug ?? exp.id}`}
+                    className="fade-up"
+                    style={{
+                      display: 'flex', flexDirection: 'column' as const, textDecoration: 'none',
+                      backgroundColor: '#111', borderRadius: '12px', overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                      transition: 'transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s',
+                      transitionDelay: `${i * 70}ms`,
+                    }}
+                    onMouseEnter={e => {
+                      const el = e.currentTarget as HTMLElement
+                      el.style.transform = 'translateY(-5px)'
+                      el.style.boxShadow = '0 20px 60px rgba(0,0,0,0.5)'
+                      el.style.borderColor = 'rgba(201,168,76,0.35)'
+                    }}
+                    onMouseLeave={e => {
+                      const el = e.currentTarget as HTMLElement
+                      el.style.transform = 'translateY(0)'
+                      el.style.boxShadow = 'none'
+                      el.style.borderColor = 'rgba(255,255,255,0.07)'
+                    }}
+                  >
+                    {exp.cover_image_url ? (
+                      <div style={{ height: '200px', overflow: 'hidden', position: 'relative' }}>
+                        <img src={exp.cover_image_url} alt={exp.title_en ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.55))' }} />
+                        {exp.category && (
+                          <div style={{ position: 'absolute', top: '12px', left: '12px', backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', color: 'var(--color-gold)', padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: 700 }}>
+                            {exp.category}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ height: '6px', backgroundColor: 'rgba(201,168,76,0.25)' }} />
+                    )}
+                    <div style={{ padding: '18px 20px', flex: 1, display: 'flex', flexDirection: 'column' as const, gap: '8px' }}>
+                      <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '18px', fontWeight: 700, color: 'var(--color-white)', margin: 0, lineHeight: 1.3 }}>
+                        {exp.title_en}
+                      </h3>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' as const, alignItems: 'center' }}>
+                        {exp.region && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}>📍 {exp.region}</span>}
+                        {exp.duration_days && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{exp.duration_days}d</span>}
+                        {exp.duration_hours && !exp.duration_days && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{exp.duration_hours}h</span>}
+                        {exp.guides && <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: '12px' }}>by {(exp.guides as any).name}</span>}
+                      </div>
+                      <div style={{ marginTop: 'auto', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        {exp.price_per_person_lak && (
+                          <div>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px' }}>{tr('exp_from', lang)} </span>
+                            <span style={{ color: 'var(--color-gold)', fontWeight: 800, fontSize: '17px', fontFamily: 'var(--font-heading)' }}>
+                              {Number(exp.price_per_person_lak).toLocaleString()} ₭
+                            </span>
+                          </div>
+                        )}
+                        <span style={{ color: 'var(--color-gold)', fontSize: '13px', fontWeight: 600 }}>→</span>
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+              <div className="fade-up" style={{ textAlign: 'center' as const, marginTop: '48px', display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' as const }}>
+                <a href="/experiences" style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'rgba(201,168,76,0.1)', color: 'var(--color-gold)', padding: '14px 36px', borderRadius: '4px', border: '1px solid rgba(201,168,76,0.25)', fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, textDecoration: 'none' }}>
+                  {tr('home_exp_cta', lang)}
+                </a>
+                <a href="/guides" style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.45)', padding: '14px 28px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', fontSize: '13px', textDecoration: 'none' }}>
+                  {tr('home_guide_cta', lang)} →
+                </a>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
 
       {/* ═══════════════════════════════════════════════════════
           MAP TEASER

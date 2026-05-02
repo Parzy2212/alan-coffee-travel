@@ -37,7 +37,8 @@ export default function BecomeAGuidePage() {
       name: form.name,
       email: form.email || null,
       message: `GUIDE APPLICATION\nPhone: ${form.phone}\nProvince: ${form.province}\nSpecialties: ${form.specialties}\n\n${form.message}`,
-      contact_via: 'become_a_guide',
+      contact_via: 'guide_application',
+      status: 'new',
     })
     setSent(true)
     setSending(false)
