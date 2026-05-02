@@ -26,6 +26,7 @@ export default function Navbar() {
     { href: '/',             labelKey: 'nav_home'         },
     { href: '/destinations', labelKey: 'nav_destinations' },
     { href: '/guides',       labelKey: 'nav_guides'       },
+    { href: '/experiences',  labelKey: 'nav_experiences'  },
     { href: '/map',          labelKey: 'nav_map'          },
     { href: '/about',        labelKey: 'nav_about'        },
     { href: '/contact',      labelKey: 'nav_contact'      },
