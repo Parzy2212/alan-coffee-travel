@@ -1,7 +1,12 @@
+import { AuthGuard } from '@/components/AuthGuard'
 import CafeClient from './CafeClient'
 
-export const metadata = { title: 'Cafe Admin — Alan Coffee' }
+export const metadata = { title: 'Dashboard — Alan Cafe OS' }
 
 export default function CafePage() {
-  return <CafeClient />
+  return (
+    <AuthGuard>
+      <CafeClient />
+    </AuthGuard>
+  )
 }

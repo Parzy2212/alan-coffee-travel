@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import { Playfair_Display, Inter, Noto_Sans_Lao, Sarabun } from 'next/font/google'
 import Script from 'next/script'
 import { LanguageProvider } from '@/contexts/LanguageContext'
+import { AuthProvider } from '@/contexts/AuthContext'
+import { ShopProvider } from '@/contexts/ShopContext'
 import './globals.css'
 
 const playfair = Playfair_Display({
@@ -178,9 +180,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className={`${playfair.variable} ${inter.variable} ${notoSansLao.variable} ${sarabun.variable}`}>
-        <LanguageProvider>
-          {children}
-        </LanguageProvider>
+        <AuthProvider>
+          <ShopProvider>
+            <LanguageProvider>
+              {children}
+            </LanguageProvider>
+          </ShopProvider>
+        </AuthProvider>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-CM6TTHL7CZ"
           strategy="afterInteractive"

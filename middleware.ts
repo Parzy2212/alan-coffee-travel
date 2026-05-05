@@ -41,5 +41,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // /admin — cookie-based admin auth (handled above)
+  // /cafe /pos /queue /staff /onboarding — Supabase Auth (client-side guard in AuthGuard)
+  // /dashboard — redirect to /cafe (client-side)
   matcher: ['/admin/:path*'],
 }
