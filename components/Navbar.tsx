@@ -93,6 +93,21 @@ export default function Navbar() {
               ))}
             </div>
 
+            <a href="/pos-product" style={{
+              border: '1px solid rgba(201,168,76,0.35)',
+              color: 'var(--color-gold)',
+              padding: '7px 13px',
+              borderRadius: '4px',
+              textDecoration: 'none',
+              fontWeight: 700,
+              fontSize: '11px',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase' as const,
+              whiteSpace: 'nowrap' as const,
+            }}>
+              CafeOS
+            </a>
+
             <a href="/contact" className="nav-contact-btn" style={{
               backgroundColor: 'var(--color-black)', color: 'var(--color-gold)',
               padding: '10px 24px', borderRadius: '4px', textDecoration: 'none',
@@ -162,13 +177,20 @@ export default function Navbar() {
           ))}
         </div>
 
-        <div style={{ paddingTop: '8px' }}>
+        <div style={{ paddingTop: '8px', display: 'flex', gap: '10px', flexWrap: 'wrap' as const }}>
           <a
             href="/contact"
             onClick={() => setMenuOpen(false)}
             style={{ display: 'inline-block', backgroundColor: 'var(--color-black)', color: 'var(--color-gold)', padding: '12px 28px', borderRadius: '4px', textDecoration: 'none', fontWeight: 600, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const }}
           >
             {tr('nav_contact', lang)}
+          </a>
+          <a
+            href="/pos-product"
+            onClick={() => setMenuOpen(false)}
+            style={{ display: 'inline-block', border: '1px solid rgba(201,168,76,0.4)', color: 'var(--color-gold)', padding: '12px 20px', borderRadius: '4px', textDecoration: 'none', fontWeight: 700, fontSize: '12px', letterSpacing: '1.5px', textTransform: 'uppercase' as const }}
+          >
+            CafeOS
           </a>
         </div>
       </div>

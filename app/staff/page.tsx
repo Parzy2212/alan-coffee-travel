@@ -1,9 +1,12 @@
+import { AuthGuard } from '@/components/AuthGuard'
 import StaffClient from './StaffClient'
 
-export const metadata = {
-  title: 'Alan Cafe — เข้า-ออกงาน',
-}
+export const metadata = { title: 'Staff — Alan Cafe OS' }
 
 export default function StaffPage() {
-  return <StaffClient />
+  return (
+    <AuthGuard>
+      <StaffClient />
+    </AuthGuard>
+  )
 }

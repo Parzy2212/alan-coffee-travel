@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { AuthGuard } from '@/components/AuthGuard'
 import POSClient from './POSClient'
 
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 }
 
 export default function POSPage() {
-  return <POSClient />
+  return (
+    <AuthGuard>
+      <POSClient />
+    </AuthGuard>
+  )
 }
