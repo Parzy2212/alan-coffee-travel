@@ -52,7 +52,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { authClient } = await import('@/lib/supabase-auth')
-    const { error } = await authClient.auth.signInWithPassword({ email, password })
+    const { data, error } = await authClient.auth.signInWithPassword({ email, password })
+    if (!error && data.user) {
+      try {
+        await authClient.from('account_events').insert({
+          user_id: data.user.id,
+          event_type: 'login',
+        })
+      } catch { /* non-fatal */ }
+    }
     return { error: error?.message ?? null }
   }
 
@@ -68,6 +76,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     const { authClient } = await import('@/lib/supabase-auth')
+    const { data: { user: currentUser } } = await authClient.auth.getUser()
+    if (currentUser) {
+      try {
+        await authClient.from('account_events').insert({
+          user_id: currentUser.id,
+          event_type: 'logout',
+        })
+      } catch { /* non-fatal */ }
+    }
     await authClient.auth.signOut()
   }
 

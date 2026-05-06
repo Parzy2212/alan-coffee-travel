@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
+import { AvatarDropdown } from '@/components/AvatarDropdown'
 
 const LazyMenuTab        = lazy(() => import('@/components/cafe/MenuTab'))
 const LazyStockTab       = lazy(() => import('@/components/cafe/StockTab'))
@@ -4077,10 +4078,15 @@ export default function CafeClient() {
             </div>
           ))}
         </nav>
-        <div style={{ marginTop: 'auto', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <a href="/pos"   style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ POS</a>
-          <a href="/queue" style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ จอ TV</a>
-          <a href="/"      style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ หน้าหลัก</a>
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '0 24px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <a href="/pos"   style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ POS</a>
+            <a href="/queue" style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ จอ TV</a>
+            <a href="/"      style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ หน้าหลัก</a>
+          </div>
+          <div style={{ borderTop: '1px solid rgba(201,168,76,0.1)' }}>
+            <AvatarDropdown />
+          </div>
         </div>
       </div>
 
