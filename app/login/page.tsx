@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -27,10 +27,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetSuccess, setResetSuccess] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!authLoading && session) router.replace('/cafe')
   }, [session, authLoading, router])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('reset') === 'success') {
+      setResetSuccess(true)
+      toastTimer.current = setTimeout(() => setResetSuccess(false), 5000)
+    }
+    return () => { if (toastTimer.current) clearTimeout(toastTimer.current) }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,6 +80,21 @@ export default function LoginPage() {
         borderRadius: 20,
         padding: '40px 36px',
       }}>
+        {resetSuccess && (
+          <div style={{
+            backgroundColor: 'rgba(76,186,127,0.08)',
+            border: '1px solid rgba(76,186,127,0.25)',
+            borderRadius: 10, padding: '12px 16px',
+            marginBottom: 20,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <span style={{ color: '#4cba7f', fontSize: 16, flexShrink: 0 }}>✓</span>
+            <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, lineHeight: 1.4 }}>
+              รีเซ็ตรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบใหม่
+            </span>
+          </div>
+        )}
+
         <h1 style={{ color: 'white', fontWeight: 800, fontSize: 24, marginBottom: 6, fontFamily: 'var(--font-heading)' }}>
           เข้าสู่ระบบ
         </h1>
@@ -93,9 +119,19 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, letterSpacing: '0.5px', display: 'block', marginBottom: 6 }}>
-              รหัสผ่าน
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+              <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, letterSpacing: '0.5px' }}>
+                รหัสผ่าน
+              </label>
+              <a
+                href="/forgot-password"
+                style={{ color: 'rgba(201,168,76,0.45)', fontSize: 12, textDecoration: 'none', transition: 'color 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(201,168,76,0.75)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(201,168,76,0.45)')}
+              >
+                ลืมรหัสผ่าน?
+              </a>
+            </div>
             <input
               type="password"
               placeholder="••••••••"
