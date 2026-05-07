@@ -3,6 +3,9 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
+import { PinPad } from '@/components/pos/PinPad'
+import { ActiveEmployeeBadge } from '@/components/pos/ActiveEmployeeBadge'
+import { useActiveEmployee } from '@/lib/use-active-employee'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
@@ -636,11 +639,12 @@ function DigitalReceiptPopup({
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
   discount: string
   discountReason: string
+  activeEmployeeId?: string | null
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string) => void
   onClose: () => void
 }) {
@@ -725,6 +729,11 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, onSucces
       p_discount_reason: discountReason || null,
       p_staff_note:      staffNote || null,
     }).then(null, () => { /* background — non-critical */ })
+
+    if (activeEmployeeId) {
+      supabase.from('orders').update({ employee_id: activeEmployeeId }).eq('id', result.order_id)
+        .then(null, () => { /* background — non-critical */ })
+    }
 
     // Use queue number as receipt ID so we can show success immediately
     const finalReceipt = String(result.queue_number).padStart(3, '0')
@@ -1914,6 +1923,8 @@ function HoldModal({ onConfirm, onClose }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function POSClient() {
+  const { employee: activeEmployee, ready: employeeReady, clockIn, clockOut } = useActiveEmployee()
+  const [shopId,       setShopId]       = useState<string | null>(null)
   const [mounted,      setMounted]      = useState(false)
   const [recipes,      setRecipes]      = useState<Recipe[]>([])
   const [categories,   setCategories]   = useState<Category[]>([])
@@ -1941,6 +1952,17 @@ export default function POSClient() {
   const [showHoldModal,  setShowHoldModal]  = useState(false)
   const [showDrawer,     setShowDrawer]     = useState(false)
   const [showHeldModal,  setShowHeldModal]  = useState(false)
+
+  // Load shopId via auth client (needed for PIN verification)
+  useEffect(() => {
+    import('@/lib/supabase-auth').then(({ authClient }) => {
+      authClient.auth.getUser().then(({ data: { user } }) => {
+        if (!user) return
+        authClient.from('shop_users').select('shop_id').eq('user_id', user.id).maybeSingle()
+          .then(({ data }) => { if (data?.shop_id) setShopId(data.shop_id as string) })
+      })
+    })
+  }, [])
 
   // Load cart from localStorage after mount (avoids SSR hydration mismatch)
   useEffect(() => {
@@ -2236,6 +2258,7 @@ export default function POSClient() {
       {showCharge && (
         <ChargePopup subtotal={subtotal} cartPayload={cartPayload}
           discount={String(discountAmt)} discountReason={discountLabel}
+          activeEmployeeId={activeEmployee?.id ?? null}
           onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
       )}
 
@@ -2264,6 +2287,11 @@ export default function POSClient() {
       {showShiftClose && <ShiftClosePopup todayTotal={todayTotal} todayCount={todayCount} onClose={() => setShowShiftClose(false)} />}
       {chargeStatus === 'success' && successData && (
         <DigitalReceiptPopup data={successData} settings={posSettings} onClose={dismissSuccess} />
+      )}
+
+      {/* ── PIN PAD OVERLAY — shown when no employee is clocked in */}
+      {mounted && employeeReady && !activeEmployee && shopId && (
+        <PinPad shopId={shopId} onClockIn={clockIn} />
       )}
 
       {/* ── TOP BAR */}
@@ -2311,6 +2339,9 @@ export default function POSClient() {
               </span>
             )}
           </button>
+          {activeEmployee && (
+            <ActiveEmployeeBadge employee={activeEmployee} onClockOut={clockOut} />
+          )}
           <button onClick={() => setShowShiftClose(true)} style={{
             padding: '0 14px', height: 36, borderRadius: 8, border: `1px solid ${GOLD}44`,
             backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer',
