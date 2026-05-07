@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { getInvitationDetails } from '@/lib/invitations'
 
 const GOLD = '#c9a84c'
 
@@ -34,10 +35,27 @@ export default function SignupPage() {
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [inviteToken, setInviteToken] = useState('')
+  const [inviteShopName, setInviteShopName] = useState('')
 
   useEffect(() => {
-    if (!authLoading && session) router.replace('/cafe')
-  }, [session, authLoading, router])
+    const params = new URLSearchParams(window.location.search)
+    const t = params.get('invite') ?? ''
+    if (!t) return
+    setInviteToken(t)
+    getInvitationDetails(t).then(details => {
+      if (details.found && details.shop_name) {
+        setInviteShopName(details.shop_name)
+        if (details.email) setForm(p => ({ ...p, email: p.email || details.email! }))
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!authLoading && session) {
+      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : '/cafe')
+    }
+  }, [session, authLoading, router, inviteToken])
 
   const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }))
 
@@ -55,11 +73,12 @@ export default function SignupPage() {
       setError(msg)
       setLoading(false)
     } else {
-      router.replace('/onboarding')
+      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : '/onboarding')
     }
   }
 
   const valid = form.email && form.password && form.confirm
+  const loginHref = inviteToken ? `/login?invite=${encodeURIComponent(inviteToken)}` : '/login'
 
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -84,11 +103,25 @@ export default function SignupPage() {
         borderRadius: 20,
         padding: '40px 36px',
       }}>
+
+        {/* Invite banner */}
+        {inviteShopName && (
+          <div style={{ backgroundColor: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 10, padding: '12px 16px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>✉️</span>
+            <div>
+              <div style={{ color: GOLD, fontSize: 13, fontWeight: 600 }}>คุณได้รับคำเชิญ</div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
+                สมัครเพื่อเข้าร่วมทีมที่ <span style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>{inviteShopName}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <h1 style={{ color: 'white', fontWeight: 800, fontSize: 24, marginBottom: 6, fontFamily: 'var(--font-heading)' }}>
           สมัครสมาชิก
         </h1>
         <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 14, marginBottom: 28 }}>
-          สร้างบัญชีและเริ่มจัดการร้านของคุณ
+          {inviteShopName ? `สร้างบัญชีเพื่อเข้าร่วม ${inviteShopName}` : 'สร้างบัญชีและเริ่มจัดการร้านของคุณ'}
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -176,7 +209,7 @@ export default function SignupPage() {
 
         <div style={{ marginTop: 24, textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
           มีบัญชีอยู่แล้ว?{' '}
-          <a href="/login" style={{ color: GOLD, textDecoration: 'none', fontWeight: 600 }}>
+          <a href={loginHref} style={{ color: GOLD, textDecoration: 'none', fontWeight: 600 }}>
             เข้าสู่ระบบ
           </a>
         </div>

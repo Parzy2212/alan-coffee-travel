@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { getInvitationDetails } from '@/lib/invitations'
 
 const GOLD = '#c9a84c'
 
@@ -28,11 +29,9 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [resetSuccess, setResetSuccess] = useState(false)
+  const [inviteToken, setInviteToken] = useState('')
+  const [inviteShopName, setInviteShopName] = useState('')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (!authLoading && session) router.replace('/cafe')
-  }, [session, authLoading, router])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -40,8 +39,20 @@ export default function LoginPage() {
       setResetSuccess(true)
       toastTimer.current = setTimeout(() => setResetSuccess(false), 5000)
     }
+    const t = params.get('invite') ?? ''
+    if (!t) return
+    setInviteToken(t)
+    getInvitationDetails(t).then(details => {
+      if (details.found && details.shop_name) setInviteShopName(details.shop_name)
+    })
     return () => { if (toastTimer.current) clearTimeout(toastTimer.current) }
   }, [])
+
+  useEffect(() => {
+    if (!authLoading && session) {
+      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : '/cafe')
+    }
+  }, [session, authLoading, router, inviteToken])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,9 +64,11 @@ export default function LoginPage() {
       setError(error.includes('Invalid') ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : error)
       setLoading(false)
     } else {
-      router.replace('/cafe')
+      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : '/cafe')
     }
   }
+
+  const signupHref = inviteToken ? `/signup?invite=${encodeURIComponent(inviteToken)}` : '/signup'
 
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -95,11 +108,24 @@ export default function LoginPage() {
           </div>
         )}
 
+        {/* Invite banner */}
+        {inviteShopName && (
+          <div style={{ backgroundColor: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 10, padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>✉️</span>
+            <div>
+              <div style={{ color: GOLD, fontSize: 13, fontWeight: 600 }}>คุณได้รับคำเชิญ</div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
+                เข้าสู่ระบบเพื่อเข้าร่วมทีมที่ <span style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>{inviteShopName}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <h1 style={{ color: 'white', fontWeight: 800, fontSize: 24, marginBottom: 6, fontFamily: 'var(--font-heading)' }}>
           เข้าสู่ระบบ
         </h1>
         <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 14, marginBottom: 28 }}>
-          เข้าสู่แดชบอร์ดร้านค้าของคุณ
+          {inviteShopName ? `เข้าสู่ระบบเพื่อตอบรับคำเชิญ` : 'เข้าสู่แดชบอร์ดร้านค้าของคุณ'}
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -172,7 +198,7 @@ export default function LoginPage() {
 
         <div style={{ marginTop: 24, textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
           ยังไม่มีบัญชี?{' '}
-          <a href="/signup" style={{ color: GOLD, textDecoration: 'none', fontWeight: 600 }}>
+          <a href={signupHref} style={{ color: GOLD, textDecoration: 'none', fontWeight: 600 }}>
             สมัครสมาชิก
           </a>
         </div>
