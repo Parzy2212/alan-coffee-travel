@@ -14,6 +14,7 @@ const NAV_ITEMS: { href: string; label: string; icon: string; soon?: boolean; di
   { href: '/shop/settings/printer',  label: 'เครื่องพิมพ์',  icon: '🖨️'  },
   { href: '/shop/team',              label: 'ทีมงาน',        icon: '👥',  dividerBefore: true },
   { href: '/shop/team/employees',    label: 'พนักงาน POS',   icon: '🏷️'  },
+  { href: '/shop/audit-log',         label: 'บันทึกระบบ',    icon: '📋',  dividerBefore: true },
   { href: '/shop/billing',           label: 'ค่าบริการ',     icon: '💰',  dividerBefore: true, soon: true },
 ]
 

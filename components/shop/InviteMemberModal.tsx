@@ -85,7 +85,7 @@ export function InviteMemberModal({ shopId, userId, existingEmails, onSaved, onC
 
       const token = (data as { token: string }).token
       setInviteLink(buildInviteLink(token))
-      await logAccountEvent('shop_settings_updated' as never, `Team invitation sent to ${trimEmail}`)
+      await logAccountEvent('team_invitation_sent', `Team invitation sent to ${trimEmail}`)
       setStep('link')
       onSaved()
     } catch (e) {

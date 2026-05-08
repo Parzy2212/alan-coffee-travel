@@ -6,6 +6,9 @@ export type AccountEventType =
   | 'profile_updated'
   | 'sessions_revoked'
   | 'account_deleted'
+  | 'shop_settings_updated'
+  | 'team_invitation_sent'
+  | 'team_invitation_accepted'
 
 export async function logAccountEvent(
   eventType: AccountEventType,

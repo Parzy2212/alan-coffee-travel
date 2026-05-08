@@ -10,7 +10,8 @@ const GOLD = '#c9a84c'
 const NAV_ITEMS = [
   { href: '/account/profile',       label: 'โปรไฟล์',     icon: '👤' },
   { href: '/account/security',      label: 'ความปลอดภัย', icon: '🔒' },
-  { href: '/account/notifications', label: 'การแจ้งเตือน', icon: '🔔', soon: true },
+  { href: '/account/notifications', label: 'การแจ้งเตือน', icon: '🔔' },
+  { href: '/account/activity',      label: 'กิจกรรม',      icon: '📋' },
 ]
 
 const STYLES = `
@@ -51,7 +52,6 @@ const STYLES = `
     border-left-color: ${GOLD};
     background-color: rgba(201,168,76,0.06);
   }
-  .acct-nav-item.soon { opacity: 0.45; cursor: default; pointer-events: none; }
   .acct-content { flex: 1; overflow-y: auto; padding: 40px 48px; }
   .acct-inner { max-width: 680px; width: 100%; }
 
@@ -147,20 +147,11 @@ export function AccountLayout({ children }: Props) {
             {NAV_ITEMS.map(item => (
               <a
                 key={item.href}
-                href={item.soon ? undefined : item.href}
-                className={[
-                  'acct-nav-item',
-                  pathname === item.href ? 'active' : '',
-                  item.soon ? 'soon' : '',
-                ].filter(Boolean).join(' ')}
+                href={item.href}
+                className={['acct-nav-item', pathname === item.href ? 'active' : ''].filter(Boolean).join(' ')}
               >
                 <span style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
                 <span style={{ flex: 1 }}>{item.label}</span>
-                {item.soon && (
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', padding: '2px 6px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 4 }}>
-                    เร็วๆ นี้
-                  </span>
-                )}
               </a>
             ))}
           </nav>

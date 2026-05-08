@@ -68,6 +68,9 @@ export function ActivitySection() {
           <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 600, marginBottom: 4 }}>กิจกรรมล่าสุด</div>
           <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13 }}>10 รายการล่าสุด</div>
         </div>
+        <a href="/account/activity" style={{ color: '#c9a84c', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+          ดูทั้งหมด →
+        </a>
       </div>
 
       {loading ? (
