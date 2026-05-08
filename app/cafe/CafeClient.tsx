@@ -15,6 +15,9 @@ const LazyStaffTab       = lazy(() => import('@/components/cafe/StaffTab'))
 const LazyFinanceTab     = lazy(() => import('@/components/cafe/FinanceTab'))
 const LazyRecipeCostTab  = lazy(() => import('@/components/cafe/RecipeCostTab'))
 const LazyScheduleTab    = lazy(() => import('@/components/cafe/ScheduleTab'))
+import { WelcomeBanner }           from '@/components/cafe/WelcomeBanner'
+import { GettingStartedChecklist } from '@/components/cafe/GettingStartedChecklist'
+import { QuickActionsFAB }         from '@/components/cafe/QuickActionsFAB'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -502,13 +505,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
 function KPICard({
-  label, value, change, sub, accent, warn,
+  label, value, change, sub, accent, warn, tooltip,
 }: {
-  label: string; value: string; change?: number; sub?: string; accent?: boolean; warn?: boolean
+  label: string; value: string; change?: number; sub?: string
+  accent?: boolean; warn?: boolean; tooltip?: string
 }) {
-  const hasPct    = change !== undefined
-  const pctColor  = hasPct ? (change >= 0 ? GREEN : RED) : undefined
-  const pctLabel  = hasPct
+  const [tipOpen, setTipOpen] = useState(false)
+  const hasPct   = change !== undefined
+  const pctColor = hasPct ? (change >= 0 ? GREEN : RED) : undefined
+  const pctLabel = hasPct
     ? `${change >= 0 ? '▲' : '▼'} ${Math.abs(change).toFixed(1)}% จากเมื่อวาน`
     : undefined
 
@@ -517,9 +522,31 @@ function KPICard({
       backgroundColor: accent ? `${GOLD}0e` : CARD,
       border: `1px solid ${warn ? RED + '55' : accent ? GOLD + '44' : BORDER}`,
       borderRadius: 12, padding: '18px 20px',
-      display: 'flex', flexDirection: 'column', gap: 5,
+      display: 'flex', flexDirection: 'column', gap: 5, position: 'relative',
     }}>
-      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', letterSpacing: '2px', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', letterSpacing: '2px', textTransform: 'uppercase' }}>{label}</div>
+        {tooltip && (
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <span
+              onMouseEnter={() => setTipOpen(true)}
+              onMouseLeave={() => setTipOpen(false)}
+              style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', cursor: 'help', userSelect: 'none', lineHeight: 1 }}
+            >?</span>
+            {tipOpen && (
+              <div style={{
+                position: 'absolute', bottom: 'calc(100% + 6px)', right: 0,
+                backgroundColor: '#1e1e1e', border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'rgba(255,255,255,0.65)',
+                minWidth: 180, maxWidth: 240, zIndex: 200, pointerEvents: 'none',
+                whiteSpace: 'normal', lineHeight: 1.55, boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+              }}>
+                {tooltip}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div style={{ fontSize: 22, fontWeight: 800, color: accent ? GOLD : warn ? RED : '#fff', lineHeight: 1.1, letterSpacing: '-0.5px' }}>{value}</div>
       {pctLabel && <div style={{ fontSize: 12, fontWeight: 600, color: pctColor }}>{pctLabel}</div>}
       {sub && !pctLabel && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.28)' }}>{sub}</div>}
@@ -693,6 +720,9 @@ function DashboardTab() {
         </div>
       )}
 
+      <WelcomeBanner />
+      <GettingStartedChecklist />
+
       {/* ── Period selector ── */}
       <div style={{ display: 'flex', gap: 8 }}>
         {(['today', 'week', 'month'] as const).map(p => (
@@ -712,39 +742,53 @@ function DashboardTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
         <KPICard
           label={`ยอดขาย (${periodLabel})`}
-          value={fmtLAK(dispSales)}
-          change={period === 'today' ? pctChange : undefined}
+          value={period === 'today' && (stats?.today_orders ?? 0) === 0 ? '—' : fmtLAK(dispSales)}
+          change={period === 'today' && (stats?.today_orders ?? 0) > 0 ? pctChange : undefined}
           accent
+          tooltip="ผลรวมของออเดอร์ที่ชำระแล้ววันนี้ (ไม่รวม voided)"
         />
         <KPICard
           label="กำไรขั้นต้น (วันนี้)"
-          value={fmtLAK(stats?.today_profit ?? 0)}
+          value={(stats?.today_orders ?? 0) === 0 ? '—' : fmtLAK(stats?.today_profit ?? 0)}
           sub={stats && stats.today_sales > 0
             ? `${Math.round((stats.today_profit / stats.today_sales) * 100)}% margin`
             : '—'}
+          tooltip="ยอดขาย − ต้นทุนวัตถุดิบ ตามสูตรเมนู"
         />
         <KPICard
           label={`Orders (${periodLabel})`}
           value={String(dispOrders)}
           sub={`เฉลี่ย ${fmtLAK(dispOrders > 0 ? Math.round(dispSales / dispOrders) : 0)} / order`}
+          tooltip="จำนวนออเดอร์ที่ชำระแล้ววันนี้"
         />
         <KPICard
           label="เฉลี่ยต่อออเดอร์ (วันนี้)"
-          value={`${stats?.today_items ?? 0} รายการ`}
+          value={(stats?.today_orders ?? 0) === 0 ? '—' : `${stats?.today_items ?? 0} รายการ`}
           sub="avg items per order"
+          tooltip="ยอดขายเฉลี่ยต่อ 1 ออเดอร์"
         />
         <KPICard
           label="วัตถุดิบใกล้หมด"
           value={`${sval?.low_count ?? '—'} รายการ`}
           warn={(sval?.low_count ?? 0) > 0}
           sub={sval?.low_count === 0 ? 'สต็อกปกติ' : 'ต้องเติม'}
+          tooltip="วัตถุดิบที่ปริมาณต่ำกว่า reorder point"
         />
       </div>
 
       {/* ── Section 2: Hourly Sales Chart (today only) ── */}
       {period === 'today' && <SectionCard title="ยอดขายรายชั่วโมง — วันนี้">
         {chartData.length === 0 || chartData.every(d => d.sales === 0) ? (
-          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.18)', padding: '40px 0', fontSize: 14 }}>ยังไม่มียอดวันนี้</div>
+          <div style={{ position: 'relative', height: 200 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', height: 180, gap: 6, padding: '0 8px' }}>
+              {[14, 8, 22, 12, 18, 6, 16, 20, 10, 14, 22, 16, 8, 18, 12, 20, 10].map((h, i) => (
+                <div key={i} style={{ flex: 1, height: h, borderRadius: '3px 3px 0 0', backgroundColor: GOLD, opacity: 0.12 }} />
+              ))}
+            </div>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>เริ่มขายเพื่อดูกราฟยอดขายรายชั่วโมง</div>
+            </div>
+          </div>
         ) : (
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barSize={22}>
@@ -795,7 +839,10 @@ function DashboardTab() {
       {/* ── Section 3: Menu Performance Table ── */}
       <SectionCard title={`menu performance — ${periodLabel} (${menu.length} รายการ)`}>
         {menu.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.18)', padding: '30px 0' }}>ยังไม่มีข้อมูล</div>
+          <div style={{ textAlign: 'center', padding: '36px 0' }}>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', marginBottom: 10 }}>ยังไม่มีออเดอร์ในช่วงเวลานี้</div>
+            <a href="/pos" style={{ fontSize: 12, color: GOLD, textDecoration: 'none', fontWeight: 600 }}>→ เปิดหน้าขาย</a>
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -973,6 +1020,8 @@ function DashboardTab() {
           </div>
         </SectionCard>
       </div>
+
+      <QuickActionsFAB />
     </div>
   )
 }
