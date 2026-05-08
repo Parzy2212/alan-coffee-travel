@@ -219,20 +219,48 @@ function QtyButton({ label, onClick }: { label: string; onClick: () => void }) {
 
 // ─── CustomPopup ─────────────────────────────────────────────────────────────
 
-const SWEETNESS_OPTIONS = ['หวานปกติ', 'หวานน้อย', 'ไม่หวาน']
-const TEMP_OPTIONS      = ['ร้อน', 'เย็น', 'อุ่น']
+const SWEETNESS_OPTIONS = [
+  { value: 'หวานปกติ', icon: '🍯' },
+  { value: 'หวานน้อย', icon: '💧' },
+  { value: 'ไม่หวาน',  icon: '🚫' },
+]
+const TEMP_OPTIONS = [
+  { value: 'ร้อน', icon: '🔥' },
+  { value: 'เย็น', icon: '❄️' },
+  { value: 'อุ่น', icon: '☕' },
+]
+const NOTE_CHIPS = ['ไม่ใส่น้ำแข็ง', 'extra shot', 'ห่อแยก']
 
-function CustomPopup({ recipe, onConfirm, onClose, initialCustomization }: {
+const POPUP_ANIM = `
+@keyframes cpopup-overlay { from{opacity:0} to{opacity:1} }
+@keyframes cpopup-sheet   { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:none} }
+@media (prefers-reduced-motion:reduce) {
+  .cpopup-sheet,.cpopup-overlay{animation:none!important}
+}
+`
+
+function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initialQty }: {
   recipe: Recipe
-  onConfirm: (customization: string) => void
+  onConfirm: (customization: string, qty: number) => void
   onClose: () => void
   initialCustomization?: string
+  initialQty?: number
 }) {
-  const initParts = initialCustomization?.split(' · ') ?? []
-  const [sweetness, setSweetness] = useState(() => SWEETNESS_OPTIONS.find(s => initParts.includes(s)) ?? sweetnessFromDefault(recipe.default_sweetness))
-  const [temp, setTemp]           = useState(() => TEMP_OPTIONS.find(t => initParts.includes(t)) ?? 'ร้อน')
-  const [note, setNote]           = useState(() => initParts.filter(p => !SWEETNESS_OPTIONS.includes(p) && !TEMP_OPTIONS.includes(p)).join(' · '))
+  const initParts    = initialCustomization?.split(' · ') ?? []
+  const defaultSweet = sweetnessFromDefault(recipe.default_sweetness)
+
+  const [sweetness, setSweetness] = useState(() => SWEETNESS_OPTIONS.find(s => initParts.includes(s.value))?.value ?? defaultSweet)
+  const [temp,      setTemp]      = useState(() => TEMP_OPTIONS.find(t => initParts.includes(t.value))?.value ?? 'ร้อน')
+  const [note,      setNote]      = useState(() => initParts.filter(p => !SWEETNESS_OPTIONS.some(s => s.value === p) && !TEMP_OPTIONS.some(t => t.value === p)).join(' · '))
+  const [qty,       setQty]       = useState(initialQty ?? 1)
+  const [noteOpen,  setNoteOpen]  = useState(() => initParts.some(p => !SWEETNESS_OPTIONS.some(s => s.value === p) && !TEMP_OPTIONS.some(t => t.value === p) && p.length > 0))
   const overlayRef                = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
 
   function handleOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target === overlayRef.current) onClose()
@@ -241,74 +269,248 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization }: {
   function handleConfirm() {
     const parts = [sweetness, temp]
     if (note.trim()) parts.push(note.trim())
-    onConfirm(parts.join(' · '))
+    onConfirm(parts.join(' · '), qty)
   }
 
+  const total = recipe.price_lak * qty
+
+  const optCard = (selected: boolean): React.CSSProperties => ({
+    padding: '16px 12px', borderRadius: 12, cursor: 'pointer', border: 'none',
+    boxSizing: 'border-box',
+    outline: selected ? `2px solid ${GOLD}` : '1px solid rgba(255,255,255,0.08)',
+    outlineOffset: selected ? '0px' : '0px',
+    backgroundColor: selected ? `rgba(201,168,76,0.12)` : 'rgba(255,255,255,0.04)',
+    boxShadow: selected ? `0 0 0 4px rgba(201,168,76,0.1)` : 'none',
+    color: selected ? GOLD : 'rgba(255,255,255,0.85)',
+    transition: 'all 0.18s cubic-bezier(0.2,0,0,1)',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+    minHeight: 80,
+  })
+
   return (
-    <div ref={overlayRef} onClick={handleOverlayClick} style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      backgroundColor: 'rgba(0,0,0,0.65)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    <div ref={overlayRef} onClick={handleOverlayClick} className="cpopup-overlay" style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      backgroundColor: 'rgba(0,0,0,0.72)',
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      animation: 'cpopup-overlay 0.2s ease',
     }}>
-      <div style={{
-        backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}44`,
-        borderRadius: 12, padding: 28, width: 340,
-        display: 'flex', flexDirection: 'column', gap: 20,
+      <style>{POPUP_ANIM}</style>
+      <div className="cpopup-sheet" style={{
+        backgroundColor: '#161616',
+        borderRadius: '20px 20px 0 0',
+        width: '100%', maxWidth: 480, maxHeight: '92vh',
+        display: 'flex', flexDirection: 'column',
+        animation: 'cpopup-sheet 0.22s cubic-bezier(0.2,0,0,1)',
+        overflow: 'hidden',
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>{recipe.product_name}</div>
-            {recipe.product_name_lo && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{recipe.product_name_lo}</div>}
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: '0 4px', marginLeft: 12, flexShrink: 0 }}>×</button>
-        </div>
 
-        <div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>ความหวาน</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {SWEETNESS_OPTIONS.map(opt => (
-              <button key={opt} onClick={() => setSweetness(opt)} style={{
-                flex: 1, padding: '7px 4px', borderRadius: 6, border: 'none',
-                backgroundColor: sweetness === opt ? GOLD : 'rgba(255,255,255,0.07)',
-                color: sweetness === opt ? BLACK : 'rgba(255,255,255,0.55)',
-                fontWeight: sweetness === opt ? 700 : 500, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
-              }}>{opt}</button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>อุณหภูมิ</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {TEMP_OPTIONS.map(opt => (
-              <button key={opt} onClick={() => setTemp(opt)} style={{
-                flex: 1, padding: '7px 4px', borderRadius: 6, border: 'none',
-                backgroundColor: temp === opt ? GOLD : 'rgba(255,255,255,0.07)',
-                color: temp === opt ? BLACK : 'rgba(255,255,255,0.55)',
-                fontWeight: temp === opt ? 700 : 500, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
-              }}>{opt}</button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>หมายเหตุ</div>
-            <div style={{ fontSize: 11, color: note.length >= 45 ? '#f87171' : 'rgba(255,255,255,0.3)', fontVariantNumeric: 'tabular-nums' }}>{note.length}/50</div>
-          </div>
-          <input type="text" placeholder="เช่น ไม่ใส่น้ำแข็ง, extra shot..." value={note}
-            onChange={e => setNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleConfirm() }}
-            maxLength={50} style={popupInput} />
-        </div>
-
-        <button onClick={handleConfirm} style={{
-          width: '100%', padding: '13px 0', borderRadius: 6, border: 'none',
-          backgroundColor: GOLD, color: BLACK, fontWeight: 800, fontSize: 14,
-          letterSpacing: '1.5px', textTransform: 'uppercase', cursor: 'pointer',
-          fontFamily: 'var(--font-heading)',
+        {/* ── Header ── */}
+        <div style={{
+          padding: '20px 24px 16px', flexShrink: 0,
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          Confirm
-        </button>
+          {recipe.image_url ? (
+            <img src={recipe.image_url} alt="" style={{
+              width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', flexShrink: 0,
+              border: '2px solid rgba(201,168,76,0.25)',
+            }} />
+          ) : (
+            <div style={{
+              width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
+              backgroundColor: 'rgba(201,168,76,0.1)',
+              border: '1px solid rgba(201,168,76,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 26,
+            }}>☕</div>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 600, color: '#fff', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {recipe.product_name}
+            </div>
+            {recipe.product_name_lo && (
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {recipe.product_name_lo}
+              </div>
+            )}
+            <div style={{ fontSize: 15, color: GOLD, fontWeight: 700, marginTop: 5 }}>
+              {recipe.price_lak.toLocaleString()} ₭
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            width: 44, height: 44, borderRadius: '50%', border: 'none', flexShrink: 0,
+            backgroundColor: 'rgba(255,255,255,0.06)',
+            color: 'rgba(255,255,255,0.5)', fontSize: 22, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background-color 0.15s',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+          >×</button>
+        </div>
+
+        {/* ── Scrollable body ── */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+          {/* Quantity */}
+          <section>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 14 }}>จำนวน</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'center' }}>
+              <button
+                onClick={() => setQty(q => Math.max(1, q - 1))}
+                style={{
+                  width: 60, height: 60, borderRadius: 14, border: 'none',
+                  outline: '1.5px solid rgba(255,255,255,0.12)',
+                  backgroundColor: qty <= 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.06)',
+                  color: qty <= 1 ? 'rgba(255,255,255,0.2)' : '#fff',
+                  fontSize: 30, fontWeight: 300, cursor: qty <= 1 ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.15s',
+                }}
+              >−</button>
+              <div style={{ width: 64, textAlign: 'center', fontSize: 36, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{qty}</div>
+              <button
+                onClick={() => setQty(q => Math.min(99, q + 1))}
+                style={{
+                  width: 60, height: 60, borderRadius: 14, border: 'none',
+                  outline: `1.5px solid ${GOLD}`,
+                  backgroundColor: `rgba(201,168,76,0.12)`,
+                  color: GOLD, fontSize: 30, fontWeight: 300, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.15s',
+                }}
+              >+</button>
+            </div>
+          </section>
+
+          {/* Sweetness */}
+          <section>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 14 }}>ความหวาน</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+              {SWEETNESS_OPTIONS.map(opt => {
+                const sel = sweetness === opt.value
+                const isDefault = opt.value === defaultSweet
+                return (
+                  <button key={opt.value} onClick={() => setSweetness(opt.value)} style={optCard(sel)}
+                    onMouseEnter={e => { if (!sel) { e.currentTarget.style.outlineColor = `rgba(201,168,76,0.4)`; e.currentTarget.style.backgroundColor = `rgba(201,168,76,0.04)` }}}
+                    onMouseLeave={e => { if (!sel) { e.currentTarget.style.outlineColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)' }}}
+                  >
+                    <span style={{ fontSize: 24, lineHeight: 1 }}>{opt.icon}</span>
+                    <span style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.2, textAlign: 'center' }}>{opt.value}</span>
+                    {isDefault && <span style={{ fontSize: 10, color: sel ? `rgba(201,168,76,0.6)` : 'rgba(255,255,255,0.3)', lineHeight: 1 }}>ค่าเริ่มต้น</span>}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          {/* Temperature */}
+          <section>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 14 }}>อุณหภูมิ</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+              {TEMP_OPTIONS.map(opt => {
+                const sel = temp === opt.value
+                return (
+                  <button key={opt.value} onClick={() => setTemp(opt.value)} style={optCard(sel)}
+                    onMouseEnter={e => { if (!sel) { e.currentTarget.style.outlineColor = `rgba(201,168,76,0.4)`; e.currentTarget.style.backgroundColor = `rgba(201,168,76,0.04)` }}}
+                    onMouseLeave={e => { if (!sel) { e.currentTarget.style.outlineColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)' }}}
+                  >
+                    <span style={{ fontSize: 24, lineHeight: 1 }}>{opt.icon}</span>
+                    <span style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.2 }}>{opt.value}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          {/* Note (collapsible) */}
+          <section>
+            <button onClick={() => setNoteOpen(v => !v)} style={{
+              width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+              marginBottom: noteOpen ? 14 : 0,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+                หมายเหตุพิเศษ
+                <span style={{ marginLeft: 6, fontSize: 11, textTransform: 'none', letterSpacing: 0, opacity: 0.6, fontWeight: 400 }}>(ไม่บังคับ)</span>
+              </span>
+              <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, transition: 'transform 0.18s', display: 'inline-block', transform: noteOpen ? 'rotate(180deg)' : 'none' }}>▼</span>
+            </button>
+            {noteOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ position: 'relative' }}>
+                  <textarea value={note} maxLength={50} rows={2} onChange={e => setNote(e.target.value)}
+                    placeholder="ใส่หมายเหตุ..."
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      padding: '10px 44px 10px 12px', borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      color: '#fff', fontSize: 14, outline: 'none',
+                      resize: 'none', fontFamily: 'inherit', lineHeight: 1.5,
+                    }} />
+                  <span style={{
+                    position: 'absolute', right: 10, bottom: 8, fontSize: 11,
+                    color: note.length >= 45 ? '#f87171' : 'rgba(255,255,255,0.25)', pointerEvents: 'none',
+                  }}>{note.length}/50</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {NOTE_CHIPS.map(chip => (
+                    <button key={chip} onClick={() => setNote(prev => {
+                      const sep = prev.trim() ? ', ' : ''
+                      return (prev.trim() + sep + chip).slice(0, 50)
+                    })} style={{
+                      padding: '5px 12px', borderRadius: 20,
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer',
+                      transition: 'all 0.15s',
+                    }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = `rgba(201,168,76,0.4)`)}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)')}
+                    >{chip}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <div style={{ height: 4 }} />
+        </div>
+
+        {/* ── Sticky footer ── */}
+        <div style={{
+          padding: '14px 24px 24px', flexShrink: 0,
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          backgroundColor: '#161616',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+            <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>ยอดรวม</span>
+            <div style={{ textAlign: 'right' }}>
+              {qty > 1 && (
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
+                  {recipe.price_lak.toLocaleString()} ₭ × {qty}
+                </div>
+              )}
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>
+                {total.toLocaleString()} ₭
+              </div>
+            </div>
+          </div>
+          <button onClick={handleConfirm} style={{
+            width: '100%', height: 60, borderRadius: 14, border: 'none',
+            backgroundColor: GOLD, color: BLACK,
+            fontSize: 17, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            transition: 'opacity 0.15s',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          >
+            ✓ เพิ่มลงตะกร้า
+            <span style={{ opacity: 0.7, fontSize: 15, fontWeight: 600 }}>{total.toLocaleString()} ₭</span>
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -2082,28 +2284,28 @@ export default function POSClient() {
   const finalTotal = Math.max(subtotal - discountAmt, 0)
 
   // Cart actions
-  function editCartItem(oldKey: string, newCustomization: string) {
+  function editCartItem(oldKey: string, newCustomization: string, newQty?: number) {
     setCart(prev => {
       const item = prev.find(i => i.cartKey === oldKey)
       if (!item) return prev
+      const updatedQty = newQty ?? item.qty
       const newKey = `${item.recipe.id}::${newCustomization}`
-      if (newKey === oldKey) return prev
-      const existing = prev.find(i => i.cartKey === newKey)
+      const existing = prev.find(i => i.cartKey === newKey && i.cartKey !== oldKey)
       if (existing) {
         return prev
           .filter(i => i.cartKey !== oldKey)
-          .map(i => i.cartKey === newKey ? { ...i, qty: i.qty + item.qty } : i)
+          .map(i => i.cartKey === newKey ? { ...i, qty: i.qty + updatedQty } : i)
       }
-      return prev.map(i => i.cartKey === oldKey ? { ...i, cartKey: newKey, customization: newCustomization } : i)
+      return prev.map(i => i.cartKey === oldKey ? { ...i, cartKey: newKey, customization: newCustomization, qty: updatedQty } : i)
     })
   }
 
-  function addToCartWithCustomization(recipe: Recipe, customization: string) {
+  function addToCartWithCustomization(recipe: Recipe, customization: string, qty = 1) {
     const cartKey = `${recipe.id}::${customization}`
     setCart(prev => {
       const existing = prev.find(i => i.cartKey === cartKey)
-      if (existing) return prev.map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + 1 } : i)
-      return [...prev, { cartKey, recipe, qty: 1, customization }]
+      if (existing) return prev.map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + qty } : i)
+      return [...prev, { cartKey, recipe, qty, customization }]
     })
     setPendingRecipe(null)
   }
@@ -2240,7 +2442,7 @@ export default function POSClient() {
       {/* Popups */}
       {pendingRecipe && (
         <CustomPopup recipe={pendingRecipe}
-          onConfirm={customization => addToCartWithCustomization(pendingRecipe, customization)}
+          onConfirm={(customization, qty) => addToCartWithCustomization(pendingRecipe, customization, qty)}
           onClose={() => setPendingRecipe(null)} />
       )}
 
@@ -2250,7 +2452,8 @@ export default function POSClient() {
         return (
           <CustomPopup recipe={editItem.recipe}
             initialCustomization={editItem.customization}
-            onConfirm={newCustomization => { editCartItem(editingCartKey, newCustomization); setEditingCartKey(null) }}
+            initialQty={editItem.qty}
+            onConfirm={(newCustomization, newQty) => { editCartItem(editingCartKey, newCustomization, newQty); setEditingCartKey(null) }}
             onClose={() => setEditingCartKey(null)} />
         )
       })()}
