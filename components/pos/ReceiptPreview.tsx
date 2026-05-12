@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { PrinterDiagnostic } from './PrinterDiagnostic'
 
 const GOLD  = '#c9a84c'
 const GREEN = '#4cba7f'
@@ -18,30 +19,32 @@ export interface ReceiptPreviewProps {
   receiptText: string
   onPrint: () => Promise<void>
   onSkip: () => void
+  onOpenSettings?: () => void
   autoSkipSecs?: number
 }
 
-export function ReceiptPreview({ receiptText, onPrint, onSkip, autoSkipSecs = 5 }: ReceiptPreviewProps) {
-  const [timeLeft,  setTimeLeft]  = useState(autoSkipSecs)
-  const [printing,  setPrinting]  = useState(false)
-  const [printDone, setPrintDone] = useState(false)
-  const [printErr,  setPrintErr]  = useState(false)
+export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, autoSkipSecs = 5 }: ReceiptPreviewProps) {
+  const [timeLeft,     setTimeLeft]     = useState(autoSkipSecs)
+  const [printing,     setPrinting]     = useState(false)
+  const [printDone,    setPrintDone]    = useState(false)
+  const [showDiagnostic, setShowDiagnostic] = useState(false)
 
   useEffect(() => {
+    if (showDiagnostic) return  // pause countdown while diagnostic is open
     if (timeLeft <= 0) { onSkip(); return }
     const t = setTimeout(() => setTimeLeft(n => n - 1), 1000)
     return () => clearTimeout(t)
-  }, [timeLeft, onSkip])
+  }, [timeLeft, onSkip, showDiagnostic])
 
   async function handlePrint() {
-    setPrinting(true); setPrintErr(false)
+    setPrinting(true)
     try {
       await onPrint()
       setPrintDone(true)
       setTimeout(onSkip, 700)
     } catch {
-      setPrintErr(true)
       setPrinting(false)
+      setShowDiagnostic(true)   // ← show full diagnostic instead of a toast
     }
   }
 
@@ -73,20 +76,21 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, autoSkipSecs = 5 
           }}>
             ตรวจสอบใบเสร็จ
           </div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>
-            ข้ามอัตโนมัติใน {timeLeft} วินาที
-          </div>
+          {!showDiagnostic && (
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>
+              ข้ามอัตโนมัติใน {timeLeft} วินาที
+            </div>
+          )}
 
           {/* Countdown progress bar */}
           <div style={{
             height: 2, backgroundColor: 'rgba(255,255,255,0.07)',
             borderRadius: 1, overflow: 'hidden', marginTop: 10,
-            transformOrigin: 'left',
           }}>
             <div style={{
               height: '100%', backgroundColor: GOLD, borderRadius: 1,
               transformOrigin: 'left',
-              animation: `_rp_bar ${autoSkipSecs}s linear forwards`,
+              animation: showDiagnostic ? 'none' : `_rp_bar ${autoSkipSecs}s linear forwards`,
             }} />
           </div>
         </div>
@@ -100,7 +104,6 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, autoSkipSecs = 5 
           overflowY: 'auto',
           boxShadow: '0 8px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)',
           marginBottom: 18,
-          /* scrollbar styling */
           scrollbarWidth: 'thin' as const,
         }}>
           <pre style={{
@@ -115,18 +118,6 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, autoSkipSecs = 5 
             {receiptText}
           </pre>
         </div>
-
-        {/* Error notice */}
-        {printErr && (
-          <div style={{
-            marginBottom: 12, padding: '8px 14px', borderRadius: 8,
-            backgroundColor: 'rgba(255,77,77,0.12)',
-            border: '1px solid rgba(255,77,77,0.3)',
-            fontSize: 12, color: '#ff8080', textAlign: 'center',
-          }}>
-            ไม่พบเครื่องพิมพ์ — กดข้ามเพื่อดำเนินการต่อ
-          </div>
-        )}
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 12 }}>
@@ -173,6 +164,15 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, autoSkipSecs = 5 
           </button>
         </div>
       </div>
+
+      {/* Diagnostic overlay — appears on top when print fails */}
+      {showDiagnostic && (
+        <PrinterDiagnostic
+          receiptText={receiptText}
+          onSkip={onSkip}
+          onOpenSettings={onOpenSettings}
+        />
+      )}
     </div>
   )
 }

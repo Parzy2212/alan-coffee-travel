@@ -1484,6 +1484,11 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const [printerBusy,      setPrinterBusy]      = useState(false)
   const [webUsbSupported,  setWebUsbSupported]  = useState(true)
   const [serverOk,         setServerOk]         = useState<boolean | null>(null)
+  const [testPrintMsg,     setTestPrintMsg]     = useState<{ text: string; ok: boolean } | null>(null)
+  const [lastPrintInfo,    setLastPrintInfo]    = useState<{ time: string; result: 'success' | 'error'; error?: string } | null>(() => {
+    try { const s = ls('pos_last_print_info'); return s ? JSON.parse(s) : null } catch { return null }
+  })
+  const [isHttpsCtx,       setIsHttpsCtx]       = useState(false)
   const overlayRef = useRef<HTMLDivElement>(null)
 
   async function checkServer(): Promise<boolean> {
@@ -1509,6 +1514,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   }
 
   useEffect(() => {
+    setIsHttpsCtx(window.location.protocol === 'https:')
     checkServer().then(ok => { if (ok) fetchPrinters() })
     if (!printerIsSupported()) { setWebUsbSupported(false); return }
     getPrinterStatus().then(s => {
@@ -1547,37 +1553,41 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
   async function handleTestPrint() {
     setPrinterBusy(true)
+    setTestPrintMsg(null)
     const ok   = await checkServer()
     const name = serverPrinterName.trim()
     try {
       if (name) {
-        // Printer name is configured — always use print server, never browser dialog
         if (!ok) {
-          alert('Print Server ไม่ได้รัน\nกรุณาเปิด AlanPOS-PrintServer.exe แล้วลองใหม่')
+          setTestPrintMsg({ text: 'Print Server ไม่ได้รัน — เปิด AlanPOS-PrintServer.exe ก่อน', ok: false })
         } else {
-          console.log(`[POS] Test print → /test-ascii?printer=${name}&width=${paperWidth}`)
           const res = await fetch(
             `http://127.0.0.1:12345/test-ascii?printer=${encodeURIComponent(name)}&width=${paperWidth}`,
             { signal: AbortSignal.timeout(10000) }
           )
           const json = await res.json().catch(() => ({}))
-          console.log('[POS] Test print response:', json)
-          if (!res.ok) alert(`ทดสอบพิมพ์ล้มเหลว: ${(json as {error?: string}).error ?? res.status}`)
+          if (res.ok) {
+            setTestPrintMsg({ text: 'ส่งงานพิมพ์สำเร็จ ✓', ok: true })
+          } else {
+            setTestPrintMsg({ text: `ล้มเหลว: ${(json as { error?: string }).error ?? `HTTP ${res.status}`}`, ok: false })
+          }
         }
       } else {
-        // No printer name — use the full fallback chain (WebUSB / window.print)
         await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL')
+        setTestPrintMsg({ text: 'ส่งงานพิมพ์สำเร็จ ✓', ok: true })
       }
     } catch (e) {
       console.error('[POS] Test print failed:', e)
-      alert(`ทดสอบพิมพ์ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`)
+      setTestPrintMsg({ text: `ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`, ok: false })
     }
     setPrinterBusy(false)
+    setTimeout(() => setTestPrintMsg(null), 6000)
   }
 
   async function handleDebugUsb() {
     const info = await debugDevices()
-    alert(`USB Devices (paired with this browser):\n\n${info}`)
+    setTestPrintMsg({ text: `USB: ${info}`, ok: true })
+    setTimeout(() => setTestPrintMsg(null), 8000)
   }
 
   function save() {
@@ -1727,6 +1737,62 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
             }}>
               {printerBusy ? 'กำลังพิมพ์...' : '📄 ทดสอบพิมพ์'}
             </button>
+
+            {/* Test print result */}
+            {testPrintMsg && (
+              <div style={{
+                marginBottom: 8, padding: '7px 10px', borderRadius: 7,
+                backgroundColor: testPrintMsg.ok ? 'rgba(76,186,127,0.1)' : 'rgba(255,107,107,0.1)',
+                border: `1px solid ${testPrintMsg.ok ? 'rgba(76,186,127,0.3)' : 'rgba(255,107,107,0.3)'}`,
+                fontSize: 12, fontWeight: 600,
+                color: testPrintMsg.ok ? GREEN : '#ff6b6b',
+                lineHeight: 1.4,
+              }}>
+                {testPrintMsg.ok ? '✓ ' : '✗ '}{testPrintMsg.text}
+              </div>
+            )}
+
+            {/* Last print attempt */}
+            {lastPrintInfo && (
+              <div style={{
+                marginBottom: 8, padding: '6px 10px', borderRadius: 7,
+                backgroundColor: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5,
+              }}>
+                <span style={{ marginRight: 6 }}>
+                  ครั้งล่าสุด:{' '}
+                  {(() => { try { return new Date(lastPrintInfo.time).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) } catch { return lastPrintInfo.time } })()}
+                </span>
+                <span style={{ fontWeight: 700, color: lastPrintInfo.result === 'success' ? GREEN : '#ff6b6b' }}>
+                  {lastPrintInfo.result === 'success' ? '✓ สำเร็จ' : `✗ ${lastPrintInfo.error ?? 'ล้มเหลว'}`}
+                </span>
+              </div>
+            )}
+
+            {/* HTTPS warning */}
+            {isHttpsCtx && (
+              <div style={{
+                marginBottom: 8, padding: '8px 10px', borderRadius: 7,
+                backgroundColor: 'rgba(201,168,76,0.08)',
+                border: '1px solid rgba(201,168,76,0.25)',
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: GOLD, marginBottom: 3 }}>
+                  ⚠ URL เป็น HTTPS — Print Server ต้องการ HTTP
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5, marginBottom: 5 }}>
+                  เบราว์เซอร์บล็อก HTTP request จาก HTTPS
+                </div>
+                <button
+                  onClick={() => { window.location.href = window.location.href.replace('https://', 'http://') }}
+                  style={{
+                    padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                    border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}18`,
+                    color: GOLD, fontSize: 11, fontWeight: 700,
+                  }}
+                >🔗 เปลี่ยนไปใช้ HTTP</button>
+              </div>
+            )}
 
             {/* WebUSB section */}
             {webUsbSupported ? (
@@ -2731,13 +2797,19 @@ export default function POSClient() {
       const phone      = localStorage.getItem('receipt_phone') || ''
       const address    = localStorage.getItem('receipt_address') || ''
       const shopName   = localStorage.getItem('receipt_shop_name') || posSettings.shop_name || 'ALAN COFFEE & TRAVEL'
-      await thermalPrint({
-        shopName, queue: queueNum, receipt, table, customer,
-        cartSnapshot, subtotal, discountAmt: discAmt,
-        discountReason: discReason, finalTotal, method,
-        received, change, vatPct: posSettings.vat_percent,
-        footerText, phone, address,
-      })
+      try {
+        await thermalPrint({
+          shopName, queue: queueNum, receipt, table, customer,
+          cartSnapshot, subtotal, discountAmt: discAmt,
+          discountReason: discReason, finalTotal, method,
+          received, change, vatPct: posSettings.vat_percent,
+          footerText, phone, address,
+        })
+        try { localStorage.setItem('pos_last_print_info', JSON.stringify({ time: new Date().toISOString(), result: 'success' })) } catch { /* ignore */ }
+      } catch (e) {
+        try { localStorage.setItem('pos_last_print_info', JSON.stringify({ time: new Date().toISOString(), result: 'error', error: e instanceof Error ? e.message : String(e) })) } catch { /* ignore */ }
+        throw e
+      }
     }
 
     // Build receipt text for preview
@@ -2960,6 +3032,7 @@ export default function POSClient() {
           receiptText={previewReceiptText}
           onPrint={async () => { if (printFnRef.current) await printFnRef.current() }}
           onSkip={() => { setShowReceiptPreview(false); setShowOrderSuccess(true) }}
+          onOpenSettings={() => { setShowReceiptPreview(false); setShowOrderSuccess(false); setShowSettings(true) }}
           autoSkipSecs={5}
         />
       )}
