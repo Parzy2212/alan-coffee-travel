@@ -5,12 +5,15 @@ import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
 import { PinPad } from '@/components/pos/PinPad'
 import { ActiveEmployeeBadge } from '@/components/pos/ActiveEmployeeBadge'
+import { OrderSuccess } from '@/components/pos/OrderSuccess'
+import { ReceiptPreview } from '@/components/pos/ReceiptPreview'
+import { KeyboardShortcuts } from '@/components/pos/KeyboardShortcuts'
 import { useActiveEmployee } from '@/lib/use-active-employee'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
   isSupported as printerIsSupported, debugDevices, setPrinterName as saveServerPrinterName,
-  buildReceiptText, type ReceiptDesign,
+  buildReceiptText, getReceiptDesign, type ReceiptDesign,
 } from '@/lib/thermal-printer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -100,7 +103,7 @@ type TodayOrder = {
   items: { name: string; qty: number; note: string | null }[]
 }
 
-type PaymentMethod = 'cash' | 'qr' | 'transfer'
+type PaymentMethod = 'cash' | 'qr' | 'transfer' | 'split'
 
 type PaymentBank = {
   id: string
@@ -167,9 +170,10 @@ function translateError(msg: string): string {
 }
 
 const PAY_METHODS: { value: PaymentMethod; label: string; icon: string }[] = [
-  { value: 'cash',     label: 'เงินสด',  icon: '💵' },
-  { value: 'qr',       label: 'QR Code', icon: '📱' },
-  { value: 'transfer', label: 'โอนเงิน', icon: '🏦' },
+  { value: 'cash',     label: 'เงินสด',   icon: '💵' },
+  { value: 'qr',       label: 'QR Code',  icon: '📱' },
+  { value: 'transfer', label: 'โอนเงิน',  icon: '🏦' },
+  { value: 'split',    label: 'แยกบิล',   icon: '✂️' },
 ]
 
 const popupInput: React.CSSProperties = {
@@ -214,6 +218,200 @@ function QtyButton({ label, onClick }: { label: string; onClick: () => void }) {
     }}>
       {label}
     </button>
+  )
+}
+
+// ─── CartItemCard ─────────────────────────────────────────────────────────────
+
+const CART_BOUNCE_CSS = `
+@keyframes cart-icon-bounce {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(-14px); }
+  65% { transform: translateY(-8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-icon-bounce { animation: none !important; }
+}
+`
+
+function EmptyCartState() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', height: '100%', gap: 16,
+      userSelect: 'none',
+    }}>
+      <style>{CART_BOUNCE_CSS}</style>
+      <div className="cart-icon-bounce" style={{
+        fontSize: 60,
+        animation: 'cart-icon-bounce 2.4s cubic-bezier(0.4,0,0.2,1) infinite',
+        lineHeight: 1,
+      }}>🛒</div>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>
+          ยังไม่มีรายการในตะกร้า
+        </div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.18)' }}>
+          เลือกเมนูจากด้านซ้ายเพื่อเริ่ม
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CartItemCard({
+  item, onDecrement, onIncrement, onEdit, onDelete,
+}: {
+  item: CartItem
+  onDecrement: () => void
+  onIncrement: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div style={{
+      backgroundColor: 'rgba(255,255,255,0.04)',
+      borderRadius: 14,
+      border: '1px solid rgba(255,255,255,0.07)',
+      overflow: 'hidden',
+      transition: 'border-color 0.15s',
+    }}>
+      {/* ── Top row: image + name + customization ── */}
+      <div style={{ display: 'flex', gap: 12, padding: '14px 14px 0' }}>
+        {/* Image circle */}
+        {item.recipe.image_url ? (
+          <img
+            src={item.recipe.image_url}
+            alt=""
+            style={{
+              width: 40, height: 40, borderRadius: '50%',
+              objectFit: 'cover', flexShrink: 0,
+              border: '1.5px solid rgba(201,168,76,0.2)',
+            }}
+          />
+        ) : (
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+            backgroundColor: 'rgba(201,168,76,0.1)',
+            border: '1px solid rgba(201,168,76,0.18)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 20,
+          }}>☕</div>
+        )}
+        {/* Text */}
+        <div style={{ flex: 1, minWidth: 0, paddingBottom: 10 }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            alignItems: 'flex-start', gap: 6,
+          }}>
+            <div style={{
+              fontSize: 15, fontWeight: 600, color: '#fff',
+              lineHeight: 1.3, overflow: 'hidden',
+              textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+            }}>
+              {item.recipe.product_name}
+            </div>
+            <div style={{
+              fontSize: 12, color: 'rgba(255,255,255,0.35)',
+              flexShrink: 0, fontWeight: 600, marginTop: 1,
+            }}>× {item.qty}</div>
+          </div>
+          {item.customization && (
+            <div style={{
+              fontSize: 12, color: 'rgba(255,255,255,0.38)',
+              marginTop: 4, lineHeight: 1.4,
+              overflow: 'hidden', textOverflow: 'ellipsis',
+              display: '-webkit-box', WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical' as const,
+            }}>
+              {item.customization}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Divider ── */}
+      <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '0 14px' }} />
+
+      {/* ── Bottom row: qty controls + price + actions ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '10px 12px',
+      }}>
+        {/* − qty + */}
+        <button
+          onClick={onDecrement}
+          aria-label="ลดจำนวน"
+          style={{
+            width: 34, height: 34, borderRadius: 8, flexShrink: 0,
+            border: '1px solid rgba(255,255,255,0.1)',
+            backgroundColor: 'rgba(255,255,255,0.04)',
+            color: item.qty <= 1 ? 'rgba(255,255,255,0.2)' : '#fff',
+            fontSize: 20, fontWeight: 300, cursor: item.qty <= 1 ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.12s',
+          }}
+        >−</button>
+        <span style={{
+          width: 30, textAlign: 'center', fontSize: 15,
+          fontWeight: 700, color: '#fff', fontVariantNumeric: 'tabular-nums',
+          flexShrink: 0,
+        }}>{item.qty}</span>
+        <button
+          onClick={onIncrement}
+          aria-label="เพิ่มจำนวน"
+          style={{
+            width: 34, height: 34, borderRadius: 8, flexShrink: 0,
+            border: `1px solid rgba(201,168,76,0.35)`,
+            backgroundColor: 'rgba(201,168,76,0.08)',
+            color: GOLD, fontSize: 20, fontWeight: 300, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.12s',
+          }}
+        >+</button>
+
+        {/* Total */}
+        <div style={{
+          flex: 1, textAlign: 'right',
+          fontSize: 14, fontWeight: 700, color: GOLD,
+          fontVariantNumeric: 'tabular-nums', paddingRight: 4,
+        }}>
+          {(item.recipe.price_lak * item.qty).toLocaleString('en-US')} ₭
+        </div>
+
+        {/* Edit */}
+        <button
+          onClick={onEdit}
+          aria-label="แก้ไข"
+          style={{
+            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+            border: '1px solid rgba(255,255,255,0.08)',
+            backgroundColor: 'rgba(255,255,255,0.03)',
+            color: 'rgba(255,255,255,0.45)', fontSize: 14, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#fff' }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'; e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}
+        >✏️</button>
+
+        {/* Delete */}
+        <button
+          onClick={onDelete}
+          aria-label="ลบ"
+          style={{
+            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+            border: '1px solid rgba(220,80,80,0.2)',
+            backgroundColor: 'rgba(220,80,80,0.05)',
+            color: '#e07070', fontSize: 16, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(220,80,80,0.12)' }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(220,80,80,0.05)' }}
+        >🗑️</button>
+      </div>
+    </div>
   )
 }
 
@@ -865,16 +1063,22 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   const [staffNote,      setStaffNote]      = useState('')
   const [loading,        setLoading]        = useState(false)
   const [errMsg,         setErrMsg]         = useState('')
+  const [splitCash,      setSplitCash]      = useState('')
+  const [splitTransfer,  setSplitTransfer]  = useState('')
   const overlayRef = useRef<HTMLDivElement>(null)
 
-  const discountAmt = parseFloat(discount) || 0
-  const finalTotal  = Math.max(subtotal - discountAmt, 0)
-  const receivedNum = received ? (parseInt(received, 10) || 0) : 0
-  const changeAmt   = method === 'cash' ? receivedNum - finalTotal : 0
+  const discountAmt   = parseFloat(discount) || 0
+  const finalTotal    = Math.max(subtotal - discountAmt, 0)
+  const receivedNum   = received ? (parseInt(received, 10) || 0) : 0
+  const changeAmt     = method === 'cash' ? receivedNum - finalTotal : 0
+  const splitCashNum  = parseInt(splitCash, 10)  || 0
+  const splitXferNum  = parseInt(splitTransfer, 10) || 0
+  const splitTotal    = splitCashNum + splitXferNum
   const cashOk =
     (method === 'cash' && received !== '' && receivedNum >= finalTotal) ||
     (method === 'qr') ||
-    (method === 'transfer' && selectedBank !== null)
+    (method === 'transfer' && selectedBank !== null) ||
+    (method === 'split' && splitTotal >= finalTotal)
 
   // Load settings when QR or transfer tab is first opened
   useEffect(() => {
@@ -951,10 +1155,12 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     : method === 'cash' && received !== '' && receivedNum < finalTotal ? `${RED}22`
     : method === 'cash' && received === '' ? 'rgba(255,255,255,0.06)'
     : method === 'transfer' && !selectedBank ? 'rgba(255,255,255,0.06)'
+    : method === 'split' && splitTotal < finalTotal ? `${RED}22`
     : GOLD
   const btnColor = method === 'cash' && received !== '' && receivedNum < finalTotal ? RED
     : method === 'cash' && received === '' ? 'rgba(255,255,255,0.2)'
     : method === 'transfer' && !selectedBank ? 'rgba(255,255,255,0.2)'
+    : method === 'split' && splitTotal < finalTotal ? RED
     : BLACK
 
   return (
@@ -1130,6 +1336,54 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             )
           )}
 
+          {/* ── SPLIT ── */}
+          {method === 'split' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
+                ยอดรวม <span style={{ color: GOLD, fontWeight: 700 }}>{fmtLak(finalTotal)}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>💵 เงินสด</div>
+                  <input
+                    type="number" inputMode="numeric" value={splitCash}
+                    onChange={e => setSplitCash(e.target.value.replace(/\D/g, ''))}
+                    placeholder="0"
+                    style={{ ...popupInput, fontSize: 20, fontWeight: 700, textAlign: 'right', padding: '10px 12px' }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>🏦 โอนเงิน</div>
+                  <input
+                    type="number" inputMode="numeric" value={splitTransfer}
+                    onChange={e => setSplitTransfer(e.target.value.replace(/\D/g, ''))}
+                    placeholder="0"
+                    style={{ ...popupInput, fontSize: 20, fontWeight: 700, textAlign: 'right', padding: '10px 12px' }}
+                  />
+                </div>
+              </div>
+              {(splitCash !== '' || splitTransfer !== '') && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 10,
+                  backgroundColor: splitTotal >= finalTotal ? `${GREEN}15` : `${RED}15`,
+                  border: `1px solid ${splitTotal >= finalTotal ? GREEN : RED}33`,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
+                    {splitTotal >= finalTotal ? 'รับรวม' : 'ขาดอีก'}
+                  </span>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: splitTotal >= finalTotal ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
+                    {splitTotal >= finalTotal ? splitTotal.toLocaleString('en-US') + ' ₭' : `${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`}
+                  </span>
+                </div>
+              )}
+              <button onClick={() => { setSplitCash(String(Math.round(finalTotal / 2))); setSplitTransfer(String(Math.round(finalTotal / 2))) }} style={{
+                padding: '8px 0', borderRadius: 8, border: `1px solid ${GOLD}44`,
+                backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              }}>แบ่งครึ่ง</button>
+            </div>
+          )}
+
           {/* ── Optional extra fields ── */}
           <div>
             <button onClick={() => setShowExtra(x => !x)} style={{
@@ -1184,6 +1438,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             {loading ? 'กำลังบันทึก...'
               : method === 'cash' && received === '' ? 'กรอกจำนวนเงิน'
               : method === 'transfer' && !selectedBank ? 'เลือกธนาคารก่อน'
+              : method === 'split' && splitTotal < finalTotal ? `ขาดอีก ${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`
               : `ยืนยันชำระ ${fmtLak(finalTotal)}`}
           </button>
         </div>
@@ -1217,7 +1472,8 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const [extraLine1,     setExtraLine1]     = useState(() => ls('receipt_extra_line_1'))
   const [extraLine2,     setExtraLine2]     = useState(() => ls('receipt_extra_line_2'))
   const [blankLines,     setBlankLines]     = useState(() => parseInt(ls('receipt_blank_lines', '4'), 10) || 4)
-  const [showPreview,    setShowPreview]    = useState(false)
+  const [showPreview,       setShowPreview]       = useState(false)
+  const [skipReceiptPreview, setSkipReceiptPreview] = useState(() => ls('pos_skip_receipt_preview', 'false') === 'true')
 
   const [serverPrinterName, setServerPrinterName] = useState(() => ls('pos_printer_name'))
   const [serverPrinters,    setServerPrinters]    = useState<string[]>([])
@@ -1346,6 +1602,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
       localStorage.setItem('receipt_extra_line_1',     extraLine1)
       localStorage.setItem('receipt_extra_line_2',     extraLine2)
       localStorage.setItem('receipt_blank_lines',      String(blankLines))
+      localStorage.setItem('pos_skip_receipt_preview', String(skipReceiptPreview))
     } catch { /* ignore */ }
     onClose()
   }
@@ -1677,6 +1934,23 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
                 }}>{c}</button>
               ))}
             </div>
+          </div>
+
+          {/* Receipt preview setting */}
+          <div>
+            <div style={sectionLabel}>การพิมพ์</div>
+            <button onClick={() => setSkipReceiptPreview(v => !v)} style={{
+              width: '100%', padding: '10px 14px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+              border: `1px solid ${!skipReceiptPreview ? GOLD : 'rgba(255,255,255,0.1)'}`,
+              backgroundColor: !skipReceiptPreview ? `${GOLD}14` : 'transparent',
+              color: !skipReceiptPreview ? GOLD : 'rgba(255,255,255,0.45)',
+              fontSize: 13, fontWeight: !skipReceiptPreview ? 700 : 400, display: 'flex', justifyContent: 'space-between',
+            }}>
+              <span>{!skipReceiptPreview ? '✓ ' : '○ '}แสดงตัวอย่างก่อนพิมพ์</span>
+              <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 400 }}>
+                {!skipReceiptPreview ? 'เปิดอยู่' : 'ปิดอยู่'}
+              </span>
+            </button>
           </div>
 
           {/* Quick links */}
@@ -2013,6 +2287,18 @@ function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, to
 
 // ─── HeldOrdersModal ──────────────────────────────────────────────────────────
 
+type HeldSort = 'recent' | 'oldest' | 'name'
+
+function timeUntilExpiry(expiresAt: string): { label: string; soon: boolean } {
+  const ms = new Date(expiresAt).getTime() - Date.now()
+  if (ms <= 0) return { label: 'หมดอายุ', soon: true }
+  const mins = Math.floor(ms / 60000)
+  const hours = Math.floor(mins / 60)
+  const soon = ms < 30 * 60 * 1000
+  if (hours > 0) return { label: `หมดใน ${hours}ชม. ${mins % 60}น.`, soon }
+  return { label: `หมดใน ${mins} นาที`, soon }
+}
+
 function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose }: {
   heldOrders: HeldOrder[]
   onResume: (held: HeldOrder) => void
@@ -2020,43 +2306,131 @@ function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose }: {
   onClose: () => void
 }) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  const [search, setSearch] = useState('')
+  const [sort,   setSort]   = useState<HeldSort>('recent')
+
+  const filtered = useMemo(() => {
+    let list = [...heldOrders]
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter(h =>
+        (h.customer_name ?? '').toLowerCase().includes(q) ||
+        (h.table_number  ?? '').toLowerCase().includes(q) ||
+        h.cart_items.some(i => i.recipe.product_name.toLowerCase().includes(q))
+      )
+    }
+    if (sort === 'recent')  list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    if (sort === 'oldest')  list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    if (sort === 'name') {
+      list.sort((a, b) => {
+        const na = a.customer_name ?? a.table_number ?? ''
+        const nb = b.customer_name ?? b.table_number ?? ''
+        return na.localeCompare(nb, 'th')
+      })
+    }
+    return list
+  }, [heldOrders, search, sort])
+
   return (
-    <div ref={overlayRef} onClick={e => { if (e.target === overlayRef.current) onClose() }}
-      style={{ position: 'fixed', inset: 0, zIndex: 210, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ backgroundColor: '#131313', border: `1px solid ${GOLD}44`, borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+    <div
+      ref={overlayRef}
+      onClick={e => { if (e.target === overlayRef.current) onClose() }}
+      style={{ position: 'fixed', inset: 0, zIndex: 210, backgroundColor: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+    >
+      <div style={{ backgroundColor: '#131313', border: `1px solid ${GOLD}44`, borderRadius: 16, width: '100%', maxWidth: 500, maxHeight: '84vh', display: 'flex', flexDirection: 'column' }}>
+
+        {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#fff' }}>ออเดอร์พัก</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>แตะ "เปิด" เพื่อดึงกลับมาในตะกร้า</div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#fff' }}>
+              ออเดอร์พัก
+              {heldOrders.length > 0 && (
+                <span style={{ marginLeft: 8, backgroundColor: `${GOLD}22`, color: GOLD, borderRadius: 999, padding: '1px 9px', fontSize: 12, fontWeight: 800 }}>
+                  {heldOrders.length}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>แตะ "เรียกคืน" เพื่อดึงกลับมาในตะกร้า</div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 22, cursor: 'pointer' }}>×</button>
         </div>
+
+        {/* Search + Sort bar */}
+        {heldOrders.length > 0 && (
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, display: 'flex', gap: 8 }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'rgba(255,255,255,0.2)', pointerEvents: 'none' }}>🔍</span>
+              <input
+                value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="ค้นหาชื่อ / โต๊ะ / เมนู"
+                style={{ width: '100%', padding: '7px 8px 7px 30px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const }}
+              />
+              {search && (
+                <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 16, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
+              )}
+            </div>
+            <select value={sort} onChange={e => setSort(e.target.value as HeldSort)}
+              style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', fontSize: 12, outline: 'none', cursor: 'pointer' }}>
+              <option value="recent">ล่าสุด</option>
+              <option value="oldest">เก่าสุด</option>
+              <option value="name">ชื่อ</option>
+            </select>
+          </div>
+        )}
+
+        {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {heldOrders.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>ไม่มีออเดอร์พัก</div>
-          ) : heldOrders.map(held => {
+          {filtered.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center' }}>
+              <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>📋</div>
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.25)' }}>
+                {search ? `ไม่พบ "${search}"` : 'ยังไม่มีออเดอร์ที่พักไว้'}
+              </div>
+            </div>
+          ) : filtered.map(held => {
             const label = held.table_number
               ? `โต๊ะ ${held.table_number}${held.customer_name ? ' · ' + held.customer_name : ''}`
-              : held.customer_name ?? '—'
+              : (held.customer_name ?? 'ไม่ระบุ')
             const itemCount = held.cart_items.reduce((s, i) => s + i.qty, 0)
+            const expiry    = timeUntilExpiry(held.expires_at)
+            const preview   = held.cart_items.slice(0, 3).map(i => `${i.qty}× ${i.recipe.product_name}`).join(', ') + (held.cart_items.length > 3 ? ` +${held.cart_items.length - 3}` : '')
             return (
-              <div key={held.id} style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 3 }}>{itemCount} รายการ · {fmtLak(held.total_lak)} · {fmtTimeAgo(held.created_at)}</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>
-                    {held.cart_items.slice(0, 3).map(i => `${i.qty}× ${i.recipe.product_name}`).join(', ')}{held.cart_items.length > 3 ? ` +${held.cart_items.length - 3}` : ''}
+              <div key={held.id} style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+                      {expiry.soon && (
+                        <span style={{ flexShrink: 0, fontSize: 10, color: '#e07070', backgroundColor: 'rgba(220,80,80,0.12)', border: '1px solid rgba(220,80,80,0.2)', borderRadius: 4, padding: '1px 6px', fontWeight: 700 }}>
+                          {expiry.label}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 3 }}>
+                      {itemCount} รายการ · {fmtLak(held.total_lak)} · พัก {fmtTimeAgo(held.created_at)}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview}</div>
+                    {!expiry.soon && (
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', marginTop: 2 }}>{expiry.label}</div>
+                    )}
                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <button onClick={() => { onResume(held); onClose() }}
-                    style={{ height: 44, padding: '0 16px', borderRadius: 8, border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    📂 เปิด
-                  </button>
-                  <button onClick={() => onDelete(held.id)}
-                    style={{ width: 44, height: 44, borderRadius: 8, border: '1px solid rgba(220,80,80,0.25)', backgroundColor: 'rgba(220,80,80,0.08)', color: '#e07070', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    🗑️
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button
+                      onClick={() => { onResume(held); onClose() }}
+                      style={{ height: 48, padding: '0 18px', borderRadius: 10, border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s' }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${GOLD}24` }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${GOLD}14` }}
+                    >
+                      ↩️ เรียกคืน
+                    </button>
+                    <button
+                      onClick={() => onDelete(held.id)}
+                      style={{ width: 48, height: 48, borderRadius: 10, border: '1px solid rgba(220,80,80,0.25)', backgroundColor: 'rgba(220,80,80,0.08)', color: '#e07070', fontSize: 17, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(220,80,80,0.15)' }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(220,80,80,0.08)' }}
+                      title="ลบออเดอร์"
+                    >🗑️</button>
+                  </div>
                 </div>
               </div>
             )
@@ -2136,7 +2510,7 @@ export default function POSClient() {
   const [activeL1,     setActiveL1]     = useState<string>('All')
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
   const [now,          setNow]          = useState<Date | null>(null)
-  const [chargeStatus, setChargeStatus] = useState<ChargeStatus>('idle')
+  // chargeStatus removed — flow now uses showReceiptPreview + showOrderSuccess
   const [successData,  setSuccessData]  = useState<SuccessData | null>(null)
   const [posSettings,  setPosSettings]  = useState<PosSettings>({ shop_name: '', vat_percent: 0, qr_payment_number: '', shop_line: '', shop_facebook: '' })
   const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null)
@@ -2150,10 +2524,16 @@ export default function POSClient() {
   const [showCharge,     setShowCharge]    = useState(false)
   const [showSettings,   setShowSettings]  = useState(false)
   const [showShiftClose, setShowShiftClose] = useState(false)
-  const [heldOrders,     setHeldOrders]    = useState<HeldOrder[]>([])
-  const [showHoldModal,  setShowHoldModal]  = useState(false)
-  const [showDrawer,     setShowDrawer]     = useState(false)
-  const [showHeldModal,  setShowHeldModal]  = useState(false)
+  const [heldOrders,          setHeldOrders]          = useState<HeldOrder[]>([])
+  const [showHoldModal,       setShowHoldModal]        = useState(false)
+  const [showDrawer,          setShowDrawer]           = useState(false)
+  const [showHeldModal,       setShowHeldModal]        = useState(false)
+  const [showShortcuts,       setShowShortcuts]        = useState(false)
+  const [showReceiptPreview,  setShowReceiptPreview]   = useState(false)
+  const [showOrderSuccess,    setShowOrderSuccess]     = useState(false)
+  const [previewReceiptText,  setPreviewReceiptText]   = useState('')
+  const printFnRef = useRef<(() => Promise<void>) | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Load shopId via auth client (needed for PIN verification)
   useEffect(() => {
@@ -2319,10 +2699,6 @@ export default function POSClient() {
     })
   }
 
-  function dismissSuccess() {
-    setChargeStatus('idle')
-    setSuccessData(null)
-  }
 
   // Charge success handler (called from ChargePopup)
   function handleChargeSuccess(
@@ -2330,7 +2706,7 @@ export default function POSClient() {
     customer: string, table: string, discAmt: number, received: number, discReason: string,
   ) {
     const cartSnapshot = [...cart]
-    setSuccessData({
+    const data: SuccessData = {
       queue: queueNum, receipt, change, method,
       customer, table,
       discountAmt: discAmt,
@@ -2339,15 +2715,57 @@ export default function POSClient() {
       cartSnapshot,
       subtotal,
       finalTotal,
-    })
+    }
+    setSuccessData(data)
     setCart([])
     setDiscountPreset('')
     setDiscountOtherAmt('')
     setDiscountOtherReason('')
     try { localStorage.removeItem('pos_cart') } catch { /* ignore */ }
-    setChargeStatus('success')
     setShowCharge(false)
     loadTodayOrders()
+
+    // Build print function (captured in ref so ReceiptPreview can call it)
+    printFnRef.current = async () => {
+      const footerText = localStorage.getItem('receipt_footer_text') || 'Thank you for visiting'
+      const phone      = localStorage.getItem('receipt_phone') || ''
+      const address    = localStorage.getItem('receipt_address') || ''
+      const shopName   = localStorage.getItem('receipt_shop_name') || posSettings.shop_name || 'ALAN COFFEE & TRAVEL'
+      await thermalPrint({
+        shopName, queue: queueNum, receipt, table, customer,
+        cartSnapshot, subtotal, discountAmt: discAmt,
+        discountReason: discReason, finalTotal, method,
+        received, change, vatPct: posSettings.vat_percent,
+        footerText, phone, address,
+      })
+    }
+
+    // Build receipt text for preview
+    const shopName = localStorage.getItem('receipt_shop_name') || posSettings.shop_name || 'ALAN COFFEE & TRAVEL'
+    const footerText = localStorage.getItem('receipt_footer_text') || 'Thank you for visiting'
+    const phone = localStorage.getItem('receipt_phone') || ''
+    const address = localStorage.getItem('receipt_address') || ''
+    const receiptText = buildReceiptText({
+      shopName, queue: queueNum, receipt, table, customer,
+      cartSnapshot, subtotal, discountAmt: discAmt,
+      discountReason: discReason, finalTotal, method,
+      received, change, vatPct: posSettings.vat_percent,
+      footerText, phone, address,
+    }, getReceiptDesign())
+    setPreviewReceiptText(receiptText)
+
+    const skipPreview = localStorage.getItem('pos_skip_receipt_preview') === 'true'
+    if (skipPreview) {
+      setShowOrderSuccess(true)
+    } else {
+      setShowReceiptPreview(true)
+    }
+  }
+
+  function dismissOrderSuccess() {
+    setShowOrderSuccess(false)
+    setSuccessData(null)
+    printFnRef.current = null
   }
 
   // ── Queue ─────────────────────────────────────────────────────────────────
@@ -2419,6 +2837,52 @@ export default function POSClient() {
     fetchTodayQueue()
   }
 
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+
+      if (e.ctrlKey && e.key === 'p') {
+        e.preventDefault()
+        if (cart.length > 0 && !showCharge && !showReceiptPreview && !showOrderSuccess)
+          setShowCharge(true)
+        return
+      }
+      if (e.ctrlKey && e.key === 'h') {
+        e.preventDefault()
+        if (cart.length > 0 && !showHoldModal) setShowHoldModal(true)
+        return
+      }
+      if (e.ctrlKey && e.key === 'l') {
+        e.preventDefault()
+        setShowHeldModal(true)
+        return
+      }
+      if (e.key === 'Escape') {
+        if (showShortcuts) { setShowShortcuts(false); return }
+        if (showCharge)    { setShowCharge(false);    return }
+        if (showHeldModal) { setShowHeldModal(false); return }
+        if (showHoldModal) { setShowHoldModal(false); return }
+        if (showSettings)  { setShowSettings(false);  return }
+        if (showDrawer)    { setShowDrawer(false);    return }
+        return
+      }
+      if ((e.key === 'F1') || (e.key === '?' && !isInput)) {
+        e.preventDefault()
+        setShowShortcuts(v => !v)
+        return
+      }
+      if (e.key === '/' && !isInput) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        return
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showReceiptPreview, showOrderSuccess])
+
   const timeStr = now ? now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'
   const dateStr = now ? now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''
 
@@ -2488,8 +2952,25 @@ export default function POSClient() {
         onVoided={() => { fetchTodayQueue(); loadTodayOrders() }}
       />
       {showShiftClose && <ShiftClosePopup todayTotal={todayTotal} todayCount={todayCount} onClose={() => setShowShiftClose(false)} />}
-      {chargeStatus === 'success' && successData && (
-        <DigitalReceiptPopup data={successData} settings={posSettings} onClose={dismissSuccess} />
+      {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
+
+      {/* ── Receipt preview (after payment, before celebration) ── */}
+      {showReceiptPreview && (
+        <ReceiptPreview
+          receiptText={previewReceiptText}
+          onPrint={async () => { if (printFnRef.current) await printFnRef.current() }}
+          onSkip={() => { setShowReceiptPreview(false); setShowOrderSuccess(true) }}
+          autoSkipSecs={5}
+        />
+      )}
+
+      {/* ── Order success celebration ── */}
+      {showOrderSuccess && successData && (
+        <OrderSuccess
+          queue={successData.queue}
+          total={successData.finalTotal}
+          onDismiss={dismissOrderSuccess}
+        />
       )}
 
       {/* ── PIN PAD OVERLAY — shown when no employee is clocked in */}
@@ -2567,9 +3048,11 @@ export default function POSClient() {
           <div style={{ padding: '10px 16px', backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, position: 'relative' }}>
             <span style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: 'rgba(255,255,255,0.25)', pointerEvents: 'none' }}>🔍</span>
             <input
+              ref={searchInputRef}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="ค้นหาเมนู..."
+              placeholder="ค้นหาเมนู... (กด /)"
+              aria-label="ค้นหาเมนู"
               style={{
                 width: '100%', padding: '9px 36px', borderRadius: 10,
                 border: `1px solid ${searchQuery ? GOLD + '44' : 'rgba(255,255,255,0.08)'}`,
@@ -2652,15 +3135,21 @@ export default function POSClient() {
           </div>
         </div>
 
-        {/* ── RIGHT 40%: CART + PAYMENT */}
+        {/* ── RIGHT: CART + PAYMENT (40% tablet, 50% desktop) */}
         <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', backgroundColor: '#111' }}>
 
           {/* Cart header */}
           <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <span style={{ fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>
-              ออเดอร์{mounted && totalItems > 0 && <span style={{ color: GOLD, marginLeft: 6 }}>({totalItems})</span>}
-            </span>
-            {mounted && cart.length > 0 && chargeStatus === 'idle' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>ออเดอร์</span>
+              {mounted && totalItems > 0 && (
+                <span style={{
+                  backgroundColor: `${GOLD}22`, color: GOLD,
+                  borderRadius: 999, padding: '1px 9px', fontSize: 12, fontWeight: 800,
+                }}>{totalItems}</span>
+              )}
+            </div>
+            {mounted && cart.length > 0 && !showOrderSuccess && !showReceiptPreview && (
               confirmClear ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>ล้างทั้งหมด?</span>
@@ -2675,39 +3164,20 @@ export default function POSClient() {
             )}
           </div>
 
-          {/* Cart items */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* Cart items — card-based design */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {!mounted || cart.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'rgba(255,255,255,0.15)' }}>
-                <span style={{ fontSize: 40 }}>☕</span>
-                <span style={{ fontSize: 13 }}>แตะเมนูเพื่อเพิ่ม</span>
-              </div>
+              <EmptyCartState />
             ) : (
               cart.map(item => (
-                <div key={item.cartKey} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', backgroundColor: '#1a1a1a', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)', minHeight: 48 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.recipe.product_name}
-                    </div>
-                    {item.customization && (
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                        {item.customization}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 13, color: GOLD, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
-                      {fmtLak(item.recipe.price_lak * item.qty)}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <QtyButton label="−" onClick={() => decrement(item.cartKey)} />
-                    <span style={{ fontSize: 15, fontWeight: 700, minWidth: 24, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{item.qty}</span>
-                    <QtyButton label="+" onClick={() => addToCartWithCustomization(item.recipe, item.customization)} />
-                  </div>
-                  <button onClick={() => setEditingCartKey(item.cartKey)}
-                    style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.4)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✏️</button>
-                  <button onClick={() => setCart(prev => prev.filter(i => i.cartKey !== item.cartKey))}
-                    style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(220,80,80,0.2)', backgroundColor: 'rgba(220,80,80,0.06)', color: '#e07070', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🗑️</button>
-                </div>
+                <CartItemCard
+                  key={item.cartKey}
+                  item={item}
+                  onDecrement={() => decrement(item.cartKey)}
+                  onIncrement={() => addToCartWithCustomization(item.recipe, item.customization)}
+                  onEdit={() => setEditingCartKey(item.cartKey)}
+                  onDelete={() => setCart(prev => prev.filter(i => i.cartKey !== item.cartKey))}
+                />
               ))
             )}
           </div>
@@ -2781,6 +3251,24 @@ export default function POSClient() {
           </div>
         </div>
       </div>
+
+      {/* ── Keyboard shortcuts help button ── */}
+      <button
+        onClick={() => setShowShortcuts(true)}
+        title="Keyboard shortcuts (F1)"
+        aria-label="Keyboard shortcuts"
+        style={{
+          position: 'fixed', bottom: 16, left: 16, zIndex: 100,
+          width: 36, height: 36, borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.1)',
+          backgroundColor: 'rgba(255,255,255,0.04)',
+          color: 'rgba(255,255,255,0.3)', fontSize: 16, fontWeight: 700,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.15s', fontFamily: 'monospace',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(201,168,76,0.12)'; e.currentTarget.style.color = GOLD; e.currentTarget.style.borderColor = `rgba(201,168,76,0.3)` }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+      >?</button>
     </div>
   )
 }
