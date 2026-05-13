@@ -8,6 +8,10 @@ import { ActiveEmployeeBadge } from '@/components/pos/ActiveEmployeeBadge'
 import { OrderSuccess } from '@/components/pos/OrderSuccess'
 import { ReceiptPreview } from '@/components/pos/ReceiptPreview'
 import { KeyboardShortcuts } from '@/components/pos/KeyboardShortcuts'
+import { CustomerSelector } from '@/components/pos/CustomerSelector'
+import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
+import type { Customer } from '@/lib/customers'
+import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { useActiveEmployee } from '@/lib/use-active-employee'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
@@ -1039,12 +1043,13 @@ function DigitalReceiptPopup({
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, selectedCustomer, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
   discount: string
   discountReason: string
   activeEmployeeId?: string | null
+  selectedCustomer?: Customer | null
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string) => void
   onClose: () => void
 }) {
@@ -1104,9 +1109,10 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     if (!cashOk) { setErrMsg('เงินที่รับมาไม่เพียงพอ'); return }
     setLoading(true); setErrMsg('')
 
-    // Link order to customer record if phone is provided
-    let customerId: string | null = null
-    if (customer.trim() && phone.trim()) {
+    // Link order to customer: prefer pre-selected customer, fallback to name+phone entry
+    let customerId: string | null = selectedCustomer?.id ?? null
+    const customerName = selectedCustomer?.name ?? customer.trim()
+    if (!customerId && customer.trim() && phone.trim()) {
       const { data: custData } = await supabase.rpc('upsert_customer', {
         p_phone: phone.trim(),
         p_name:  customer.trim(),
@@ -1129,8 +1135,8 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
       p_payment_method:  method,
       p_amount_received: method === 'cash' ? receivedNum : null,
       p_change_amount:   method === 'cash' ? Math.max(changeAmt, 0) : null,
-      p_table_number:    table    || null,
-      p_customer_name:   customer || null,
+      p_table_number:    table         || null,
+      p_customer_name:   customerName  || null,
       p_discount_amount: discountAmt,
       p_discount_reason: discountReason || null,
       p_staff_note:      staffNote || null,
@@ -1143,7 +1149,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
     // Use queue number as receipt ID so we can show success immediately
     const finalReceipt = String(result.queue_number).padStart(3, '0')
-    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customer, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason)
+    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason)
     setLoading(false)
   }
 
@@ -1194,6 +1200,37 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
         {/* ── Scrollable body ── */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Selected customer banner */}
+          {selectedCustomer && (() => {
+            const { color, icon, label } = TIER_META[selectedCustomer.vip_tier]
+            const birthday = isBirthdayToday(selectedCustomer.birthday)
+            const vipPct   = selectedCustomer.vip_tier === 'platinum' ? 10 : selectedCustomer.vip_tier === 'gold' ? 5 : 0
+            return (
+              <div style={{
+                padding: '10px 14px', borderRadius: 12,
+                border: `1px solid ${color}44`,
+                backgroundColor: `${color}0e`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                    {birthday ? '🎂 ' : ''}
+                    {selectedCustomer.name ?? selectedCustomer.phone}
+                  </div>
+                  {selectedCustomer.vip_tier !== 'regular' && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color, padding: '1px 7px', borderRadius: 99, border: `1px solid ${color}44`, backgroundColor: `${color}14` }}>
+                      {icon} {label}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 3, display: 'flex', gap: 12 }}>
+                  <span>{selectedCustomer.loyalty_points.toLocaleString()} pts</span>
+                  {vipPct > 0 && <span style={{ color: '#4cba7f' }}>ส่วนลด VIP {vipPct}% ถูกใช้แล้ว</span>}
+                  {birthday && <span style={{ color: GOLD }}>วันเกิดวันนี้!</span>}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Method selector — 3 big buttons */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
@@ -2598,6 +2635,8 @@ export default function POSClient() {
   const [showReceiptPreview,  setShowReceiptPreview]   = useState(false)
   const [showOrderSuccess,    setShowOrderSuccess]     = useState(false)
   const [previewReceiptText,  setPreviewReceiptText]   = useState('')
+  const [selectedCustomer,    setSelectedCustomer]     = useState<Customer | null>(null)
+  const [showCustomerSelector, setShowCustomerSelector] = useState(false)
   const printFnRef = useRef<(() => Promise<void>) | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -2717,15 +2756,18 @@ export default function POSClient() {
   const subtotal   = cart.reduce((s, i) => s + i.recipe.price_lak * i.qty, 0)
   const totalItems = cart.reduce((s, i) => s + i.qty, 0)
 
-  const discountAmt = discountPreset === 'employee' ? Math.round(subtotal * 0.15)
+  const baseDiscountAmt = discountPreset === 'employee' ? Math.round(subtotal * 0.15)
     : discountPreset === 'promo'   ? Math.round(subtotal * 0.10)
     : discountPreset === 'regular' ? Math.round(subtotal * 0.05)
     : discountPreset === 'other'   ? (parseInt(discountOtherAmt, 10) || 0)
     : 0
+  const vipDiscountAmt = selectedCustomer ? computeVipDiscount(subtotal, selectedCustomer.vip_tier) : 0
+  const discountAmt = baseDiscountAmt + vipDiscountAmt
   const discountLabel = discountPreset === 'employee' ? 'บัตรพนักงาน'
     : discountPreset === 'promo'   ? 'โปรโมชัน'
     : discountPreset === 'regular' ? 'ลูกค้าประจำ'
     : discountPreset === 'other'   ? (discountOtherReason || 'อื่นๆ')
+    : vipDiscountAmt > 0 ? `VIP ${TIER_META[selectedCustomer!.vip_tier].label}`
     : ''
   const finalTotal = Math.max(subtotal - discountAmt, 0)
 
@@ -2787,6 +2829,7 @@ export default function POSClient() {
     setDiscountPreset('')
     setDiscountOtherAmt('')
     setDiscountOtherReason('')
+    setSelectedCustomer(null)
     try { localStorage.removeItem('pos_cart') } catch { /* ignore */ }
     setShowCharge(false)
     loadTodayOrders()
@@ -2932,12 +2975,13 @@ export default function POSClient() {
         return
       }
       if (e.key === 'Escape') {
-        if (showShortcuts) { setShowShortcuts(false); return }
-        if (showCharge)    { setShowCharge(false);    return }
-        if (showHeldModal) { setShowHeldModal(false); return }
-        if (showHoldModal) { setShowHoldModal(false); return }
-        if (showSettings)  { setShowSettings(false);  return }
-        if (showDrawer)    { setShowDrawer(false);    return }
+        if (showShortcuts)        { setShowShortcuts(false);        return }
+        if (showCustomerSelector) { setShowCustomerSelector(false); return }
+        if (showCharge)           { setShowCharge(false);           return }
+        if (showHeldModal)        { setShowHeldModal(false);        return }
+        if (showHoldModal)        { setShowHoldModal(false);        return }
+        if (showSettings)         { setShowSettings(false);         return }
+        if (showDrawer)           { setShowDrawer(false);           return }
         return
       }
       if ((e.key === 'F1') || (e.key === '?' && !isInput)) {
@@ -2953,7 +2997,7 @@ export default function POSClient() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showReceiptPreview, showOrderSuccess])
+  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showReceiptPreview, showOrderSuccess, showCustomerSelector])
 
   const timeStr = now ? now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'
   const dateStr = now ? now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''
@@ -2998,10 +3042,18 @@ export default function POSClient() {
         <ChargePopup subtotal={subtotal} cartPayload={cartPayload}
           discount={String(discountAmt)} discountReason={discountLabel}
           activeEmployeeId={activeEmployee?.id ?? null}
+          selectedCustomer={selectedCustomer}
           onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
       )}
 
       {showSettings && <SettingsPopup onClose={() => setShowSettings(false)} />}
+      {showCustomerSelector && (
+        <CustomerSelector
+          shopId={shopId}
+          onSelect={c => { setSelectedCustomer(c); setShowCustomerSelector(false) }}
+          onClose={() => setShowCustomerSelector(false)}
+        />
+      )}
       {showHoldModal && (
         <HoldModal onConfirm={(t, c) => holdCart(t, c)} onClose={() => setShowHoldModal(false)} />
       )}
@@ -3237,8 +3289,34 @@ export default function POSClient() {
             )}
           </div>
 
+          {/* Customer selector */}
+          <div style={{ padding: '0 12px 8px' }}>
+            {selectedCustomer ? (
+              <SelectedCustomerChip
+                customer={selectedCustomer}
+                onRemove={() => setSelectedCustomer(null)}
+                onClick={() => setShowCustomerSelector(true)}
+              />
+            ) : (
+              <button
+                onClick={() => setShowCustomerSelector(true)}
+                style={{
+                  width: '100%', padding: '8px 12px', borderRadius: 10,
+                  border: '1px dashed rgba(255,255,255,0.15)',
+                  backgroundColor: 'transparent', color: 'rgba(255,255,255,0.35)',
+                  fontSize: 12, cursor: 'pointer', textAlign: 'left',
+                  transition: 'all 0.12s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(201,168,76,0.4)'; e.currentTarget.style.color = '#c9a84c' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = 'rgba(255,255,255,0.35)' }}
+              >
+                👤 เลือกลูกค้า
+              </button>
+            )}
+          </div>
+
           {/* Cart items — card-based design */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 12px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {!mounted || cart.length === 0 ? (
               <EmptyCartState />
             ) : (

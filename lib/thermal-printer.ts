@@ -24,6 +24,9 @@ export type PrintReceiptData = {
   footerText?:    string
   phone?:         string
   address?:       string
+  pointsEarned?:  number
+  pointsBalance?: number
+  isBirthday?:    boolean
 }
 
 export type ReceiptDesign = {
@@ -117,6 +120,12 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
     L(tc('RECEIVED:', fmtLak(data.received)), tc('CHANGE:', fmtLak(data.change)))
   }
   L(sep1)
+  if (data.isBirthday) L(ctr('** HAPPY BIRTHDAY! **'))
+  if (data.pointsEarned !== undefined && data.pointsEarned > 0) {
+    L(tc('Points earned:', `+${data.pointsEarned}`))
+    if (data.pointsBalance !== undefined) L(tc('Points balance:', String(data.pointsBalance)))
+    L(sep2)
+  }
   L(ctr(footerSafe(data.footerText || '')), ctr('Thank you & come back'))
   if (data.address) L(ctr(toAscii(data.address).substring(0, W)))
   if (data.phone)   L(ctr(data.phone.substring(0, W)))

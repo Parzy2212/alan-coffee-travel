@@ -15,6 +15,7 @@ const LazyStaffTab       = lazy(() => import('@/components/cafe/StaffTab'))
 const LazyFinanceTab     = lazy(() => import('@/components/cafe/FinanceTab'))
 const LazyRecipeCostTab  = lazy(() => import('@/components/cafe/RecipeCostTab'))
 const LazyScheduleTab    = lazy(() => import('@/components/cafe/ScheduleTab'))
+const LazyCustomersTab   = lazy(() => import('@/components/cafe/CustomersTab').then(m => ({ default: m.CustomersTab })))
 import { WelcomeBanner }           from '@/components/cafe/WelcomeBanner'
 import { GettingStartedChecklist } from '@/components/cafe/GettingStartedChecklist'
 import { QuickActionsFAB }         from '@/components/cafe/QuickActionsFAB'
@@ -2445,7 +2446,7 @@ function SettingsTab() {
 
 // ─── Staff Tab → see components/cafe/StaffTab.tsx ─────────────────────────────
 
-// ─── CustomersTab ─────────────────────────────────────────────────────────────
+// ─── CustomersTab → see components/cafe/CustomersTab.tsx ──────────────────────
 
 const ALLERGY_MAP: Record<string, string> = {
   นม: '🥛', กลูเตน: '🌾', ถั่ว: '🥜', ไข่: '🥚', ซีฟู้ด: '🦐',
@@ -2454,231 +2455,7 @@ const ALLERGY_MAP: Record<string, string> = {
 const POINTS_RATE = 100  // points per redeem unit
 const POINTS_VALUE = 5000 // LAK per redeem unit
 
-function CustomersTab() {
-  const [customers, setCustomers]   = useState<Customer[]>([])
-  const [search,    setSearch]      = useState('')
-  const [loading,   setLoading]     = useState(false)
-  const [editId,    setEditId]      = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', phone: '', nationality: '', language_pref: 'lo', allergies: [] as string[] })
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [redeemCustomer, setRedeemCustomer] = useState<Customer | null>(null)
-  const [redeemPts,      setRedeemPts]      = useState('')
-  const [redeemMsg,      setRedeemMsg]      = useState('')
-  const [redeeming,      setRedeeming]      = useState(false)
-  const [redeemHistory,  setRedeemHistory]  = useState<{ name: string; pts: number; lak: number; time: string }[]>([])
-
-  const load = useCallback(async (q = '') => {
-    setLoading(true)
-    try {
-      const { data } = await supabase.rpc('get_customers', { p_search: q })
-      setCustomers((data as Customer[]) ?? [])
-    } finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { void load('') }, [load])
-
-  async function doSearch() { await load(search) }
-
-  function openNew() {
-    setEditId('new')
-    setForm({ name: '', phone: '', nationality: '', language_pref: 'lo', allergies: [] })
-    setMsg('')
-  }
-
-  function openEdit(c: Customer) {
-    setEditId(c.id)
-    setForm({ name: c.name ?? '', phone: c.phone ?? '', nationality: c.nationality ?? '', language_pref: c.language_pref, allergies: c.allergies ?? [] })
-    setMsg('')
-  }
-
-  async function save() {
-    if (!form.phone) { setMsg('กรุณากรอกเบอร์โทร'); return }
-    setSaving(true); setMsg('')
-    try {
-      const { error } = await supabase.rpc('upsert_customer', {
-        p_phone: form.phone, p_name: form.name,
-        p_nationality: form.nationality || null,
-        p_language_pref: form.language_pref,
-        p_allergies: form.allergies,
-      })
-      if (error) { setMsg(error.message); return }
-      setEditId(null); await load(search)
-    } finally { setSaving(false) }
-  }
-
-  function toggleAllergy(a: string) {
-    setForm(f => ({
-      ...f,
-      allergies: f.allergies.includes(a) ? f.allergies.filter(x => x !== a) : [...f.allergies, a],
-    }))
-  }
-
-  async function redeemSubmit() {
-    if (!redeemCustomer) return
-    const pts = parseInt(redeemPts)
-    if (isNaN(pts) || pts <= 0) { setRedeemMsg('กรอกจำนวนคะแนนที่ถูกต้อง'); return }
-    if (pts % POINTS_RATE !== 0) { setRedeemMsg(`คะแนนต้องเป็นทวีคูณของ ${POINTS_RATE}`); return }
-    if (pts > redeemCustomer.loyalty_points) { setRedeemMsg('คะแนนไม่เพียงพอ'); return }
-    setRedeeming(true); setRedeemMsg('')
-    const newPts = redeemCustomer.loyalty_points - pts
-    const lak    = (pts / POINTS_RATE) * POINTS_VALUE
-    const { error } = await supabase.from('customers').update({ loyalty_points: newPts }).eq('id', redeemCustomer.id)
-    if (error) { setRedeemMsg(error.message); setRedeeming(false); return }
-    setRedeemHistory(h => [{ name: redeemCustomer.name ?? redeemCustomer.phone ?? '?', pts, lak, time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) }, ...h])
-    setRedeemCustomer(null); setRedeemPts('')
-    await load(search)
-    setRedeeming(false)
-  }
-
-  return (
-    <div>
-      {/* Search + Add */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && void doSearch()}
-          placeholder="ค้นหาชื่อ / เบอร์โทร..." style={{ flex: 1, padding: '10px 14px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14 }} />
-        <button onClick={() => void doSearch()} style={{ padding: '10px 20px', borderRadius: 9, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>ค้นหา</button>
-        <button onClick={openNew} style={{ padding: '10px 20px', borderRadius: 9, border: 'none', backgroundColor: GOLD, color: '#000', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ เพิ่มลูกค้า</button>
-      </div>
-
-      {/* Add / Edit Form */}
-      {editId && (
-        <div style={{ padding: 24, borderRadius: 14, border: `1px solid ${GOLD}44`, backgroundColor: CARD, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: GOLD }}>{editId === 'new' ? 'เพิ่มลูกค้าใหม่' : 'แก้ไขข้อมูลลูกค้า'}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {[['name', 'ชื่อ'], ['phone', 'เบอร์โทร *'], ['nationality', 'สัญชาติ']].map(([key, lbl]) => (
-              <div key={key}>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>{lbl}</div>
-                <input value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}  // eslint-disable-line @typescript-eslint/no-explicit-any
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
-              </div>
-            ))}
-            <div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>ภาษา</div>
-              <select value={form.language_pref} onChange={e => setForm(f => ({ ...f, language_pref: e.target.value }))}
-                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 14 }}>
-                <option value="lo">ลาว</option>
-                <option value="th">ไทย</option>
-                <option value="en">English</option>
-                <option value="zh">中文</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>แพ้อาหาร</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {Object.entries(ALLERGY_MAP).map(([k, emoji]) => {
-                const on = form.allergies.includes(k)
-                return (
-                  <button key={k} onClick={() => toggleAllergy(k)}
-                    style={{ padding: '5px 12px', borderRadius: 99, border: `1px solid ${on ? ORANGE : BORDER}`, backgroundColor: on ? `${ORANGE}18` : 'transparent', color: on ? ORANGE : 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 13 }}>
-                    {emoji} {k}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-          {msg && <div style={{ color: RED, fontSize: 13 }}>{msg}</div>}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => void save()} disabled={saving} style={{ padding: '10px 24px', borderRadius: 9, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
-              {saving ? 'กำลังบันทึก...' : 'บันทึก'}
-            </button>
-            <button onClick={() => setEditId(null)} style={{ padding: '10px 20px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>ยกเลิก</button>
-          </div>
-        </div>
-      )}
-
-      {/* Redemption Modal */}
-      {redeemCustomer && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}
-          onClick={e => { if (e.target === e.currentTarget) { setRedeemCustomer(null); setRedeemPts('') } }}>
-          <div style={{ width: 380, padding: 28, borderRadius: 18, backgroundColor: '#141414', border: `1px solid ${GOLD}44`, display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: GOLD }}>แลกคะแนน</div>
-            <div style={{ padding: '14px 16px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>{redeemCustomer.name ?? redeemCustomer.phone}</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{redeemCustomer.loyalty_points} <span style={{ fontSize: 14, fontWeight: 500 }}>pts</span></div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
-                อัตราแลก: {POINTS_RATE} pts = {POINTS_VALUE.toLocaleString()} ₭
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>จำนวนคะแนนที่ต้องการแลก (ทวีคูณของ {POINTS_RATE})</div>
-              <input type="number" value={redeemPts} onChange={e => setRedeemPts(e.target.value)}
-                step={POINTS_RATE} min={POINTS_RATE} max={redeemCustomer.loyalty_points}
-                placeholder={String(POINTS_RATE)}
-                style={{ width: '100%', padding: '11px 14px', borderRadius: 9, border: `1px solid ${GOLD}44`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 16, fontWeight: 700, boxSizing: 'border-box' }} />
-              {redeemPts && parseInt(redeemPts) > 0 && parseInt(redeemPts) % POINTS_RATE === 0 && (
-                <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, backgroundColor: `${GREEN}10`, border: `1px solid ${GREEN}33`, fontSize: 13, color: GREEN, fontWeight: 600 }}>
-                  ส่วนลด: {((parseInt(redeemPts) / POINTS_RATE) * POINTS_VALUE).toLocaleString()} ₭
-                  · คงเหลือ: {redeemCustomer.loyalty_points - parseInt(redeemPts)} pts
-                </div>
-              )}
-            </div>
-            {redeemMsg && <div style={{ color: RED, fontSize: 13 }}>{redeemMsg}</div>}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => void redeemSubmit()} disabled={redeeming} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: redeeming ? 0.6 : 1 }}>
-                {redeeming ? 'กำลังดำเนินการ...' : 'ยืนยันการแลก'}
-              </button>
-              <button onClick={() => { setRedeemCustomer(null); setRedeemPts('') }} style={{ padding: '11px 20px', borderRadius: 9, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Session redemption history */}
-      {redeemHistory.length > 0 && (
-        <div style={{ padding: '14px 18px', borderRadius: 12, backgroundColor: `${GREEN}08`, border: `1px solid ${GREEN}22`, marginBottom: 8 }}>
-          <div style={{ fontSize: 11, color: GREEN, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 8 }}>ประวัติแลกคะแนน (session นี้)</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {redeemHistory.map((r, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
-                <span>{r.time} · {r.name}</span>
-                <span style={{ color: GREEN, fontWeight: 600 }}>-{r.pts} pts → +{r.lak.toLocaleString()} ₭</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* List */}
-      {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {Array.from({ length: 5 }).map((_, i) => <div key={i} style={{ height: 70, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)}
-        </div>
-      ) : customers.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.25)' }}>ไม่พบลูกค้า</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {customers.map(c => (
-            <div key={c.id} style={{ padding: '14px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: `${GOLD}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: GOLD, flexShrink: 0 }}>
-                {(c.name ?? '?')[0]?.toUpperCase()}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name ?? '—'} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{c.phone}</span></div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                  {(c.allergies ?? []).map(a => (
-                    <span key={a} style={{ fontSize: 11, padding: '1px 8px', borderRadius: 99, border: `1px solid ${ORANGE}44`, color: ORANGE, backgroundColor: `${ORANGE}10` }}>
-                      {ALLERGY_MAP[a] ?? ''} {a}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: GOLD }}>{c.loyalty_points} pts</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{c.visit_count} ครั้ง · {(c.lifetime_spend_lak ?? 0).toLocaleString()} ₭</div>
-              </div>
-              <button onClick={() => { setRedeemCustomer(c); setRedeemPts(''); setRedeemMsg('') }}
-                disabled={c.loyalty_points < POINTS_RATE}
-                style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${c.loyalty_points >= POINTS_RATE ? GREEN + '66' : BORDER}`, backgroundColor: c.loyalty_points >= POINTS_RATE ? `${GREEN}12` : 'transparent', color: c.loyalty_points >= POINTS_RATE ? GREEN : 'rgba(255,255,255,0.2)', cursor: c.loyalty_points >= POINTS_RATE ? 'pointer' : 'default', fontSize: 11, fontWeight: 600 }}>แลกคะแนน</button>
-              <button onClick={() => openEdit(c)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12 }}>แก้ไข</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+// CustomersTab extracted to components/cafe/CustomersTab.tsx
 
 // ─── PurchaseTab ──────────────────────────────────────────────────────────────
 
@@ -4152,7 +3929,7 @@ export default function CafeClient() {
         {tabWrap('settings',    <SettingsTab />)}
         {tabWrap('staff',       <Suspense fallback={<LoadingSpinner />}><LazyStaffTab /></Suspense>)}
         {tabWrap('schedule',    <Suspense fallback={<LoadingSpinner />}><LazyScheduleTab /></Suspense>)}
-        {tabWrap('customers',   <CustomersTab />)}
+        {tabWrap('customers',   <Suspense fallback={<LoadingSpinner />}><LazyCustomersTab /></Suspense>)}
         {tabWrap('purchase',    <PurchaseTab />)}
         {tabWrap('finance',     <Suspense fallback={<LoadingSpinner />}><LazyFinanceTab /></Suspense>)}
         {tabWrap('ai',          <AITab />)}
