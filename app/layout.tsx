@@ -4,6 +4,9 @@ import Script from 'next/script'
 import { LanguageProvider } from '@/contexts/LanguageContext'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { ShopProvider } from '@/contexts/ShopContext'
+import { PWAProvider } from '@/components/PWAProvider'
+import { InstallPrompt } from '@/components/InstallPrompt'
+import { OfflineIndicator } from '@/components/OfflineIndicator'
 import './globals.css'
 
 const playfair = Playfair_Display({
@@ -178,15 +181,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
+        {/* PWA */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#c9a84c" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Alan Cafe OS" />
+        <link rel="apple-touch-icon" href="/icons/icon-152x152.png" />
+        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png" />
       </head>
       <body className={`${playfair.variable} ${inter.variable} ${notoSansLao.variable} ${sarabun.variable}`}>
-        <AuthProvider>
-          <ShopProvider>
-            <LanguageProvider>
-              {children}
-            </LanguageProvider>
-          </ShopProvider>
-        </AuthProvider>
+        <PWAProvider>
+          <AuthProvider>
+            <ShopProvider>
+              <LanguageProvider>
+                {children}
+              </LanguageProvider>
+            </ShopProvider>
+          </AuthProvider>
+          <InstallPrompt />
+          <OfflineIndicator />
+        </PWAProvider>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-CM6TTHL7CZ"
           strategy="afterInteractive"

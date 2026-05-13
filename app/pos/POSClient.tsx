@@ -10,8 +10,11 @@ import { ReceiptPreview } from '@/components/pos/ReceiptPreview'
 import { KeyboardShortcuts } from '@/components/pos/KeyboardShortcuts'
 import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
+import { SyncStatus } from '@/components/SyncStatus'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
+import { enqueueOrder, replayQueue } from '@/lib/offline-queue'
+import { useNetworkStatus } from '@/lib/network-status'
 import { useActiveEmployee } from '@/lib/use-active-employee'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
@@ -1112,6 +1115,22 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     // Link order to customer: prefer pre-selected customer, fallback to name+phone entry
     let customerId: string | null = selectedCustomer?.id ?? null
     const customerName = selectedCustomer?.name ?? customer.trim()
+
+    // ── Offline path: enqueue locally and succeed immediately ──────────────────
+    if (!navigator.onLine) {
+      const offlineQueue = Math.floor(Math.random() * 900) + 100  // temp queue # until sync
+      await enqueueOrder({
+        p_cart:        cartPayload,
+        p_customer_id: customerId,
+        _meta: { method, receivedNum, changeAmt: Math.max(changeAmt, 0), table, customerName, discountAmt, discountReason, staffNote, activeEmployeeId },
+      })
+      window.dispatchEvent(new Event('alan:queue-changed'))
+      const finalReceipt = String(offlineQueue).padStart(3, '0')
+      onSuccess(offlineQueue, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason)
+      setLoading(false)
+      return
+    }
+
     if (!customerId && customer.trim() && phone.trim()) {
       const { data: custData } = await supabase.rpc('upsert_customer', {
         p_phone: phone.trim(),
@@ -2638,6 +2657,7 @@ export default function POSClient() {
   const [selectedCustomer,    setSelectedCustomer]     = useState<Customer | null>(null)
   const [showCustomerSelector, setShowCustomerSelector] = useState(false)
   const printFnRef = useRef<(() => Promise<void>) | null>(null)
+  const online = useNetworkStatus()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Load shopId via auth client (needed for PIN verification)
@@ -2685,6 +2705,21 @@ export default function POSClient() {
     return () => clearInterval(id)
   }, [])
 
+  // Replay offline queue when back online or SW triggers it
+  useEffect(() => {
+    if (!online) return
+    const replay = () => {
+      replayQueue(async (payload) => {
+        const { error } = await supabase.rpc('create_order_with_deduction', payload)
+        if (!error) { window.dispatchEvent(new Event('alan:queue-changed')); return true }
+        return false
+      }).catch(() => {})
+    }
+    replay()
+    window.addEventListener('alan:replay-offline-queue', replay)
+    return () => window.removeEventListener('alan:replay-offline-queue', replay)
+  }, [online])
+
   // Fetch categories
   useEffect(() => {
     supabase.from('categories').select('id, name, name_lo, parent_id, sort_order')
@@ -2692,11 +2727,22 @@ export default function POSClient() {
       .then(({ data }) => setCategories((data as Category[]) ?? []))
   }, [])
 
-  // Fetch menu
+  // Fetch menu (cache-first when offline)
   useEffect(() => {
-    supabase.from('recipes').select('id, product_name, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
-      .eq('is_active', true).order('product_name')
-      .then(({ data }) => { setRecipes((data as Recipe[]) ?? []); setLoading(false) })
+    import('@/lib/menu-cache').then(({ fetchWithCache }) => {
+      fetchWithCache<Recipe[]>(
+        'pos-menu',
+        async () => {
+          const { data } = await supabase
+            .from('recipes')
+            .select('id, product_name, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
+            .eq('is_active', true)
+            .order('product_name')
+          return (data as Recipe[]) ?? []
+        }
+      ).then(({ data }) => { setRecipes(data); setLoading(false) })
+        .catch(() => setLoading(false))
+    })
 
     const channel = supabase.channel('recipes-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => {
@@ -3118,6 +3164,7 @@ export default function POSClient() {
           <span style={{ color: GOLD, fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SyncStatus />
           <button onClick={() => setShowHeldModal(true)} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '0 14px', height: 36, borderRadius: 8,
