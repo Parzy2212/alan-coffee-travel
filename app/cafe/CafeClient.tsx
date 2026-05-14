@@ -8,6 +8,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
 import { AvatarDropdown } from '@/components/AvatarDropdown'
+import { useAuth } from '@/contexts/AuthContext'
 
 const LazyMenuTab        = lazy(() => import('@/components/cafe/MenuTab'))
 const LazyStockTab       = lazy(() => import('@/components/cafe/StockTab'))
@@ -612,7 +613,17 @@ function DonutChart({ title, data, colors }: { title: string; data: DonutEntry[]
 
 // ─── Dashboard Tab ────────────────────────────────────────────────────────────
 
+function useGreeting(): string {
+  const { user } = useAuth()
+  const name  = (user?.user_metadata?.full_name as string | undefined)?.split(' ')[0] ?? 'Alan'
+  const h     = new Date().getHours()
+  if (h < 12) return `ສະບາຍດີ ${name}! Ready to brew? ☕`
+  if (h < 17) return `Good afternoon, ${name}!`
+  return `Wrapping up, ${name}?`
+}
+
 function DashboardTab() {
+  const greeting = useGreeting()
   const [stats,        setStats]        = useState<ExtDashStats | null>(null)
   const [hourly,       setHourly]       = useState<HourlySale[]>([])
   const [menu,         setMenu]         = useState<MenuPerf[]>([])
@@ -722,6 +733,11 @@ function DashboardTab() {
           RPCs ยังไม่ถูกสร้าง — กรุณา run <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>012_cafe_admin.sql</code>, <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>013_cafe_detail.sql</code> และ <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>014_dashboard_stats.sql</code>
         </div>
       )}
+
+      {/* Personalized greeting */}
+      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', marginBottom: 16 }}>
+        {greeting}
+      </div>
 
       <WelcomeBanner />
       <GettingStartedChecklist />

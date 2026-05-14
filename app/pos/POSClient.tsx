@@ -18,6 +18,7 @@ import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { enqueueOrder, replayQueue } from '@/lib/offline-queue'
 import { useNetworkStatus } from '@/lib/network-status'
 import { useTestMode } from '@/lib/test-mode'
+import { getPinnedRecipes, togglePinnedRecipe } from '@/lib/user-preferences'
 import { useActiveEmployee } from '@/lib/use-active-employee'
 import { useLang, type Lang } from '@/contexts/LanguageContext'
 import { LanguageSwitcher } from '@/components/pos/LanguageSwitcher'
@@ -454,6 +455,7 @@ const POPUP_ANIM = `
 @media (prefers-reduced-motion:reduce) {
   .cpopup-sheet,.cpopup-overlay{animation:none!important}
 }
+div:hover > .menu-pin-btn { opacity: 1 !important; }
 `
 
 function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initialQty }: {
@@ -2692,6 +2694,7 @@ export default function POSClient() {
   const [categories,   setCategories]   = useState<Category[]>([])
   const [loading,      setLoading]      = useState(true)
   const [cart,         setCart]         = useState<CartItem[]>([])
+  const [pinnedIds,    setPinnedIds]    = useState<string[]>(() => getPinnedRecipes())
   const [confirmClear,  setConfirmClear]  = useState(false)
   const [activeL1,     setActiveL1]     = useState<string>('All')
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
@@ -2866,14 +2869,24 @@ export default function POSClient() {
   }, [recipes, activeL1, activeL2, categories])
 
   const displayRecipes = useMemo(() => {
-    if (!searchQuery.trim()) return filtered
-    const q = searchQuery.trim().toLowerCase()
-    return filtered.filter(r =>
-      r.product_name.toLowerCase().includes(q) ||
-      (r.product_name_th ?? '').toLowerCase().includes(q) ||
-      (r.product_name_lo ?? '').toLowerCase().includes(q)
-    )
-  }, [filtered, searchQuery])
+    const base = searchQuery.trim()
+      ? (() => {
+          const q = searchQuery.trim().toLowerCase()
+          return filtered.filter(r =>
+            r.product_name.toLowerCase().includes(q) ||
+            (r.product_name_th ?? '').toLowerCase().includes(q) ||
+            (r.product_name_lo ?? '').toLowerCase().includes(q)
+          )
+        })()
+      : filtered
+    // Pinned items float to the top (stable sort)
+    if (pinnedIds.length === 0 || searchQuery.trim()) return base
+    return [...base].sort((a, b) => {
+      const aPin = pinnedIds.includes(a.id) ? 0 : 1
+      const bPin = pinnedIds.includes(b.id) ? 0 : 1
+      return aPin - bPin
+    })
+  }, [filtered, searchQuery, pinnedIds])
 
   const subtotal   = cart.reduce((s, i) => s + i.recipe.price_lak * i.qty, 0)
   const totalItems = cart.reduce((s, i) => s + i.qty, 0)
@@ -3454,14 +3467,25 @@ export default function POSClient() {
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                {displayRecipes.map(recipe => (
-                  <MenuCard key={recipe.id} recipe={recipe} lang={lang} onAdd={() => {
-                    if (recipe.requires_customization === false) {
-                      addToCartWithCustomization(recipe, '')
-                    } else {
-                      setPendingRecipe(recipe)
-                    }
-                  }} />
+                {displayRecipes.map((recipe, idx) => (
+                  <MenuCard
+                    key={recipe.id}
+                    recipe={recipe}
+                    lang={lang}
+                    pinned={pinnedIds.includes(recipe.id)}
+                    shortcutKey={idx < 9 ? idx + 1 : null}
+                    onPin={() => {
+                      const next = togglePinnedRecipe(recipe.id)
+                      setPinnedIds(next)
+                    }}
+                    onAdd={() => {
+                      if (recipe.requires_customization === false) {
+                        addToCartWithCustomization(recipe, '')
+                      } else {
+                        setPendingRecipe(recipe)
+                      }
+                    }}
+                  />
                 ))}
               </div>
             )}
@@ -3642,37 +3666,73 @@ export default function POSClient() {
 
 // ─── Menu Card ────────────────────────────────────────────────────────────────
 
-function MenuCard({ recipe, lang, onAdd }: { recipe: Recipe; lang: Lang; onAdd: () => void }) {
+function MenuCard({ recipe, lang, pinned, shortcutKey, onAdd, onPin }: {
+  recipe: Recipe; lang: Lang; pinned?: boolean; shortcutKey?: number | null
+  onAdd: () => void; onPin?: () => void
+}) {
   const [hovered, setHovered] = useState(false)
   const displayName = getMenuName(recipe, lang)
   const altName = lang !== 'en' ? recipe.product_name : (recipe.product_name_lo ?? null)
   return (
-    <button onClick={onAdd} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
-      backgroundColor: hovered ? '#1e1b13' : '#1a1a1a',
-      border: `1px solid ${hovered ? GOLD : 'rgba(255,255,255,0.08)'}`,
-      borderRadius: 8, padding: recipe.image_url ? '0' : '14px 12px', textAlign: 'left',
-      cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 0,
-      transition: 'all 0.15s', width: '100%', overflow: 'hidden',
-    }}>
-      {recipe.image_url && (
-        <div style={{ width: '100%', height: 80, overflow: 'hidden', flexShrink: 0 }}>
-          <img src={recipe.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+    <div style={{ position: 'relative' }}>
+      <button onClick={onAdd} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
+        backgroundColor: hovered ? '#1e1b13' : (pinned ? '#1b1800' : '#1a1a1a'),
+        border: `1px solid ${hovered ? GOLD : pinned ? `${GOLD}55` : 'rgba(255,255,255,0.08)'}`,
+        borderRadius: 8, padding: recipe.image_url ? '0' : '14px 12px', textAlign: 'left',
+        cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 0,
+        transition: 'all 0.15s', width: '100%', overflow: 'hidden',
+      }}>
+        {recipe.image_url && (
+          <div style={{ width: '100%', height: 80, overflow: 'hidden', flexShrink: 0 }}>
+            <img src={recipe.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          </div>
+        )}
+        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {recipe.category && (
+            <span style={{ fontSize: 10, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600 }}>{recipe.category}</span>
+          )}
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.3, fontFamily: 'var(--font-heading)' }}>{displayName}</span>
+          {altName && altName !== displayName && (
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.2 }}>{altName}</span>
+          )}
+          <span style={{ fontSize: 15, fontWeight: 800, color: GOLD, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+            {recipe.price_lak.toLocaleString('en-US')}
+            <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 3, opacity: 0.75 }}>LAK</span>
+          </span>
         </div>
+      </button>
+
+      {/* Keyboard shortcut badge */}
+      {shortcutKey && (
+        <span style={{
+          position: 'absolute', top: 5, left: 5,
+          backgroundColor: 'rgba(0,0,0,0.7)', color: 'rgba(255,255,255,0.5)',
+          fontSize: 9, fontWeight: 700, fontFamily: 'monospace',
+          padding: '1px 5px', borderRadius: 4, pointerEvents: 'none',
+          border: '1px solid rgba(255,255,255,0.12)',
+        }}>{shortcutKey}</span>
       )}
-      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-      {recipe.category && (
-        <span style={{ fontSize: 10, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600 }}>{recipe.category}</span>
+
+      {/* Pin toggle */}
+      {onPin && (
+        <button
+          onClick={e => { e.stopPropagation(); onPin() }}
+          title={pinned ? 'Unpin' : 'Pin to top'}
+          style={{
+            position: 'absolute', top: 4, right: 4,
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 13, lineHeight: 1, padding: 3,
+            opacity: pinned ? 1 : 0,
+            transition: 'opacity 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = pinned ? '1' : '0')}
+          className="menu-pin-btn"
+        >
+          {pinned ? '⭐' : '☆'}
+        </button>
       )}
-      <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.3, fontFamily: 'var(--font-heading)' }}>{displayName}</span>
-      {altName && altName !== displayName && (
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.2 }}>{altName}</span>
-      )}
-      <span style={{ fontSize: 15, fontWeight: 800, color: GOLD, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-        {recipe.price_lak.toLocaleString('en-US')}
-        <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 3, opacity: 0.75 }}>LAK</span>
-      </span>
-      </div>
-    </button>
+    </div>
   )
 }
 
