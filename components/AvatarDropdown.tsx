@@ -24,8 +24,9 @@ const SHOP_ITEMS: MenuItem[] = [
   { label: 'ทีมงาน', href: '/shop/team', icon: '👥' },
 ]
 
-export function AvatarDropdown() {
+export function AvatarDropdown({ solo = false }: { solo?: boolean }) {
   const { user, signOut } = useAuth()
+  const shopItems = solo ? SHOP_ITEMS.filter(i => i.href !== '/shop/team') : SHOP_ITEMS
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
@@ -168,7 +169,7 @@ export function AvatarDropdown() {
             <div style={{ padding: '4px 14px', fontSize: 9, color: `${GOLD}66`, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>
               ร้านค้า
             </div>
-            {SHOP_ITEMS.map(item => (
+            {shopItems.map(item => (
               <a
                 key={item.href}
                 href={item.href}

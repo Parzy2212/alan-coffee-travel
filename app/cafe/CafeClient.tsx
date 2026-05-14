@@ -19,6 +19,8 @@ const LazyCustomersTab   = lazy(() => import('@/components/cafe/CustomersTab').t
 import { WelcomeBanner }           from '@/components/cafe/WelcomeBanner'
 import { GettingStartedChecklist } from '@/components/cafe/GettingStartedChecklist'
 import { QuickActionsFAB }         from '@/components/cafe/QuickActionsFAB'
+import { TodayStatsBar }           from '@/components/TodayStatsBar'
+import { useSoloMode }             from '@/lib/solo-mode'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -3881,9 +3883,13 @@ const NAV_GROUPS: NavGroup[] = [
 // Flat list for lookup
 const NAV_ITEMS = NAV_GROUPS.flatMap(g => g.items)
 
+// IDs hidden from sidebar in solo mode
+const SOLO_HIDDEN: Tab[] = ['staff', 'schedule']
+
 export default function CafeClient() {
   const [tab,     setTab]     = useState<Tab>('dashboard')
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set<Tab>(['dashboard']))
+  const { solo, override }    = useSoloMode()
 
   function switchTab(t: Tab) {
     setTab(t)
@@ -3895,6 +3901,14 @@ export default function CafeClient() {
     return <div style={{ display: tab === id ? undefined : 'none' }}>{node}</div>
   }
 
+  // Filter nav groups: hide solo-only tabs when solo mode is on
+  const visibleGroups = NAV_GROUPS
+    .map(g => ({
+      ...g,
+      items: solo ? g.items.filter(item => !SOLO_HIDDEN.includes(item.id)) : g.items,
+    }))
+    .filter(g => g.items.length > 0)
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: BLACK, color: '#fff', fontFamily: 'var(--font-body, Inter, sans-serif)' }}>
       {/* ── Sidebar ── */}
@@ -3904,7 +3918,7 @@ export default function CafeClient() {
           <div style={{ fontSize: 11, color: GOLD, letterSpacing: '4px', textTransform: 'uppercase' }}>CAFE OS</div>
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 0, padding: '0 12px', overflowY: 'auto' }}>
-          {NAV_GROUPS.map((group, gi) => (
+          {visibleGroups.map((group, gi) => (
             <div key={gi}>
               {gi > 0 && <div style={{ height: 1, backgroundColor: `${GOLD}20`, margin: '6px 2px 4px' }} />}
               <div style={{ fontSize: 9, color: `${GOLD}66`, textTransform: 'uppercase', letterSpacing: '1.5px', padding: '6px 14px 2px', fontWeight: 600, userSelect: 'none' }}>
@@ -3927,19 +3941,43 @@ export default function CafeClient() {
           ))}
         </nav>
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '0 24px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Solo mode hint */}
+          {solo && (
+            <div style={{ padding: '8px 16px 0' }}>
+              <div style={{
+                padding: '8px 12px', borderRadius: 8,
+                backgroundColor: `${GOLD}0a`,
+                border: `1px solid ${GOLD}22`,
+              }}>
+                <div style={{ fontSize: 10, color: `${GOLD}88`, marginBottom: 4 }}>Solo mode</div>
+                <button
+                  onClick={override}
+                  style={{
+                    fontSize: 11, color: GOLD, background: 'none', border: 'none',
+                    cursor: 'pointer', padding: 0, fontFamily: 'inherit', textAlign: 'left',
+                  }}
+                >
+                  Enable team features →
+                </button>
+              </div>
+            </div>
+          )}
+          <div style={{ padding: '12px 24px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <a href="/pos"   style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ POS</a>
             <a href="/queue" style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ จอ TV</a>
+            <a href="/owner" style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ Mobile Dashboard</a>
             <a href="/"      style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ หน้าหลัก</a>
           </div>
           <div style={{ borderTop: '1px solid rgba(201,168,76,0.1)' }}>
-            <AvatarDropdown />
+            <AvatarDropdown solo={solo} />
           </div>
         </div>
       </div>
 
       {/* ── Content ── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '40px 40px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <TodayStatsBar />
+        <div style={{ padding: '40px 40px', flex: 1 }}>
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{NAV_ITEMS.find(n => n.id === tab)?.label}</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', marginTop: 6 }}>Alan Cafe OS — Admin</div>
@@ -3957,6 +3995,7 @@ export default function CafeClient() {
         {tabWrap('ai',          <AITab />)}
         {tabWrap('audit',       <AuditTab />)}
         {tabWrap('recipe-cost', <Suspense fallback={<LoadingSpinner />}><LazyRecipeCostTab /></Suspense>)}
+        </div>
       </div>
     </div>
   )
