@@ -1103,6 +1103,33 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     (method === 'transfer' && selectedBank !== null) ||
     (method === 'split' && splitTotal >= finalTotal)
 
+  // Keyboard shortcuts inside ChargePopup
+  useEffect(() => {
+    function h(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      // Enter → confirm if ready
+      if (e.key === 'Enter' && !isInput && !loading && cashOk) {
+        e.preventDefault()
+        confirm()
+        return
+      }
+      // Number keys on cash tab: 1=exact, 2-5=presets
+      if (!isInput && method === 'cash') {
+        if (e.key === '1') { e.preventDefault(); setReceived(String(finalTotal)); return }
+        if (e.key === '2') { e.preventDefault(); setReceived('20000'); return }
+        if (e.key === '3') { e.preventDefault(); setReceived('50000'); return }
+        if (e.key === '4') { e.preventDefault(); setReceived('100000'); return }
+        if (e.key === '5') { e.preventDefault(); setReceived('200000'); return }
+      }
+    }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cashOk, loading, method, finalTotal])
+
   // Load settings when QR or transfer tab is first opened
   useEffect(() => {
     if ((method !== 'transfer' && method !== 'qr') || banksLoaded) return
@@ -3098,10 +3125,43 @@ export default function POSClient() {
         searchInputRef.current?.focus()
         return
       }
+
+      // Solo-operator shortcuts (no modifier, no input focus, no popup open)
+      const noPopup = !showCharge && !showReceiptPreview && !showOrderSuccess
+        && !showHeldModal && !showHoldModal && !showSettings && !showCustomerSelector
+      if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey && noPopup) {
+        // Space → open payment
+        if (e.key === ' ' && cart.length > 0) {
+          e.preventDefault()
+          setShowCharge(true)
+          return
+        }
+        // @ → open customer selector
+        if (e.key === '@') {
+          e.preventDefault()
+          setShowCustomerSelector(true)
+          return
+        }
+        // 1-9 → add Nth visible recipe to cart
+        if (/^[1-9]$/.test(e.key)) {
+          e.preventDefault()
+          const idx = Number(e.key) - 1
+          const recipe = displayRecipes[idx]
+          if (recipe) {
+            if (recipe.requires_customization === false) {
+              addToCartWithCustomization(recipe, '')
+            } else {
+              setPendingRecipe(recipe)
+            }
+          }
+          return
+        }
+      }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showReceiptPreview, showOrderSuccess, showCustomerSelector])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showReceiptPreview, showOrderSuccess, showCustomerSelector, displayRecipes])
 
   const timeStr = now ? now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'
   const dateStr = now ? now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''
