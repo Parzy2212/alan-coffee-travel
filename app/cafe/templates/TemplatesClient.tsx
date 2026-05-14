@@ -19,9 +19,15 @@ export function TemplatesClient() {
     setResult(null)
     try {
       const data = await applyTemplate(template)
+
+      // Guard: 0 created + 0 skipped means something went wrong silently
+      if (data.recipesCreated === 0 && data.recipesSkipped === 0) {
+        throw new Error('ไม่มีเมนูถูกสร้าง — อาจเกิดปัญหากับสิทธิ์หรือการเชื่อมต่อ ลองล็อกออกแล้วล็อกอินใหม่')
+      }
+
       setResult({ template: template.name_th, data })
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
+      setError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาดที่ไม่คาดคิด')
     }
     setApplying(null)
     setConfirm(null)
@@ -57,23 +63,44 @@ export function TemplatesClient() {
             display: 'flex', alignItems: 'flex-start', gap: 14,
           }}>
             <span style={{ fontSize: 20, flexShrink: 0 }}>✅</span>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: GREEN, marginBottom: 4 }}>
                 ใช้ Template "{result.template}" สำเร็จ
               </div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.8 }}>
-                เมนู: สร้าง {result.data.recipesCreated} รายการ (ข้าม {result.data.recipesSkipped} ที่มีอยู่แล้ว)
-                <br />วัตถุดิบ: สร้าง {result.data.ingredientsCreated} รายการ (ข้าม {result.data.ingredientsSkipped})
+                เมนู: สร้าง {result.data.recipesCreated} รายการ
+                {result.data.recipesSkipped > 0 && ` (ข้าม ${result.data.recipesSkipped} ที่มีอยู่แล้ว)`}
+                <br />วัตถุดิบ: สร้าง {result.data.ingredientsCreated} รายการ
+                {result.data.ingredientsSkipped > 0 && ` (ข้าม ${result.data.ingredientsSkipped})`}
                 <br />เชื่อมสูตร: {result.data.linksCreated} รายการ
               </div>
             </div>
-            <button onClick={() => setResult(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 18, cursor: 'pointer' }}>×</button>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <a href="/cafe" style={{
+                padding: '6px 14px', borderRadius: 8, border: `1px solid ${GREEN}55`,
+                backgroundColor: `${GREEN}15`, color: GREEN,
+                fontSize: 12, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',
+              }}>
+                ดูเมนู →
+              </a>
+              <button onClick={() => setResult(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 18, cursor: 'pointer' }}>×</button>
+            </div>
           </div>
         )}
 
+        {/* Error banner */}
         {error && (
-          <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: `${RED}12`, border: `1px solid ${RED}33`, color: RED, fontSize: 13, marginBottom: 24 }}>
-            {error}
+          <div style={{
+            padding: '14px 18px', borderRadius: 12, backgroundColor: `${RED}10`,
+            border: `1px solid ${RED}33`, marginBottom: 24,
+            display: 'flex', alignItems: 'flex-start', gap: 12,
+          }}>
+            <span style={{ color: RED, fontSize: 16, flexShrink: 0 }}>✗</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: RED, marginBottom: 2 }}>เกิดข้อผิดพลาด</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>{error}</div>
+            </div>
+            <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 18, cursor: 'pointer', flexShrink: 0 }}>×</button>
           </div>
         )}
 
@@ -130,12 +157,13 @@ export function TemplatesClient() {
               <div style={{ padding: 20 }}>
                 <button
                   onClick={() => setConfirm(template)}
-                  disabled={applying === template.id}
+                  disabled={applying !== null}
                   style={{
                     width: '100%', height: 44, borderRadius: 10, border: `1px solid ${GOLD}55`,
-                    backgroundColor: `${GOLD}12`, color: GOLD,
-                    fontWeight: 700, fontSize: 14, cursor: 'pointer',
-                    opacity: applying ? 0.6 : 1, transition: 'all 0.2s',
+                    backgroundColor: applying === template.id ? `${GOLD}20` : `${GOLD}12`,
+                    color: GOLD, fontWeight: 700, fontSize: 14, cursor: applying ? 'wait' : 'pointer',
+                    opacity: applying !== null && applying !== template.id ? 0.4 : 1,
+                    transition: 'all 0.2s',
                   }}
                 >
                   {applying === template.id ? 'กำลังสร้าง...' : 'ใช้ Template นี้ →'}

@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { authClient } from './supabase-auth'
 
 export type TemplateItem = {
   product_name: string
@@ -216,69 +216,97 @@ export type ApplyResult = {
 export async function applyTemplate(template: CafeTemplate): Promise<ApplyResult> {
   const result: ApplyResult = { recipesCreated: 0, recipesSkipped: 0, ingredientsCreated: 0, ingredientsSkipped: 0, linksCreated: 0 }
 
-  // 1. Fetch existing recipes/inventory names to avoid duplicates
-  const [{ data: existingRecipes }, { data: existingInventory }] = await Promise.all([
-    supabase.from('recipes').select('product_name'),
-    supabase.from('inventory').select('name'),
-  ])
-  const recipeNames  = new Set((existingRecipes  ?? []).map((r: {product_name: string}) => r.product_name.toLowerCase()))
-  const inventoryNames = new Set((existingInventory ?? []).map((i: {name: string}) => i.name.toLowerCase()))
+  // 1. Resolve shop_id for the current user — required by RLS on recipes & inventory
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) throw new Error('ไม่พบผู้ใช้ — กรุณาล็อกอินใหม่')
 
-  // 2. Insert new recipes
+  const { data: su, error: suErr } = await authClient
+    .from('shop_users')
+    .select('shop_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (suErr) throw new Error(`ไม่สามารถดึง shop: ${suErr.message}`)
+  if (!su?.shop_id) throw new Error('ไม่พบร้านค้าที่เชื่อมกับบัญชีนี้')
+
+  const shopId = su.shop_id
+
+  // 2. Fetch existing names to skip duplicates (scoped to this shop)
+  const [{ data: existingRecipes, error: erErr }, { data: existingInventory, error: eiErr }] = await Promise.all([
+    authClient.from('recipes').select('product_name').eq('shop_id', shopId),
+    authClient.from('inventory').select('name').eq('shop_id', shopId),
+  ])
+
+  if (erErr) throw new Error(`ดึงรายการเมนูไม่ได้: ${erErr.message}`)
+  if (eiErr) throw new Error(`ดึงรายการวัตถุดิบไม่ได้: ${eiErr.message}`)
+
+  const recipeNames    = new Set((existingRecipes  ?? []).map((r: { product_name: string }) => r.product_name.toLowerCase()))
+  const inventoryNames = new Set((existingInventory ?? []).map((i: { name: string }) => i.name.toLowerCase()))
+
+  // 3. Insert new recipes
   const recipeInserts = template.items.filter(item => !recipeNames.has(item.product_name.toLowerCase()))
   result.recipesSkipped = template.items.length - recipeInserts.length
 
   const insertedRecipes: { id: string; product_name: string }[] = []
   if (recipeInserts.length > 0) {
-    const { data: created } = await supabase.from('recipes').insert(
+    const { data: created, error: rErr } = await authClient.from('recipes').insert(
       recipeInserts.map(item => ({
-        product_name: item.product_name,
+        product_name:    item.product_name,
         product_name_th: item.product_name_th,
         product_name_lo: item.product_name_lo,
-        price_lak: item.price_lak,
-        category_id: item.category_id,
-        is_active: true,
+        price_lak:       item.price_lak,
+        category_id:     item.category_id,
+        is_active:       true,
+        shop_id:         shopId,
       }))
     ).select('id, product_name')
+
+    if (rErr) throw new Error(`สร้างเมนูไม่ได้: ${rErr.message}`)
     result.recipesCreated = (created ?? []).length
     insertedRecipes.push(...(created ?? []) as { id: string; product_name: string }[])
   }
 
-  // 3. Insert new inventory items
+  // 4. Insert new inventory items
   const inventoryInserts = template.ingredients.filter(ing => !inventoryNames.has(ing.name.toLowerCase()))
   result.ingredientsSkipped = template.ingredients.length - inventoryInserts.length
 
   const insertedInventory: { id: string; name: string }[] = []
   if (inventoryInserts.length > 0) {
-    const { data: created } = await supabase.from('inventory').insert(
+    const { data: created, error: iErr } = await authClient.from('inventory').insert(
       inventoryInserts.map(ing => ({
-        name: ing.name,
-        name_th: ing.name_th,
-        name_lo: ing.name_lo,
-        unit: ing.unit,
-        current_qty: ing.current_qty,
+        name:          ing.name,
+        name_th:       ing.name_th,
+        name_lo:       ing.name_lo,
+        unit:          ing.unit,
+        current_qty:   ing.current_qty,
         cost_per_unit: ing.cost_per_unit,
-        is_active: true,
+        is_active:     true,
+        shop_id:       shopId,
       }))
     ).select('id, name')
+
+    if (iErr) throw new Error(`สร้างวัตถุดิบไม่ได้: ${iErr.message}`)
     result.ingredientsCreated = (created ?? []).length
     insertedInventory.push(...(created ?? []) as { id: string; name: string }[])
   }
 
-  // 4. Build recipe-ingredient links for newly created recipes
-  if (insertedRecipes.length > 0 && (insertedInventory.length > 0 || existingInventory)) {
-    // Merge all known inventory
-    const { data: allInventory } = await supabase.from('inventory').select('id, name')
-    const inventoryMap = new Map((allInventory ?? []).map((i: {id: string; name: string}) => [i.name.toLowerCase(), i.id]))
+  // 5. Build recipe-ingredient links for newly created recipes
+  if (insertedRecipes.length > 0) {
+    const [{ data: allInventory }, { data: allRecipes }] = await Promise.all([
+      authClient.from('inventory').select('id, name').eq('shop_id', shopId),
+      authClient.from('recipes').select('id, product_name').eq('shop_id', shopId),
+    ])
 
-    const { data: allRecipes } = await supabase.from('recipes').select('id, product_name')
-    const recipeMap = new Map((allRecipes ?? []).map((r: {id: string; product_name: string}) => [r.product_name.toLowerCase(), r.id]))
+    const inventoryMap = new Map((allInventory ?? []).map((i: { id: string; name: string }) => [i.name.toLowerCase(), i.id]))
+    const recipeMap    = new Map((allRecipes   ?? []).map((r: { id: string; product_name: string }) => [r.product_name.toLowerCase(), r.id]))
 
-    const links = template.recipeLinks
+    const newRecipeIds = new Set(insertedRecipes.map(r => r.id))
+
+    const newLinks = template.recipeLinks
       .filter(link => {
-        const recipeId    = recipeMap.get(link.recipe_name.toLowerCase())
-        const ingredientId = inventoryMap.get(link.ingredient_name.toLowerCase())
-        return recipeId && ingredientId
+        const rid = recipeMap.get(link.recipe_name.toLowerCase())
+        const iid = inventoryMap.get(link.ingredient_name.toLowerCase())
+        return rid && iid && newRecipeIds.has(rid)
       })
       .map(link => ({
         recipe_id:    recipeMap.get(link.recipe_name.toLowerCase())!,
@@ -287,11 +315,9 @@ export async function applyTemplate(template: CafeTemplate): Promise<ApplyResult
         unit:         link.unit,
       }))
 
-    // Only insert links for newly created recipes (avoid duplicating existing links)
-    const newRecipeIds = new Set(insertedRecipes.map(r => r.id))
-    const newLinks = links.filter(l => newRecipeIds.has(l.recipe_id))
     if (newLinks.length > 0) {
-      const { data } = await supabase.from('recipe_ingredients').insert(newLinks).select('id')
+      const { data, error: lErr } = await authClient.from('recipe_ingredients').insert(newLinks).select('id')
+      if (lErr) throw new Error(`เชื่อมสูตรไม่ได้: ${lErr.message}`)
       result.linksCreated = (data ?? []).length
     }
   }
