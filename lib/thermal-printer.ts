@@ -58,9 +58,19 @@ export function getReceiptDesign(): ReceiptDesign {
   }
 }
 
+// Receipt label translations — thermal print is always ASCII so we use English
+// for the actual ESC/POS binary; `lang` only affects the screen preview labels.
+const RECEIPT_LABELS = {
+  en: { subtotal: 'SUBTOTAL', total: 'TOTAL', payment: 'PAYMENT:', received: 'RECEIVED:', change: 'CHANGE:', discount: 'DISCOUNT', queue: '** QUEUE **', birthday: '** HAPPY BIRTHDAY! **', thanks: 'Thank you & come back', staff: 'STAFF:', points: 'Points earned:', pointsBal: 'Points balance:' },
+  th: { subtotal: 'ยอดรวม', total: 'ยอดสุทธิ', payment: 'ชำระเงิน:', received: 'รับมา:', change: 'เงินทอน:', discount: 'ส่วนลด', queue: '** คิว **', birthday: '** สุขสันต์วันเกิด! **', thanks: 'ขอบคุณ มาอีกนะคะ', staff: 'พนักงาน:', points: 'ได้รับแต้ม:', pointsBal: 'ยอดแต้ม:' },
+  lo: { subtotal: 'ລວມ', total: 'ລວມທັງໝົດ', payment: 'ຊຳລະ:', received: 'ຮັບມາ:', change: 'ເງິນທອນ:', discount: 'ສ່ວນຫຼຸດ', queue: '** ຄິວ **', birthday: '** ສຸກສັນວັນເກີດ! **', thanks: 'ຂອບໃຈ ມາໃໝ່ດ້ວຍ', staff: 'ພະນັກງານ:', points: 'ໄດ້ຮັບແຕ້ມ:', pointsBal: 'ຍອດແຕ້ມ:' },
+} as const
+type ReceiptLang = keyof typeof RECEIPT_LABELS
+
 /** Build plain-text receipt string — used for print preview. */
-export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign): string {
+export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign, lang: ReceiptLang = 'en'): string {
   const d       = design ?? getReceiptDesign()
+  const lbl     = RECEIPT_LABELS[lang]
   const mm      = getPaperWidth()
   const W       = charWidth(mm)
   const PRICE_W = 10
@@ -89,11 +99,11 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
   }
   if (data.customer)    L(toAscii(data.customer).substring(0, W))
   if (d.showStaff && (d.staffName || data.staffName)) {
-    L(`STAFF: ${toAscii(d.staffName || data.staffName || '').substring(0, W - 7)}`)
+    L(`${lbl.staff} ${toAscii(d.staffName || data.staffName || '').substring(0, W - lbl.staff.length - 1)}`)
   }
 
   if (d.showQueueLarge) {
-    L(sep1, ctr('** QUEUE **'), ctr(`#${String(data.queue).padStart(3, '0')}`), sep1)
+    L(sep1, ctr(lbl.queue), ctr(`#${String(data.queue).padStart(3, '0')}`), sep1)
   }
 
   L(sep2)
@@ -108,25 +118,25 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign)
   }
 
   L(sep2)
-  L(tc('SUBTOTAL', fmtLak(data.subtotal)))
+  L(tc(lbl.subtotal, fmtLak(data.subtotal)))
   if (data.discountAmt > 0) {
-    const lbl = data.discountReason ? `DISCOUNT (${toAscii(data.discountReason)})` : 'DISCOUNT'
-    L(tc(lbl, `-${fmtLak(data.discountAmt)}`))
+    const lblDisc = data.discountReason ? `${lbl.discount} (${toAscii(data.discountReason)})` : lbl.discount
+    L(tc(lblDisc, `-${fmtLak(data.discountAmt)}`))
   }
-  L(tc('TOTAL', fmtLak(data.finalTotal)))
+  L(tc(lbl.total, fmtLak(data.finalTotal)))
   L(sep1)
-  L(tc('PAYMENT:', pay))
+  L(tc(lbl.payment, pay))
   if (data.method === 'cash' && data.received > 0) {
-    L(tc('RECEIVED:', fmtLak(data.received)), tc('CHANGE:', fmtLak(data.change)))
+    L(tc(lbl.received, fmtLak(data.received)), tc(lbl.change, fmtLak(data.change)))
   }
   L(sep1)
-  if (data.isBirthday) L(ctr('** HAPPY BIRTHDAY! **'))
+  if (data.isBirthday) L(ctr(lbl.birthday))
   if (data.pointsEarned !== undefined && data.pointsEarned > 0) {
-    L(tc('Points earned:', `+${data.pointsEarned}`))
-    if (data.pointsBalance !== undefined) L(tc('Points balance:', String(data.pointsBalance)))
+    L(tc(lbl.points, `+${data.pointsEarned}`))
+    if (data.pointsBalance !== undefined) L(tc(lbl.pointsBal, String(data.pointsBalance)))
     L(sep2)
   }
-  L(ctr(footerSafe(data.footerText || '')), ctr('Thank you & come back'))
+  L(ctr(footerSafe(data.footerText || '')), ctr(lbl.thanks))
   if (data.address) L(ctr(toAscii(data.address).substring(0, W)))
   if (data.phone)   L(ctr(data.phone.substring(0, W)))
   if (d.extraLine1) L(ctr(toAscii(d.extraLine1).substring(0, W)))

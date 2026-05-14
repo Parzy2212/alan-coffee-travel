@@ -18,6 +18,10 @@ import { enqueueOrder, replayQueue } from '@/lib/offline-queue'
 import { useNetworkStatus } from '@/lib/network-status'
 import { useTestMode } from '@/lib/test-mode'
 import { useActiveEmployee } from '@/lib/use-active-employee'
+import { useLang, type Lang } from '@/contexts/LanguageContext'
+import { LanguageSwitcher } from '@/components/pos/LanguageSwitcher'
+import { getMenuName } from '@/lib/menu-i18n'
+import { formatSecondary } from '@/lib/currency'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
@@ -38,6 +42,7 @@ type Category = {
 type Recipe = {
   id: string
   product_name: string
+  product_name_th: string | null
   product_name_lo: string | null
   category: string | null
   category_id: string | null
@@ -88,6 +93,7 @@ type SuccessData = {
   cartSnapshot: CartItem[]
   subtotal: number
   finalTotal: number
+  receiptLang: Lang
 }
 
 type QueueEntry = {
@@ -1048,7 +1054,7 @@ function DigitalReceiptPopup({
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, selectedCustomer, isTestMode, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, selectedCustomer, isTestMode, defaultLang, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
   discount: string
@@ -1056,11 +1062,13 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   activeEmployeeId?: string | null
   selectedCustomer?: Customer | null
   isTestMode?: boolean
-  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string) => void
+  defaultLang?: Lang
+  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string, receiptLang: Lang) => void
   onClose: () => void
 }) {
   const isSmall = useIsSmall()
   const [method,         setMethod]         = useState<PaymentMethod>('cash')
+  const [receiptLang,    setReceiptLang]    = useState<Lang>(defaultLang ?? 'en')
   const [received,       setReceived]       = useState('')
   const [selectedBank,   setSelectedBank]   = useState<string | null>(null)
   const [banks,          setBanks]          = useState<PaymentBank[]>([])
@@ -1129,7 +1137,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
       })
       window.dispatchEvent(new Event('alan:queue-changed'))
       const finalReceipt = String(offlineQueue).padStart(3, '0')
-      onSuccess(offlineQueue, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason)
+      onSuccess(offlineQueue, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason, receiptLang)
       setLoading(false)
       return
     }
@@ -1176,7 +1184,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
     // Use queue number as receipt ID so we can show success immediately
     const finalReceipt = String(result.queue_number).padStart(3, '0')
-    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason)
+    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason, receiptLang)
     setLoading(false)
   }
 
@@ -1479,6 +1487,23 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Receipt language selector */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)' }}>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', letterSpacing: '1px', textTransform: 'uppercase' }}>ภาษาใบเสร็จ / Receipt</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['en', 'th', 'lo'] as Lang[]).map(l => (
+                <button key={l} onClick={() => setReceiptLang(l)} style={{
+                  padding: '4px 12px', borderRadius: 6, border: 'none',
+                  backgroundColor: receiptLang === l ? `${GOLD}22` : 'transparent',
+                  color: receiptLang === l ? GOLD : 'rgba(255,255,255,0.3)',
+                  fontSize: 11, fontWeight: receiptLang === l ? 800 : 500, cursor: 'pointer',
+                }}>
+                  {l === 'en' ? 'EN' : l === 'th' ? 'ไทย' : 'ລາວ'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {errMsg && (
@@ -2667,6 +2692,7 @@ export default function POSClient() {
   const printFnRef = useRef<(() => Promise<void>) | null>(null)
   const online = useNetworkStatus()
   const { enabled: testMode, toggle: toggleTestMode, disable: disableTestMode } = useTestMode()
+  const { lang } = useLang()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Load shopId via auth client (needed for PIN verification)
@@ -2744,7 +2770,7 @@ export default function POSClient() {
         async () => {
           const { data } = await supabase
             .from('recipes')
-            .select('id, product_name, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
+            .select('id, product_name, product_name_th, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
             .eq('is_active', true)
             .order('product_name')
           return (data as Recipe[]) ?? []
@@ -2756,13 +2782,14 @@ export default function POSClient() {
     const channel = supabase.channel('recipes-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => {
         supabase.from('recipes')
-          .select('id, product_name, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
+          .select('id, product_name, product_name_th, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
           .eq('is_active', true)
           .order('product_name')
           .then(({ data }) => {
             if (data) setRecipes(data.map(r => ({
               id: r.id as string,
               product_name: r.product_name as string,
+              product_name_th: r.product_name_th as string | null,
               product_name_lo: r.product_name_lo as string | null,
               category: null,
               category_id: r.category_id as string | null,
@@ -2804,6 +2831,7 @@ export default function POSClient() {
     const q = searchQuery.trim().toLowerCase()
     return filtered.filter(r =>
       r.product_name.toLowerCase().includes(q) ||
+      (r.product_name_th ?? '').toLowerCase().includes(q) ||
       (r.product_name_lo ?? '').toLowerCase().includes(q)
     )
   }, [filtered, searchQuery])
@@ -2867,6 +2895,7 @@ export default function POSClient() {
   function handleChargeSuccess(
     queueNum: number, receipt: string, change: number, method: PaymentMethod,
     customer: string, table: string, discAmt: number, received: number, discReason: string,
+    receiptLang: Lang = 'en',
   ) {
     const cartSnapshot = [...cart]
     const data: SuccessData = {
@@ -2878,6 +2907,7 @@ export default function POSClient() {
       cartSnapshot,
       subtotal,
       finalTotal,
+      receiptLang,
     }
     setSuccessData(data)
     setCart([])
@@ -2923,7 +2953,7 @@ export default function POSClient() {
       received, change, vatPct: posSettings.vat_percent,
       footerText: testMode ? '*** THIS IS A TEST — NOT A REAL ORDER ***' : footerText,
       phone, address,
-    }, getReceiptDesign())
+    }, getReceiptDesign(), receiptLang)
     setPreviewReceiptText(receiptText)
 
     const skipPreview = localStorage.getItem('pos_skip_receipt_preview') === 'true'
@@ -3101,6 +3131,7 @@ export default function POSClient() {
           activeEmployeeId={activeEmployee?.id ?? null}
           selectedCustomer={selectedCustomer}
           isTestMode={testMode}
+          defaultLang={lang}
           onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
       )}
 
@@ -3224,6 +3255,7 @@ export default function POSClient() {
               color: testMode ? '#f59e0b' : 'rgba(255,255,255,0.35)',
             }}
           >🧪 TEST</button>
+          <LanguageSwitcher />
           <button onClick={() => setShowSettings(true)} style={{
             width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
             backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)',
@@ -3319,7 +3351,7 @@ export default function POSClient() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                 {displayRecipes.map(recipe => (
-                  <MenuCard key={recipe.id} recipe={recipe} onAdd={() => {
+                  <MenuCard key={recipe.id} recipe={recipe} lang={lang} onAdd={() => {
                     if (recipe.requires_customization === false) {
                       addToCartWithCustomization(recipe, '')
                     } else {
@@ -3445,6 +3477,14 @@ export default function POSClient() {
                 <span style={{ fontSize: 22, fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</span>
               </div>
             )}
+            {mounted && cart.length > 0 && (() => {
+              const sec = formatSecondary(finalTotal)
+              return sec ? (
+                <div style={{ textAlign: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.5px' }}>{sec}</span>
+                </div>
+              ) : null
+            })()}
             <button
               onClick={() => mounted && cart.length > 0 && setShowHoldModal(true)}
               disabled={!mounted || cart.length === 0}
@@ -3498,8 +3538,10 @@ export default function POSClient() {
 
 // ─── Menu Card ────────────────────────────────────────────────────────────────
 
-function MenuCard({ recipe, onAdd }: { recipe: Recipe; onAdd: () => void }) {
+function MenuCard({ recipe, lang, onAdd }: { recipe: Recipe; lang: Lang; onAdd: () => void }) {
   const [hovered, setHovered] = useState(false)
+  const displayName = getMenuName(recipe, lang)
+  const altName = lang !== 'en' ? recipe.product_name : (recipe.product_name_lo ?? null)
   return (
     <button onClick={onAdd} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
       backgroundColor: hovered ? '#1e1b13' : '#1a1a1a',
@@ -3517,9 +3559,9 @@ function MenuCard({ recipe, onAdd }: { recipe: Recipe; onAdd: () => void }) {
       {recipe.category && (
         <span style={{ fontSize: 10, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600 }}>{recipe.category}</span>
       )}
-      <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.3, fontFamily: 'var(--font-heading)' }}>{recipe.product_name}</span>
-      {recipe.product_name_lo && (
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.2 }}>{recipe.product_name_lo}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.3, fontFamily: 'var(--font-heading)' }}>{displayName}</span>
+      {altName && altName !== displayName && (
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.2 }}>{altName}</span>
       )}
       <span style={{ fontSize: 15, fontWeight: 800, color: GOLD, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
         {recipe.price_lak.toLocaleString('en-US')}
