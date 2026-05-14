@@ -185,12 +185,13 @@ export function GettingStartedChecklist() {
 
 function buildTasks(c: Counts) {
   return [
-    { label: 'ตั้งค่าร้านค้า',        done: true,                    href: '/shop/settings',          star: false },
-    { label: 'เพิ่มเมนูเริ่มต้น',      done: c.recipeCount >= 1,      href: '/cafe',                   star: false },
-    { label: 'ตั้งค่าเครื่องพิมพ์',   done: c.printerSet,             href: '/shop/settings/printer',  star: false },
-    { label: 'เพิ่มเมนูครบ 10 รายการ', done: c.recipeCount >= 10,     href: '/cafe',                   star: false },
-    { label: 'เพิ่มสต็อกวัตถุดิบ',    done: c.inventoryCount >= 1,   href: '/cafe',                   star: false },
-    { label: 'เพิ่มพนักงาน POS',       done: c.employeeCount >= 1,    href: '/shop/team/employees',    star: false },
-    { label: 'ทำออเดอร์แรก',           done: c.orderCount >= 1,       href: '/pos',                    star: true  },
+    { label: 'ตั้งค่าร้านค้า',                 done: true,                  href: '/shop/settings',          star: false },
+    { label: 'เพิ่มเมนูเริ่มต้น (หรือใช้ Template)', done: c.recipeCount >= 1, href: '/cafe/templates',        star: false },
+    { label: 'ตั้งค่าเครื่องพิมพ์',            done: c.printerSet,           href: '/shop/settings/printer',  star: false },
+    { label: 'เพิ่มเมนูครบ 10 รายการ',         done: c.recipeCount >= 10,   href: '/cafe/import',            star: false },
+    { label: 'เพิ่มสต็อกวัตถุดิบ',             done: c.inventoryCount >= 1, href: '/cafe',                   star: false },
+    { label: 'เพิ่มพนักงาน POS',               done: c.employeeCount >= 1,  href: '/shop/team/employees',    star: false },
+    { label: 'ตรวจสอบความพร้อมก่อนเปิดร้าน',   done: c.orderCount >= 1,     href: '/cafe/health-check',      star: true  },
+    { label: 'ทดสอบออเดอร์แรก (Test Mode)',    done: c.orderCount >= 1,     href: '/pos',                    star: false },
   ]
 }

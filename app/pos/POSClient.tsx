@@ -11,10 +11,12 @@ import { KeyboardShortcuts } from '@/components/pos/KeyboardShortcuts'
 import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
+import { TestModeBanner } from '@/components/pos/TestModeBanner'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { enqueueOrder, replayQueue } from '@/lib/offline-queue'
 import { useNetworkStatus } from '@/lib/network-status'
+import { useTestMode } from '@/lib/test-mode'
 import { useActiveEmployee } from '@/lib/use-active-employee'
 import {
   connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
@@ -1046,13 +1048,14 @@ function DigitalReceiptPopup({
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, selectedCustomer, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, selectedCustomer, isTestMode, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
   discount: string
   discountReason: string
   activeEmployeeId?: string | null
   selectedCustomer?: Customer | null
+  isTestMode?: boolean
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string) => void
   onClose: () => void
 }) {
@@ -1163,6 +1166,11 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
     if (activeEmployeeId) {
       supabase.from('orders').update({ employee_id: activeEmployeeId }).eq('id', result.order_id)
+        .then(null, () => { /* background — non-critical */ })
+    }
+
+    if (isTestMode) {
+      supabase.from('orders').update({ is_test: true }).eq('id', result.order_id)
         .then(null, () => { /* background — non-critical */ })
     }
 
@@ -2658,6 +2666,7 @@ export default function POSClient() {
   const [showCustomerSelector, setShowCustomerSelector] = useState(false)
   const printFnRef = useRef<(() => Promise<void>) | null>(null)
   const online = useNetworkStatus()
+  const { enabled: testMode, toggle: toggleTestMode, disable: disableTestMode } = useTestMode()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Load shopId via auth client (needed for PIN verification)
@@ -2907,11 +2916,13 @@ export default function POSClient() {
     const phone = localStorage.getItem('receipt_phone') || ''
     const address = localStorage.getItem('receipt_address') || ''
     const receiptText = buildReceiptText({
-      shopName, queue: queueNum, receipt, table, customer,
+      shopName: testMode ? `*** TEST ORDER ***\n${shopName}` : shopName,
+      queue: queueNum, receipt, table, customer,
       cartSnapshot, subtotal, discountAmt: discAmt,
       discountReason: discReason, finalTotal, method,
       received, change, vatPct: posSettings.vat_percent,
-      footerText, phone, address,
+      footerText: testMode ? '*** THIS IS A TEST — NOT A REAL ORDER ***' : footerText,
+      phone, address,
     }, getReceiptDesign())
     setPreviewReceiptText(receiptText)
 
@@ -3089,6 +3100,7 @@ export default function POSClient() {
           discount={String(discountAmt)} discountReason={discountLabel}
           activeEmployeeId={activeEmployee?.id ?? null}
           selectedCustomer={selectedCustomer}
+          isTestMode={testMode}
           onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
       )}
 
@@ -3202,6 +3214,16 @@ export default function POSClient() {
             padding: '0 14px', height: 36, borderRadius: 8, border: `1px solid ${GOLD}44`,
             backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer',
           }}>ปิดกะ</button>
+          <button
+            onClick={toggleTestMode}
+            title={testMode ? 'ปิดโหมดทดสอบ' : 'เปิดโหมดทดสอบ'}
+            style={{
+              padding: '0 12px', height: 36, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              border: testMode ? '1px solid rgba(245,158,11,0.5)' : '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: testMode ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.04)',
+              color: testMode ? '#f59e0b' : 'rgba(255,255,255,0.35)',
+            }}
+          >🧪 TEST</button>
           <button onClick={() => setShowSettings(true)} style={{
             width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
             backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)',
@@ -3209,6 +3231,9 @@ export default function POSClient() {
           }}>⚙️</button>
         </div>
       </header>
+
+      {/* ── TEST MODE BANNER */}
+      {testMode && <TestModeBanner onDisable={disableTestMode} />}
 
       {/* ── MAIN SPLIT 60/40 */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

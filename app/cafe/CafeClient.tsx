@@ -724,6 +724,28 @@ function DashboardTab() {
       <WelcomeBanner />
       <GettingStartedChecklist />
 
+      {/* ── Pre-Launch Toolkit ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        {[
+          { href: '/cafe/templates',    icon: '⚡', title: 'Template เริ่มต้น',  sub: 'สร้างเมนูและสต็อกใน 1 คลิก' },
+          { href: '/cafe/import',       icon: '📋', title: 'Bulk Import',         sub: 'เพิ่มข้อมูลหลายรายการพร้อมกัน' },
+          { href: '/cafe/health-check', icon: '🏥', title: 'ตรวจสอบความพร้อม',   sub: 'เช็คก่อนเปิดร้านจริง' },
+        ].map(({ href, icon, title, sub }) => (
+          <a key={href} href={href} style={{
+            display: 'block', padding: '14px 16px', borderRadius: 12,
+            backgroundColor: CARD, border: `1px solid ${BORDER}`,
+            textDecoration: 'none', transition: 'border-color 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = GOLD_DIM }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = BORDER }}
+          >
+            <div style={{ fontSize: 22, marginBottom: 6 }}>{icon}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 2 }}>{title}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{sub}</div>
+          </a>
+        ))}
+      </div>
+
       {/* ── Period selector ── */}
       <div style={{ display: 'flex', gap: 8 }}>
         {(['today', 'week', 'month'] as const).map(p => (
