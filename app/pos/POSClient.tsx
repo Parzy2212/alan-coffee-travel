@@ -12,6 +12,7 @@ import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner } from '@/components/pos/TestModeBanner'
+import { HttpBanner } from '@/components/pos/HttpBanner'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { enqueueOrder, replayQueue } from '@/lib/offline-queue'
@@ -95,6 +96,8 @@ type SuccessData = {
   finalTotal: number
   receiptLang: Lang
 }
+
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 
 type QueueEntry = {
   order_id: string
@@ -2693,6 +2696,13 @@ export default function POSClient() {
   const online = useNetworkStatus()
   const { enabled: testMode, toggle: toggleTestMode, disable: disableTestMode } = useTestMode()
   const { lang } = useLang()
+  const [pwaPrompt, setPwaPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+
+  useEffect(() => {
+    function onPrompt(e: Event) { e.preventDefault(); setPwaPrompt(e as BeforeInstallPromptEvent) }
+    window.addEventListener('beforeinstallprompt', onPrompt)
+    return () => window.removeEventListener('beforeinstallprompt', onPrompt)
+  }, [])
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Load shopId via auth client (needed for PIN verification)
@@ -3256,6 +3266,21 @@ export default function POSClient() {
             }}
           >🧪 TEST</button>
           <LanguageSwitcher />
+          {pwaPrompt && (
+            <button
+              onClick={async () => {
+                await pwaPrompt.prompt()
+                const { outcome } = await pwaPrompt.userChoice
+                if (outcome === 'accepted') setPwaPrompt(null)
+              }}
+              title="Install as app — pin to taskbar and start faster"
+              style={{
+                padding: '0 12px', height: 36, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                border: `1px solid ${GOLD}44`,
+                backgroundColor: `${GOLD}10`, color: GOLD,
+              }}
+            >📌 Install App</button>
+          )}
           <button onClick={() => setShowSettings(true)} style={{
             width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
             backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)',
@@ -3266,6 +3291,9 @@ export default function POSClient() {
 
       {/* ── TEST MODE BANNER */}
       {testMode && <TestModeBanner onDisable={disableTestMode} />}
+
+      {/* ── HTTPS WARNING BANNER (print server blocked by mixed-content) */}
+      <HttpBanner />
 
       {/* ── MAIN SPLIT 60/40 */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

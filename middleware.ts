@@ -13,6 +13,20 @@ async function computeToken(password: string): Promise<string> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // /pos on HTTPS over a local network address → redirect to HTTP so the
+  // print server (http://127.0.0.1:12345) is not blocked by mixed-content rules.
+  // Vercel production (VERCEL=1) is excluded — the client-side HttpBanner handles that.
+  if (pathname.startsWith('/pos') && !process.env.VERCEL) {
+    const proto = request.headers.get('x-forwarded-proto') ?? request.nextUrl.protocol.replace(':', '')
+    const host  = request.headers.get('host') ?? ''
+    const isLocal = /^(localhost(:[0-9]+)?|127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(host)
+    if (proto === 'https' && isLocal) {
+      const url = request.nextUrl.clone()
+      url.protocol = 'http:'
+      return NextResponse.redirect(url, { status: 301 })
+    }
+  }
+
   // Only protect /admin routes — let /admin/login through
   if (!pathname.startsWith('/admin') || pathname.startsWith('/admin/login')) {
     return NextResponse.next()
@@ -44,5 +58,5 @@ export const config = {
   // /admin — cookie-based admin auth (handled above)
   // /cafe /pos /queue /staff /onboarding — Supabase Auth (client-side guard in AuthGuard)
   // /dashboard — redirect to /cafe (client-side)
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/pos', '/pos/:path*'],
 }
