@@ -28,6 +28,7 @@ import {
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
   isSupported as printerIsSupported, debugDevices, setPrinterName as saveServerPrinterName,
   buildReceiptText, getReceiptDesign, type ReceiptDesign,
+  effectivePrintLang, hasDismissedFallbackWarning, dismissFallbackWarning,
 } from '@/lib/thermal-printer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2696,7 +2697,8 @@ export default function POSClient() {
   const online = useNetworkStatus()
   const { enabled: testMode, toggle: toggleTestMode, disable: disableTestMode } = useTestMode()
   const { lang } = useLang()
-  const [pwaPrompt, setPwaPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [pwaPrompt,         setPwaPrompt]         = useState<BeforeInstallPromptEvent | null>(null)
+  const [printFallbackLang, setPrintFallbackLang] = useState<'lo' | 'th' | null>(null)
 
   useEffect(() => {
     function onPrompt(e: Event) { e.preventDefault(); setPwaPrompt(e as BeforeInstallPromptEvent) }
@@ -2955,6 +2957,11 @@ export default function POSClient() {
     const footerText = localStorage.getItem('receipt_footer_text') || 'Thank you for visiting'
     const phone = localStorage.getItem('receipt_phone') || ''
     const address = localStorage.getItem('receipt_address') || ''
+    const { lang: printLang, didFallback } = effectivePrintLang(receiptLang)
+    if (didFallback && !hasDismissedFallbackWarning()) {
+      setPrintFallbackLang(receiptLang as 'lo' | 'th')
+    }
+
     const receiptText = buildReceiptText({
       shopName: testMode ? `*** TEST ORDER ***\n${shopName}` : shopName,
       queue: queueNum, receipt, table, customer,
@@ -2963,7 +2970,7 @@ export default function POSClient() {
       received, change, vatPct: posSettings.vat_percent,
       footerText: testMode ? '*** THIS IS A TEST — NOT A REAL ORDER ***' : footerText,
       phone, address,
-    }, getReceiptDesign(), receiptLang)
+    }, getReceiptDesign(), printLang)
     setPreviewReceiptText(receiptText)
 
     const skipPreview = localStorage.getItem('pos_skip_receipt_preview') === 'true'
@@ -3295,6 +3302,15 @@ export default function POSClient() {
       {/* ── HTTPS WARNING BANNER (print server blocked by mixed-content) */}
       <HttpBanner />
 
+      {/* ── PRINT LANGUAGE FALLBACK TOAST */}
+      {printFallbackLang && (
+        <PrintFallbackToast
+          lang={printFallbackLang}
+          onDismiss={() => setPrintFallbackLang(null)}
+          onDismissAlways={() => { dismissFallbackWarning(); setPrintFallbackLang(null) }}
+        />
+      )}
+
       {/* ── MAIN SPLIT 60/40 */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
@@ -3597,5 +3613,58 @@ function MenuCard({ recipe, lang, onAdd }: { recipe: Recipe; lang: Lang; onAdd: 
       </span>
       </div>
     </button>
+  )
+}
+
+// ─── Print Language Fallback Toast ────────────────────────────────────────────
+
+const FALLBACK_MSG: Record<'lo' | 'th', string> = {
+  lo: 'เครื่องพิมพ์ไม่รองรับภาษาลาว — พิมพ์เป็นอังกฤษแทน',
+  th: 'เครื่องพิมพ์ไม่รองรับภาษาไทย (ต้องใช้ PC874) — พิมพ์เป็นอังกฤษแทน',
+}
+
+function PrintFallbackToast({ lang, onDismiss, onDismissAlways }: {
+  lang: 'lo' | 'th'
+  onDismiss: () => void
+  onDismissAlways: () => void
+}) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 6000)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 400, display: 'flex', alignItems: 'center', gap: 12,
+      backgroundColor: '#1e1a10', border: '1px solid rgba(245,158,11,0.45)',
+      borderRadius: 12, padding: '12px 16px', boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
+      maxWidth: 520, width: 'calc(100vw - 40px)',
+    }}>
+      <span style={{ fontSize: 16, flexShrink: 0 }}>🖨️</span>
+      <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.75)', lineHeight: 1.5 }}>
+        {FALLBACK_MSG[lang]}
+      </span>
+      <button
+        onClick={onDismissAlways}
+        title="ไม่ต้องแสดงคำเตือนนี้อีก"
+        style={{
+          padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)',
+          backgroundColor: 'transparent', color: 'rgba(255,255,255,0.35)',
+          fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+        }}
+      >
+        ไม่ต้องแสดงอีก
+      </button>
+      <button
+        onClick={onDismiss}
+        style={{
+          background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)',
+          fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px', flexShrink: 0,
+        }}
+      >
+        ×
+      </button>
+    </div>
   )
 }

@@ -1,7 +1,10 @@
 // lib/thermal-printer.ts
 // WebUSB ESC/POS thermal printer — Chrome/Edge only.
 // Falls back gracefully; call isSupported() before use.
-// Receipt language: English-only (PC437 ASCII). Multi-language support planned.
+// Receipt language: thermal print always uses PC437 (Latin ASCII).
+//   Lao  — no ESC/POS code page exists; always falls back to English.
+//   Thai — requires code page 20 (TIS-620/PC874) which we don't send; falls back to English.
+//   English — always supported.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,6 +30,30 @@ export type PrintReceiptData = {
   pointsEarned?:  number
   pointsBalance?: number
   isBirthday?:    boolean
+}
+
+// ── Print language support ────────────────────────────────────────────────────
+// PC437 only covers Latin. Lao has no ESC/POS code page; Thai needs PC874.
+// Call effectivePrintLang() to get the lang that will actually render on paper.
+
+type PrintLang = 'en' | 'th' | 'lo'
+const PRINT_FALLBACK_PREF_KEY = 'pos_print_lang_fallback_pref'
+
+export function isPrintable(lang: PrintLang): boolean {
+  return lang === 'en'
+}
+
+export function effectivePrintLang(lang: PrintLang): { lang: PrintLang; didFallback: boolean } {
+  if (lang === 'en') return { lang: 'en', didFallback: false }
+  return { lang: 'en', didFallback: true }
+}
+
+export function hasDismissedFallbackWarning(): boolean {
+  try { return localStorage.getItem(PRINT_FALLBACK_PREF_KEY) === 'silent' } catch { return false }
+}
+
+export function dismissFallbackWarning(): void {
+  try { localStorage.setItem(PRINT_FALLBACK_PREF_KEY, 'silent') } catch {}
 }
 
 export type ReceiptDesign = {
@@ -67,10 +94,13 @@ const RECEIPT_LABELS = {
 } as const
 type ReceiptLang = keyof typeof RECEIPT_LABELS
 
-/** Build plain-text receipt string — used for print preview. */
+/** Build plain-text receipt string — used for print preview.
+ *  If lang is unsupported by thermal printers (lo/th), silently uses 'en' —
+ *  callers should check effectivePrintLang() first to show a user warning. */
 export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign, lang: ReceiptLang = 'en'): string {
+  const { lang: safeLang } = effectivePrintLang(lang as PrintLang)
   const d       = design ?? getReceiptDesign()
-  const lbl     = RECEIPT_LABELS[lang]
+  const lbl     = RECEIPT_LABELS[safeLang]
   const mm      = getPaperWidth()
   const W       = charWidth(mm)
   const PRICE_W = 10
