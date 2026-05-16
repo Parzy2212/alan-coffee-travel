@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState, useEffect, type ReactNode } from 'react'
 
 export type Lang = 'en' | 'lo' | 'th'
 
@@ -28,14 +28,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     } catch { /* iOS Safari private mode */ }
   }, [])
 
-  function setLang(l: Lang) {
+  const setLang = useCallback((l: Lang) => {
     setLangState(l)
     document.documentElement.setAttribute('data-lang', l)
     try { localStorage.setItem('alan_lang', l) } catch { /* iOS Safari private mode */ }
-  }
+  }, [])
+
+  const contextValue = useMemo(() => ({ lang, setLang }), [lang, setLang])
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang }}>
+    <LanguageContext.Provider value={contextValue}>
       {children}
     </LanguageContext.Provider>
   )

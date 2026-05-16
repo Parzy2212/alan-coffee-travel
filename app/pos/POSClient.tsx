@@ -2946,6 +2946,18 @@ export default function POSClient() {
     setPendingRecipe(null)
   }, [])
 
+  const handleMenuAdd = useCallback((recipe: Recipe) => {
+    if (recipe.requires_customization === false) {
+      addToCartWithCustomization(recipe, '')
+    } else {
+      setPendingRecipe(recipe)
+    }
+  }, [addToCartWithCustomization])
+
+  const handleMenuPin = useCallback((id: string) => {
+    setPinnedIds(togglePinnedRecipe(id))
+  }, [])
+
   function decrement(cartKey: string) {
     setCart(prev => {
       const item = prev.find(i => i.cartKey === cartKey)
@@ -3483,17 +3495,8 @@ export default function POSClient() {
                     lang={lang}
                     pinned={pinnedIds.includes(recipe.id)}
                     shortcutKey={idx < 9 ? idx + 1 : null}
-                    onPin={() => {
-                      const next = togglePinnedRecipe(recipe.id)
-                      setPinnedIds(next)
-                    }}
-                    onAdd={() => {
-                      if (recipe.requires_customization === false) {
-                        addToCartWithCustomization(recipe, '')
-                      } else {
-                        setPendingRecipe(recipe)
-                      }
-                    }}
+                    onAdd={handleMenuAdd}
+                    onPin={handleMenuPin}
                   />
                 ))}
               </div>
@@ -3677,14 +3680,14 @@ export default function POSClient() {
 
 const MenuCard = React.memo(function MenuCard({ recipe, lang, pinned, shortcutKey, onAdd, onPin }: {
   recipe: Recipe; lang: Lang; pinned?: boolean; shortcutKey?: number | null
-  onAdd: () => void; onPin?: () => void
+  onAdd: (recipe: Recipe) => void; onPin?: (id: string) => void
 }) {
   const [hovered, setHovered] = useState(false)
   const displayName = getMenuName(recipe, lang)
   const altName = lang !== 'en' ? recipe.product_name : (recipe.product_name_lo ?? null)
   return (
     <div style={{ position: 'relative' }}>
-      <button onClick={onAdd} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
+      <button onClick={() => onAdd(recipe)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
         backgroundColor: hovered ? '#1e1b13' : (pinned ? '#1b1800' : '#1a1a1a'),
         border: `1px solid ${hovered ? GOLD : pinned ? `${GOLD}55` : 'rgba(255,255,255,0.08)'}`,
         borderRadius: 8, padding: recipe.image_url ? '0' : '14px 12px', textAlign: 'left',
@@ -3725,7 +3728,7 @@ const MenuCard = React.memo(function MenuCard({ recipe, lang, pinned, shortcutKe
       {/* Pin toggle */}
       {onPin && (
         <button
-          onClick={e => { e.stopPropagation(); onPin() }}
+          onClick={e => { e.stopPropagation(); onPin(recipe.id) }}
           title={pinned ? 'Unpin' : 'Pin to top'}
           style={{
             position: 'absolute', top: 4, right: 4,
