@@ -454,11 +454,30 @@ async function sendBytes(data: Uint8Array): Promise<void> {
 
 // ── WiFi / Print-Server helpers ───────────────────────────────────────────────
 
-const PRINTER_IP_KEY     = 'pos_printer_ip'
-const PRINTER_NAME_KEY   = 'pos_printer_name'
-const PRINT_SERVER_URL   = 'http://127.0.0.1:12345/print'
-const WIFI_TIMEOUT_MS    = 4000
-const SERVER_TIMEOUT_MS  = 5000
+const PRINTER_IP_KEY        = 'pos_printer_ip'
+const PRINTER_NAME_KEY      = 'pos_printer_name'
+const PRINT_SERVER_BASE     = 'http://127.0.0.1:12345'
+const PRINT_SERVER_URL      = `${PRINT_SERVER_BASE}/print`
+const PRINT_SERVER_STATUS   = `${PRINT_SERVER_BASE}/status`
+const WIFI_TIMEOUT_MS       = 4000
+const SERVER_TIMEOUT_MS     = 2000  // fail fast — was 5000
+
+// Module-level cache for /status — avoids hammering localhost when settings popup opens repeatedly
+let _statusCache: { ok: boolean; ts: number } | null = null
+const STATUS_CACHE_TTL = 30_000  // 30 seconds
+
+/** Check if the local print server is reachable. Result is cached for 30 s. */
+export async function checkPrintServer(): Promise<boolean> {
+  if (_statusCache && Date.now() - _statusCache.ts < STATUS_CACHE_TTL) return _statusCache.ok
+  try {
+    const res = await fetch(PRINT_SERVER_STATUS, { signal: AbortSignal.timeout(2000) })
+    _statusCache = { ok: res.ok, ts: Date.now() }
+    return res.ok
+  } catch {
+    _statusCache = { ok: false, ts: Date.now() }
+    return false
+  }
+}
 
 export function getPrinterIp(): string {
   try { return localStorage.getItem(PRINTER_IP_KEY) ?? '' } catch { return '' }

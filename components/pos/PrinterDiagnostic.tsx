@@ -97,7 +97,8 @@ export function PrinterDiagnostic({ receiptText, onSkip, onOpenSettings }: Print
     setChecking(true)
     setServerStatus('checking')
     try {
-      const res = await fetch('http://127.0.0.1:12345/status', { signal: AbortSignal.timeout(3000) })
+      // Direct fetch (no cache) — we need accurate status after a print failure
+      const res = await fetch('http://127.0.0.1:12345/status', { signal: AbortSignal.timeout(2000) })
       setServerStatus(res.ok ? 'up' : 'down')
     } catch {
       setServerStatus('down')

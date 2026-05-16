@@ -30,6 +30,7 @@ import {
   isSupported as printerIsSupported, debugDevices, setPrinterName as saveServerPrinterName,
   buildReceiptText, getReceiptDesign, type ReceiptDesign,
   effectivePrintLang, hasDismissedFallbackWarning, dismissFallbackWarning,
+  checkPrintServer,
 } from '@/lib/thermal-printer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1614,15 +1615,9 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const overlayRef = useRef<HTMLDivElement>(null)
 
   async function checkServer(): Promise<boolean> {
-    try {
-      const res = await fetch('http://127.0.0.1:12345/status', { signal: AbortSignal.timeout(2000) })
-      const ok = res.ok
-      setServerOk(ok)
-      return ok
-    } catch {
-      setServerOk(false)
-      return false
-    }
+    const ok = await checkPrintServer()  // 30s module-level cache, 2s timeout
+    setServerOk(ok)
+    return ok
   }
 
   async function fetchPrinters() {
@@ -3052,6 +3047,18 @@ export default function POSClient() {
     printFnRef.current = null
   }
 
+  // Stable callbacks for ReceiptPreview — must not be inline arrows or the
+  // countdown useEffect (which has onSkip in its dep array) resets every render.
+  const handleReceiptSkip = useCallback(() => {
+    setShowReceiptPreview(false)
+    setShowOrderSuccess(true)
+  }, [])
+  const handleReceiptOpenSettings = useCallback(() => {
+    setShowReceiptPreview(false)
+    setShowOrderSuccess(false)
+    setShowSettings(true)
+  }, [])
+
   // ── Queue ─────────────────────────────────────────────────────────────────
   const fetchTodayQueue = useCallback(async () => {
     const { data, error } = await supabase.rpc('get_today_pos_queue')
@@ -3284,8 +3291,8 @@ export default function POSClient() {
         <ReceiptPreview
           receiptText={previewReceiptText}
           onPrint={async () => { if (printFnRef.current) await printFnRef.current() }}
-          onSkip={() => { setShowReceiptPreview(false); setShowOrderSuccess(true) }}
-          onOpenSettings={() => { setShowReceiptPreview(false); setShowOrderSuccess(false); setShowSettings(true) }}
+          onSkip={handleReceiptSkip}
+          onOpenSettings={handleReceiptOpenSettings}
           autoSkipSecs={5}
         />
       )}
