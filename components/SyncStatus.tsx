@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getPendingCount } from '@/lib/offline-queue'
 import { useNetworkStatus } from '@/lib/network-status'
 
@@ -8,16 +8,16 @@ export function SyncStatus() {
   const online = useNetworkStatus()
   const [pending, setPending] = useState(0)
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try { setPending(await getPendingCount()) } catch {}
-  }
+  }, [])
 
   useEffect(() => {
     void refresh()
     const id = setInterval(refresh, 5000)
     window.addEventListener('alan:queue-changed', refresh)
     return () => { clearInterval(id); window.removeEventListener('alan:queue-changed', refresh) }
-  }, [])
+  }, [refresh])
 
   if (pending === 0 && online) return null
 

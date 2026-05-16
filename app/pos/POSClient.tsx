@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
 import { PinPad } from '@/components/pos/PinPad'
@@ -2684,6 +2684,25 @@ function HoldModal({ onConfirm, onClose }: {
   )
 }
 
+// ─── Clock Display (isolated so only this node re-renders every second) ─────
+
+function PosClockDisplay() {
+  const [now, setNow] = useState<Date | null>(null)
+  useEffect(() => {
+    setNow(new Date())
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const timeStr = now ? now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'
+  const dateStr = now ? now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''
+  return (
+    <>
+      <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>{dateStr}</span>
+      <span style={{ color: GOLD, fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
+    </>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function POSClient() {
@@ -2698,7 +2717,7 @@ export default function POSClient() {
   const [confirmClear,  setConfirmClear]  = useState(false)
   const [activeL1,     setActiveL1]     = useState<string>('All')
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
-  const [now,          setNow]          = useState<Date | null>(null)
+
   // chargeStatus removed — flow now uses showReceiptPreview + showOrderSuccess
   const [successData,  setSuccessData]  = useState<SuccessData | null>(null)
   const [posSettings,  setPosSettings]  = useState<PosSettings>({ shop_name: '', vat_percent: 0, qr_payment_number: '', shop_line: '', shop_facebook: '' })
@@ -2750,7 +2769,6 @@ export default function POSClient() {
 
   // Load cart from localStorage after mount (avoids SSR hydration mismatch)
   useEffect(() => {
-    setNow(new Date())
     try {
       const saved = localStorage.getItem('pos_cart')
       if (saved) setCart(JSON.parse(saved) as CartItem[])
@@ -2776,11 +2794,6 @@ export default function POSClient() {
     try { localStorage.setItem('pos_cart', JSON.stringify(cart)) } catch { /* ignore */ }
   }, [cart, mounted])
 
-  // Live clock — only runs on client, no SSR mismatch
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(id)
-  }, [])
 
   // Replay offline queue when back online or SW triggers it
   useEffect(() => {
@@ -2923,7 +2936,7 @@ export default function POSClient() {
     })
   }
 
-  function addToCartWithCustomization(recipe: Recipe, customization: string, qty = 1) {
+  const addToCartWithCustomization = useCallback((recipe: Recipe, customization: string, qty = 1) => {
     const cartKey = `${recipe.id}::${customization}`
     setCart(prev => {
       const existing = prev.find(i => i.cartKey === cartKey)
@@ -2931,7 +2944,7 @@ export default function POSClient() {
       return [...prev, { cartKey, recipe, qty, customization }]
     })
     setPendingRecipe(null)
-  }
+  }, [])
 
   function decrement(cartKey: string) {
     setCart(prev => {
@@ -3176,9 +3189,6 @@ export default function POSClient() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showReceiptPreview, showOrderSuccess, showCustomerSelector, displayRecipes])
 
-  const timeStr = now ? now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'
-  const dateStr = now ? now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''
-
   const cartPayload = cart.map(item => ({
     recipe_id:      item.recipe.id,
     qty:            item.qty,
@@ -3293,8 +3303,7 @@ export default function POSClient() {
           <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: GOLD }} />
           <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, letterSpacing: '2.5px', textTransform: 'uppercase' }}>Cafe OS</span>
           <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>·</span>
-          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>{dateStr}</span>
-          <span style={{ color: GOLD, fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
+          <PosClockDisplay />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <SyncStatus />
@@ -3666,7 +3675,7 @@ export default function POSClient() {
 
 // ─── Menu Card ────────────────────────────────────────────────────────────────
 
-function MenuCard({ recipe, lang, pinned, shortcutKey, onAdd, onPin }: {
+const MenuCard = React.memo(function MenuCard({ recipe, lang, pinned, shortcutKey, onAdd, onPin }: {
   recipe: Recipe; lang: Lang; pinned?: boolean; shortcutKey?: number | null
   onAdd: () => void; onPin?: () => void
 }) {
@@ -3734,7 +3743,7 @@ function MenuCard({ recipe, lang, pinned, shortcutKey, onAdd, onPin }: {
       )}
     </div>
   )
-}
+})
 
 // ─── Print Language Fallback Toast ────────────────────────────────────────────
 
