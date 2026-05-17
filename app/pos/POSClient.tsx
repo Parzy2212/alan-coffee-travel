@@ -1835,15 +1835,27 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
 
             {/* Status indicator */}
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: (serverOk || printerConnected) ? GREEN : 'rgba(255,255,255,0.35)' }}>
-                {serverOk === null
+              {(() => {
+                // Graceful degradation: if /status times out but last print succeeded
+                // recently, the server is probably running — just responding slowly.
+                const recentSuccess = (() => {
+                  if (!lastPrintInfo || lastPrintInfo.result !== 'success') return false
+                  try { return Date.now() - new Date(lastPrintInfo.time).getTime() < 5 * 60_000 } catch { return false }
+                })()
+                const color = (serverOk || printerConnected) ? GREEN
+                  : recentSuccess ? '#f59e0b'
+                  : 'rgba(255,255,255,0.35)'
+                const label = serverOk === null
                   ? '⏳ กำลังตรวจสอบ...'
                   : serverOk
                   ? '🟢 Print Server พร้อม'
                   : printerConnected
                   ? `🟢 WebUSB เชื่อมต่อแล้ว${printerName ? ` — ${printerName}` : ''}`
-                  : '🔴 ยังไม่เชื่อมต่อ'}
-              </div>
+                  : recentSuccess
+                  ? '🟡 ตอบช้า — พิมพ์ล่าสุดสำเร็จ'
+                  : '🔴 ยังไม่เชื่อมต่อ'
+                return <div style={{ fontSize: 12, fontWeight: 600, color }}>{label}</div>
+              })()}
             </div>
 
             {/* Test print — always enabled */}

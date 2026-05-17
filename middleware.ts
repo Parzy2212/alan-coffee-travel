@@ -13,9 +13,19 @@ async function computeToken(password: string): Promise<string> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // /pos on HTTPS over a local network address → redirect to HTTP so the
-  // print server (http://127.0.0.1:12345) is not blocked by mixed-content rules.
-  // Vercel production (VERCEL=1) is excluded — the client-side HttpBanner handles that.
+  // /pos on HTTPS over a local network address → redirect to HTTP.
+  // Chrome blocks mixed-content: an HTTPS page cannot call http://127.0.0.1:12345.
+  //
+  // This redirect only fires for LOCAL access (localhost, 192.168.x, 10.x, etc.)
+  // because those are the only cases where the middleware can safely force HTTP.
+  //
+  // CLOUDFLARE / VERCEL (production) — NOT handled here because:
+  //   - The host is "alancoffeetravel.com", which is not a local IP.
+  //   - Cloudflare "Always Use HTTPS" re-redirects any HTTP → HTTPS at the CDN edge,
+  //     making a server-side HTTP redirect ineffective.
+  //   - Solution for Cloudflare: disable "Always Use HTTPS" for /pos via a Page Rule,
+  //     OR have employees access the POS via local IP (http://192.168.x.x/pos).
+  //   - The client-side HttpBanner component handles the production HTTPS warning.
   if (pathname.startsWith('/pos') && !process.env.VERCEL) {
     const proto = request.headers.get('x-forwarded-proto') ?? request.nextUrl.protocol.replace(':', '')
     const host  = request.headers.get('host') ?? ''

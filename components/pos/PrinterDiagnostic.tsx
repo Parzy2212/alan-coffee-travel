@@ -97,8 +97,9 @@ export function PrinterDiagnostic({ receiptText, onSkip, onOpenSettings }: Print
     setChecking(true)
     setServerStatus('checking')
     try {
-      // Direct fetch (no cache) — we need accurate status after a print failure
-      const res = await fetch('http://127.0.0.1:12345/status', { signal: AbortSignal.timeout(2000) })
+      // Direct fetch (no cache) — accurate status after a print failure.
+      // 5 s timeout: Windows IPC to the print server process can be slow.
+      const res = await fetch('http://127.0.0.1:12345/status', { signal: AbortSignal.timeout(5000) })
       setServerStatus(res.ok ? 'up' : 'down')
     } catch {
       setServerStatus('down')
