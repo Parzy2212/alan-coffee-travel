@@ -5,6 +5,7 @@ import { verifyEmployeePin } from '@/lib/employee-pin'
 import type { ActiveEmployee } from '@/lib/active-employee'
 
 const GOLD = '#c9a84c'
+const RED  = '#ff6b6b'
 const PIN_LENGTH = 4
 
 const SHAKE_CSS = `
@@ -30,6 +31,7 @@ interface PinPadProps {
 }
 
 type PadStatus = 'idle' | 'checking' | 'error' | 'success'
+type RecoveryState = 'closed' | 'owner' | 'master' | 'success'
 
 const NUMPAD = ['1','2','3','4','5','6','7','8','9','','0','⌫'] as const
 
@@ -39,6 +41,18 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
   const [greeting, setGreeting] = useState('')
   const [shake, setShake]     = useState(false)
   const submitLock            = useRef(false)
+
+  // Forgot PIN / master PIN recovery
+  const [recovery, setRecovery]     = useState<RecoveryState>('closed')
+  const [recEmail, setRecEmail]     = useState('')
+  const [recPass,  setRecPass]      = useState('')
+  const [recErr,   setRecErr]       = useState('')
+  const [recBusy,  setRecBusy]      = useState(false)
+  const [newPin,   setNewPin]       = useState('')
+  const [masterInput, setMasterInput] = useState('')
+  // Hidden gesture: tap logo 5× to reveal master PIN entry
+  const logoTaps  = useRef(0)
+  const logoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleKey = useCallback((key: string) => {
     if (status === 'checking' || status === 'success') return
@@ -108,6 +122,50 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
     verify()
   }, [pin, shopId, onClockIn])
 
+  function handleLogoTap() {
+    logoTaps.current += 1
+    if (logoTimer.current) clearTimeout(logoTimer.current)
+    logoTimer.current = setTimeout(() => { logoTaps.current = 0 }, 2000)
+    if (logoTaps.current >= 5) {
+      logoTaps.current = 0
+      setRecovery('master')
+      setMasterInput('')
+      setRecErr('')
+    }
+  }
+
+  async function handleOwnerReset() {
+    if (!recEmail.trim() || !recPass) { setRecErr('กรุณาใส่อีเมลและรหัสผ่าน'); return }
+    setRecBusy(true); setRecErr('')
+    try {
+      const res = await fetch('/api/pos/reset-pins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: recEmail.trim(), password: recPass }),
+      })
+      const json = await res.json() as { ok?: boolean; newPin?: string; error?: string }
+      if (!res.ok || !json.ok) { setRecErr(json.error ?? 'เกิดข้อผิดพลาด'); return }
+      setNewPin(json.newPin ?? '1234')
+      setRecovery('success')
+    } catch { setRecErr('ไม่สามารถเชื่อมต่อได้') } finally { setRecBusy(false) }
+  }
+
+  async function handleMasterPin() {
+    if (!masterInput) { setRecErr('กรุณาใส่ Master PIN'); return }
+    setRecBusy(true); setRecErr('')
+    try {
+      const res = await fetch('/api/pos/verify-master-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: masterInput }),
+      })
+      const json = await res.json() as { ok?: boolean }
+      if (!res.ok || !json.ok) { setRecErr('Master PIN ไม่ถูกต้อง'); return }
+      setRecovery('closed')
+      onClockIn({ id: 'master-override', name: 'Manager', role: 'manager', shiftId: '', clockedInAt: new Date().toISOString(), shopId })
+    } catch { setRecErr('ไม่สามารถเชื่อมต่อได้') } finally { setRecBusy(false) }
+  }
+
   const dots = Array.from({ length: PIN_LENGTH }, (_, i) => i < pin.length)
 
   const dotColor = status === 'error'   ? '#ff6b6b'
@@ -132,9 +190,12 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
         }} />
       )}
 
-      {/* Logo */}
+      {/* Logo — tap 5× to access master PIN */}
       <div style={{ marginBottom: 48, textAlign: 'center' }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: 'white', letterSpacing: '-0.5px' }}>
+        <div
+          onClick={handleLogoTap}
+          style={{ fontSize: 22, fontWeight: 800, color: 'white', letterSpacing: '-0.5px', cursor: 'default', userSelect: 'none' }}
+        >
           ALAN <span style={{ color: GOLD }}>Cafe OS</span>
         </div>
       </div>
@@ -237,6 +298,112 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
       {status === 'checking' && (
         <div style={{ marginTop: 20, color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
           กำลังตรวจสอบ...
+        </div>
+      )}
+
+      {/* Forgot PIN */}
+      {status !== 'success' && (
+        <button
+          onClick={() => { setRecovery('owner'); setRecEmail(''); setRecPass(''); setRecErr('') }}
+          style={{
+            marginTop: 28, background: 'none', border: 'none',
+            color: 'rgba(255,255,255,0.22)', fontSize: 12, cursor: 'pointer',
+            fontFamily: 'inherit', letterSpacing: '0.3px',
+          }}
+        >
+          ลืม PIN?
+        </button>
+      )}
+
+      {/* ── Recovery modal ── */}
+      {recovery !== 'closed' && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 10000,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div style={{
+            backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 16, padding: 28, width: '100%', maxWidth: 380,
+            fontFamily: 'inherit',
+          }}>
+
+            {recovery === 'owner' && (
+              <>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 6 }}>รีเซ็ต PIN พนักงาน</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 20, lineHeight: 1.6 }}>
+                  ยืนยันตัวตนด้วยอีเมลและรหัสผ่านของเจ้าของร้าน<br />
+                  PIN พนักงานทุกคนจะถูกรีเซ็ตเป็น <strong style={{ color: GOLD }}>1234</strong>
+                </div>
+                <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>อีเมล</label>
+                <input
+                  type="email"
+                  value={recEmail}
+                  onChange={e => setRecEmail(e.target.value)}
+                  placeholder="owner@email.com"
+                  style={{ width: '100%', marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', color: 'white', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+                <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>รหัสผ่าน</label>
+                <input
+                  type="password"
+                  value={recPass}
+                  onChange={e => setRecPass(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleOwnerReset() }}
+                  placeholder="••••••••"
+                  style={{ width: '100%', marginBottom: 16, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', color: 'white', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+                {recErr && <div style={{ color: RED, fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{recErr}</div>}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setRecovery('closed')} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>ยกเลิก</button>
+                  <button onClick={handleOwnerReset} disabled={recBusy} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: 'none', backgroundColor: recBusy ? `${GOLD}55` : GOLD, color: '#000', fontSize: 14, fontWeight: 700, cursor: recBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    {recBusy ? 'กำลังรีเซ็ต...' : 'รีเซ็ต PIN'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {recovery === 'master' && (
+              <>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 6 }}>Manager Override</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 20 }}>ใส่ Master PIN เพื่อเข้าใช้งาน</div>
+                <input
+                  type="password"
+                  value={masterInput}
+                  onChange={e => setMasterInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleMasterPin() }}
+                  placeholder="Master PIN"
+                  autoFocus
+                  style={{ width: '100%', marginBottom: 16, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', color: 'white', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+                {recErr && <div style={{ color: RED, fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{recErr}</div>}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setRecovery('closed')} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>ยกเลิก</button>
+                  <button onClick={handleMasterPin} disabled={recBusy} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: 'none', backgroundColor: recBusy ? `${GOLD}55` : GOLD, color: '#000', fontSize: 14, fontWeight: 700, cursor: recBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    {recBusy ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {recovery === 'success' && (
+              <>
+                <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 12 }}>✓</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#4cba7f', textAlign: 'center', marginBottom: 8 }}>รีเซ็ต PIN สำเร็จ</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 1.7, marginBottom: 20 }}>
+                  PIN ใหม่ของพนักงานทุกคน:<br />
+                  <span style={{ fontSize: 32, fontWeight: 800, color: GOLD, letterSpacing: 6 }}>{newPin}</span><br />
+                  <span style={{ fontSize: 12 }}>กรุณาเปลี่ยน PIN ทันทีหลังเข้าสู่ระบบ</span>
+                </div>
+                <button
+                  onClick={() => setRecovery('closed')}
+                  style={{ width: '100%', padding: '13px 0', borderRadius: 9, border: 'none', backgroundColor: GOLD, color: '#000', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  ปิดและเข้าสู่ระบบด้วย {newPin}
+                </button>
+              </>
+            )}
+
+          </div>
         </div>
       )}
     </div>
