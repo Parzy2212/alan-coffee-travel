@@ -1224,7 +1224,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
   const boxStyle: React.CSSProperties = isSmall
     ? { position: 'fixed', inset: 0, borderRadius: 0, backgroundColor: '#181818', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
-    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 440, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }
+    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 480, maxHeight: '94vh', display: 'flex', flexDirection: 'column' }
 
   const btnBg = loading ? `${GOLD}55`
     : method === 'cash' && received !== '' && receivedNum < finalTotal ? `${RED}22`
@@ -1332,21 +1332,23 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             <div style={{ display: 'flex', gap: 6 }}>
               {QUICK_AMTS.map(amt => (
                 <button key={amt} onClick={() => setReceived(String(amt))} style={{
-                  flex: 1, padding: '8px 0', borderRadius: 7,
+                  flex: 1, height: 44, borderRadius: 8,
                   border: `1px solid ${received === String(amt) ? GOLD : 'rgba(255,255,255,0.1)'}`,
                   backgroundColor: received === String(amt) ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
                   color: received === String(amt) ? GOLD : 'rgba(255,255,255,0.5)',
-                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {amt / 1000}K
                 </button>
               ))}
               <button onClick={() => setReceived(String(Math.ceil(finalTotal)))} style={{
-                flex: 1, padding: '8px 0', borderRadius: 7,
+                flex: 1, height: 44, borderRadius: 8,
                 border: `1px solid ${received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.1)'}`,
                 backgroundColor: received === String(Math.ceil(finalTotal)) && received !== '' ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
                 color: received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.5)',
-                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>พอดี</button>
             </div>
 
@@ -1354,11 +1356,12 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
               {NUMPAD_KEYS.map(key => (
                 <button key={key} onClick={() => pressKey(key)} style={{
-                  padding: isSmall ? '18px 0' : '14px 0', borderRadius: 9, border: 'none',
+                  height: isSmall ? 68 : 60, borderRadius: 9, border: 'none',
                   backgroundColor: key === '⌫' ? 'rgba(220,80,80,0.14)' : 'rgba(255,255,255,0.07)',
                   color: key === '⌫' ? '#e07070' : '#fff',
-                  fontSize: key === '⌫' ? 18 : 20, fontWeight: 700, cursor: 'pointer',
+                  fontSize: key === '⌫' ? 20 : 22, fontWeight: 700, cursor: 'pointer',
                   transition: 'background .1s', userSelect: 'none' as const,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>{key}</button>
               ))}
             </div>
