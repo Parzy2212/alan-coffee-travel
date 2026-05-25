@@ -9,7 +9,6 @@ const RED   = '#ff6b6b'
 type ServerStatus = 'idle' | 'checking' | 'up' | 'down'
 
 export interface PrinterDiagnosticProps {
-  receiptText: string
   onSkip: () => void
   onOpenSettings?: () => void
 }
@@ -86,7 +85,7 @@ function Chip({ label, onClick, variant = 'default' }: {
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function PrinterDiagnostic({ receiptText, onSkip, onOpenSettings }: PrinterDiagnosticProps) {
+export function PrinterDiagnostic({ onSkip, onOpenSettings }: PrinterDiagnosticProps) {
   const [serverStatus,  setServerStatus]  = useState<ServerStatus>('idle')
   const [checking,      setChecking]      = useState(false)
   const [printerName,   setPrinterName]   = useState<string | null>(null)
@@ -120,27 +119,6 @@ export function PrinterDiagnostic({ receiptText, onSkip, onOpenSettings }: Print
 
   function switchToHttp() {
     window.location.href = window.location.href.replace('https://', 'http://')
-  }
-
-  function printFromBrowser() {
-    const win = window.open('', '_blank', 'width=420,height=640,scrollbars=yes')
-    if (!win) { alert('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อน'); return }
-    const safe = receiptText
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-    win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Receipt</title>
-<style>
-  body{margin:0;padding:20px;font-family:'Courier New',monospace;font-size:12px;color:#111;background:#fff}
-  pre{white-space:pre;margin:0;line-height:1.45}
-  @media print{body{padding:4px 8px}@page{margin:0;size:80mm auto}}
-</style></head>
-<body><pre>${safe}</pre>
-<script>window.onload=()=>{window.print()}</script>
-</body></html>`)
-    win.document.close()
-    setTimeout(onSkip, 800)
   }
 
   const { icon: srvIcon, color: srvColor } = statusIcon(serverStatus)
@@ -289,23 +267,7 @@ export function PrinterDiagnostic({ receiptText, onSkip, onOpenSettings }: Print
         <div style={{
           padding: '16px 24px 20px',
           borderTop: '1px solid rgba(255,255,255,0.07)',
-          display: 'flex', flexDirection: 'column', gap: 10,
         }}>
-          <button
-            onClick={printFromBrowser}
-            style={{
-              width: '100%', height: 52, borderRadius: 12,
-              border: `1px solid ${GOLD}44`,
-              backgroundColor: `${GOLD}0f`, color: GOLD,
-              fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${GOLD}1e` }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${GOLD}0f` }}
-          >
-            <span>📋</span><span>พิมพ์จากเบราว์เซอร์แทน</span>
-          </button>
           <button
             onClick={onSkip}
             style={{

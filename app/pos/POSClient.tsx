@@ -789,15 +789,7 @@ function DigitalReceiptPopup({
     } catch (e) {
       console.error('[POS] Print failed:', e)
       setPrintState('error')
-      // Only open browser print dialog when no hardware printer is configured.
-      // If pos_printer_name or printer_ip is set, the user has a real printer —
-      // opening the browser dialog would be confusing.
-      const hasHardware = localStorage.getItem('pos_printer_name') || localStorage.getItem('printer_ip')
-      if (!hasHardware) {
-        setTimeout(() => { setPrintState('idle'); window.print() }, 1500)
-      } else {
-        setTimeout(() => setPrintState('idle'), 3000)
-      }
+      setTimeout(() => setPrintState('idle'), 3000)
     }
   }
 
@@ -808,15 +800,6 @@ function DigitalReceiptPopup({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 16,
     }}>
-      <style>{`
-        @media print {
-          body > * { display: none !important; }
-          #pos-receipt-print { display: block !important; }
-          #pos-receipt-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-        #pos-receipt-print { display: none; }
-      `}</style>
-
       {/* Screen receipt card */}
       <div style={{
         backgroundColor: '#121212', border: `1px solid ${GOLD}44`,
@@ -1014,47 +997,6 @@ function DigitalReceiptPopup({
         </div>
       </div>
 
-      {/* Print-only version */}
-      <div id="pos-receipt-print" style={{
-        fontFamily: 'monospace', fontSize: 12, color: '#000',
-        backgroundColor: '#fff', padding: '20px', width: '280px',
-        margin: '0 auto',
-      }}>
-        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>
-          {settings.shop_name || 'ALAN COFFEE'}
-        </div>
-        <div style={{ textAlign: 'center', fontSize: 10, marginBottom: 12 }}>
-          {dateStr} {timeStr} | {data.receipt}
-        </div>
-        <div style={{ borderTop: '1px dashed #000', marginBottom: 8 }} />
-        {data.cartSnapshot.map((item, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span>{item.qty}× {item.recipe.product_name}{item.customization ? ` (${item.customization})` : ''}</span>
-            <span>{(item.recipe.price_lak * item.qty).toLocaleString('en-US')}</span>
-          </div>
-        ))}
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-        {data.discountAmt > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span>ส่วนลด</span><span>-{data.discountAmt.toLocaleString('en-US')}</span>
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: 4 }}>
-          <span>รวม</span><span>{data.finalTotal.toLocaleString('en-US')} LAK</span>
-        </div>
-        {data.method === 'cash' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>รับมา</span><span>{data.received.toLocaleString('en-US')}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>เงินทอน</span><span>{data.change.toLocaleString('en-US')}</span>
-            </div>
-          </>
-        )}
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-        <div style={{ textAlign: 'center', fontSize: 10 }}>ขอบคุณที่ใช้บริการ</div>
-      </div>
     </div>
   )
 }

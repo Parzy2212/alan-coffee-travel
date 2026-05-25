@@ -36,30 +36,6 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, a
     return () => clearTimeout(t)
   }, [timeLeft, onSkip, showDiagnostic])
 
-  function printFromBrowser() {
-    const win = window.open('', '_blank', 'width=420,height=640,scrollbars=yes')
-    if (!win) {
-      alert('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อน')
-      return
-    }
-    const safe = receiptText
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-    win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Receipt</title>
-<style>
-  body{margin:0;padding:20px;font-family:'Courier New',monospace;font-size:12px;color:#111;background:#fff}
-  pre{white-space:pre;margin:0;line-height:1.45}
-  @media print{body{padding:4px 8px}@page{margin:0;size:80mm auto}}
-</style></head>
-<body><pre>${safe}</pre>
-<script>window.onload=()=>{window.print()}<\/script>
-</body></html>`)
-    win.document.close()
-    setTimeout(onSkip, 800)
-  }
-
   async function handlePrint() {
     setPrinting(true)
     try {
@@ -67,16 +43,6 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, a
       setPrintDone(true)
       setTimeout(onSkip, 700)
     } catch {
-      // If no hardware printer is configured, skip the diagnostic and fall
-      // back to browser print immediately — saves the user an extra click.
-      const hasHardware =
-        typeof localStorage !== 'undefined' &&
-        (localStorage.getItem('pos_printer_name') || localStorage.getItem('printer_ip'))
-      if (!hasHardware) {
-        setPrinting(false)
-        printFromBrowser()
-        return
-      }
       setPrinting(false)
       setShowDiagnostic(true)
     }
@@ -202,7 +168,6 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, a
       {/* Diagnostic overlay — appears on top when print fails */}
       {showDiagnostic && (
         <PrinterDiagnostic
-          receiptText={receiptText}
           onSkip={onSkip}
           onOpenSettings={onOpenSettings}
         />

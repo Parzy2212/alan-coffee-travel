@@ -634,7 +634,7 @@ function centerStr(s: string, w: number): string {
 }
 
 /** Build ESC/POS receipt and send to printer.
- *  Tries in order: WiFi (port 9100) → local print server → WebUSB → window.print() */
+ *  Tries in order: WiFi (port 9100) → local print server → WebUSB → throws */
 export async function printReceipt(data: PrintReceiptData): Promise<void> {
   const design   = getReceiptDesign()
   const mm       = getPaperWidth()
@@ -776,11 +776,8 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     errors.push(`WebUSB: ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  console.warn('[thermal-printer] All hardware methods failed — falling back to window.print()', errors)
-  if (typeof window !== 'undefined') {
-    window.print()
-    return
-  }
-
   throw new Error(`Print failed — ${errors.join(' | ')}`)
+  // NOTE: window.print() intentionally removed. Thermal printers receiving
+  // print jobs through the GDI browser driver render a raster bitmap, not
+  // ESC/POS text — output is pixelated and fades within days.
 }
