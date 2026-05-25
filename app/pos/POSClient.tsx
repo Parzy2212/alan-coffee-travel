@@ -1243,9 +1243,9 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             )
           })()}
 
-          {/* Method selector — 3 big buttons */}
+          {/* Method selector — 3 main methods */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-            {PAY_METHODS.map(m => (
+            {PAY_METHODS.filter(m => m.value !== 'split').map(m => (
               <button key={m.value} onClick={() => { setMethod(m.value); setErrMsg('') }} style={{
                 padding: isSmall ? '15px 8px' : '12px 8px', borderRadius: 10,
                 border: `2px solid ${method === m.value ? GOLD : 'rgba(255,255,255,0.08)'}`,
@@ -1259,6 +1259,17 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
               </button>
             ))}
           </div>
+          {/* Split bill — secondary option below main grid */}
+          <button onClick={() => { setMethod('split'); setErrMsg('') }} style={{
+            width: '100%', padding: '9px 14px', borderRadius: 8,
+            border: `1px solid ${method === 'split' ? GOLD : 'rgba(255,255,255,0.07)'}`,
+            backgroundColor: method === 'split' ? `${GOLD}16` : 'rgba(255,255,255,0.02)',
+            color: method === 'split' ? GOLD : 'rgba(255,255,255,0.3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .15s',
+          }}>
+            <span>✂️</span><span>แยกบิล</span>
+          </button>
 
           {/* ── CASH ── */}
           {method === 'cash' && (<>
@@ -1274,7 +1285,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             <div style={{ display: 'flex', gap: 6 }}>
               {QUICK_AMTS.map(amt => (
                 <button key={amt} onClick={() => setReceived(String(amt))} style={{
-                  flex: 1, height: 44, borderRadius: 8,
+                  flex: 1, height: 52, borderRadius: 8,
                   border: `1px solid ${received === String(amt) ? GOLD : 'rgba(255,255,255,0.1)'}`,
                   backgroundColor: received === String(amt) ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
                   color: received === String(amt) ? GOLD : 'rgba(255,255,255,0.5)',
@@ -1285,7 +1296,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                 </button>
               ))}
               <button onClick={() => setReceived(String(Math.ceil(finalTotal)))} style={{
-                flex: 1, height: 44, borderRadius: 8,
+                flex: 1, height: 52, borderRadius: 8,
                 border: `1px solid ${received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.1)'}`,
                 backgroundColor: received === String(Math.ceil(finalTotal)) && received !== '' ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
                 color: received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.5)',
@@ -1295,13 +1306,13 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             </div>
 
             {/* Numpad */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               {NUMPAD_KEYS.map(key => (
                 <button key={key} onClick={() => pressKey(key)} style={{
                   height: isSmall ? 68 : 60, borderRadius: 9, border: 'none',
                   backgroundColor: key === '⌫' ? 'rgba(220,80,80,0.14)' : 'rgba(255,255,255,0.07)',
                   color: key === '⌫' ? '#e07070' : '#fff',
-                  fontSize: key === '⌫' ? 20 : 22, fontWeight: 700, cursor: 'pointer',
+                  fontSize: '1.5rem', fontWeight: 700, cursor: 'pointer',
                   transition: 'background .1s', userSelect: 'none' as const,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>{key}</button>
@@ -1497,9 +1508,9 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
           <button onClick={confirm}
             disabled={loading || !cashOk}
             style={{
-              width: '100%', padding: isSmall ? '18px 0' : '14px 0', borderRadius: 10, border: 'none',
+              width: '100%', height: 64, borderRadius: 10, border: 'none',
               backgroundColor: btnBg, color: btnColor,
-              fontWeight: 800, fontSize: isSmall ? 16 : 15, letterSpacing: '1.5px', textTransform: 'uppercase',
+              fontWeight: 800, fontSize: 16, letterSpacing: '1.5px', textTransform: 'uppercase',
               cursor: loading ? 'wait' : !cashOk ? 'not-allowed' : 'pointer',
               fontFamily: 'var(--font-heading)', transition: 'all .2s',
             }}>
@@ -2812,11 +2823,11 @@ export default function POSClient() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  // L1 / L2 categories
-  const l1Categories = useMemo(() => categories.filter(c => c.parent_id === null), [categories])
+  // L1 / L2 categories — exclude placeholder "." entries
+  const l1Categories = useMemo(() => categories.filter(c => c.parent_id === null && c.name !== '.'), [categories])
   const l2Categories = useMemo(() => {
     if (activeL1 === 'All') return []
-    return categories.filter(c => c.parent_id === activeL1)
+    return categories.filter(c => c.parent_id === activeL1 && c.name !== '.')
   }, [categories, activeL1])
 
   function selectL1(id: string) { setActiveL1(id); setActiveL2(null) }
@@ -3549,8 +3560,8 @@ export default function POSClient() {
                 {mounted ? fmtLak(subtotal) : '0 LAK'}
               </span>
             </div>
-            {/* Discount preset pills */}
-            <div style={{ marginBottom: 8 }}>
+            {/* Discount preset pills — hidden when cart is empty */}
+            {cart.length > 0 && <div style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 6 }}>ส่วนลด</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {DISCOUNT_PRESETS.map(p => (
@@ -3574,7 +3585,7 @@ export default function POSClient() {
                     placeholder="เหตุผล..." />
                 </div>
               )}
-            </div>
+            </div>}
             {mounted && discountAmt > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
                 <span style={{ fontSize: 11, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase' }}>ยอดสุทธิ</span>

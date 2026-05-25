@@ -23,7 +23,7 @@ export interface ReceiptPreviewProps {
   autoSkipSecs?: number
 }
 
-export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, autoSkipSecs = 5 }: ReceiptPreviewProps) {
+export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, autoSkipSecs = 4 }: ReceiptPreviewProps) {
   const [timeLeft,     setTimeLeft]     = useState(autoSkipSecs)
   const [printing,     setPrinting]     = useState(false)
   const [printDone,    setPrintDone]    = useState(false)
