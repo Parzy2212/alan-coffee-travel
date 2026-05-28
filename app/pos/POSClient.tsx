@@ -3261,7 +3261,7 @@ export default function POSClient() {
           onPrint={async () => { if (printFnRef.current) await printFnRef.current() }}
           onSkip={handleReceiptSkip}
           onOpenSettings={handleReceiptOpenSettings}
-          autoSkipSecs={5}
+          autoSkipSecs={4}
         />
       )}
 

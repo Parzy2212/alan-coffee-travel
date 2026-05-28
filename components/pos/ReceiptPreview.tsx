@@ -8,10 +8,11 @@ const GREEN = '#4cba7f'
 const BLACK = '#0a0a0a'
 
 const CSS = `
-@keyframes _rp_in  { from{opacity:0;transform:translateY(28px)} to{opacity:1;transform:none} }
-@keyframes _rp_bar { from{transform:scaleX(1)} to{transform:scaleX(0)} }
+@keyframes _rp_in     { from{opacity:0;transform:translateY(28px)} to{opacity:1;transform:none} }
+@keyframes _rp_shrink { from{width:100%} to{width:0%} }
 @media (prefers-reduced-motion:reduce) {
-  ._rp_in, ._rp_bar { animation: none !important }
+  ._rp_in { animation: none !important }
+  ._rp_shrink_el { animation: none !important; width: 0 !important }
 }
 `
 
@@ -81,18 +82,6 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, a
               ข้ามอัตโนมัติใน {timeLeft} วินาที
             </div>
           )}
-
-          {/* Countdown progress bar */}
-          <div style={{
-            height: 2, backgroundColor: 'rgba(255,255,255,0.07)',
-            borderRadius: 1, overflow: 'hidden', marginTop: 10,
-          }}>
-            <div style={{
-              height: '100%', backgroundColor: GOLD, borderRadius: 1,
-              transformOrigin: 'left',
-              animation: showDiagnostic ? 'none' : `_rp_bar ${autoSkipSecs}s linear forwards`,
-            }} />
-          </div>
         </div>
 
         {/* Paper receipt */}
@@ -103,7 +92,7 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, a
           maxHeight: '50vh',
           overflowY: 'auto',
           boxShadow: '0 8px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)',
-          marginBottom: 18,
+          marginBottom: 14,
           scrollbarWidth: 'thin' as const,
         }}>
           <pre style={{
@@ -117,6 +106,17 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, a
           }}>
             {receiptText}
           </pre>
+        </div>
+
+        {/* Auto-skip progress bar — 4px gold bar, shrinks to 0 over autoSkipSecs */}
+        <div style={{
+          height: 4, backgroundColor: 'rgba(255,255,255,0.07)',
+          borderRadius: 2, overflow: 'hidden', marginBottom: 10,
+        }}>
+          <div className="_rp_shrink_el" style={{
+            height: '100%', width: '100%', backgroundColor: GOLD, borderRadius: 2,
+            animation: showDiagnostic ? 'none' : `_rp_shrink ${autoSkipSecs}s linear forwards`,
+          }} />
         </div>
 
         {/* Action buttons */}
