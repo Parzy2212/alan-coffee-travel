@@ -1166,7 +1166,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
   const boxStyle: React.CSSProperties = isSmall
     ? { position: 'fixed', inset: 0, borderRadius: 0, backgroundColor: '#181818', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
-    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 480, maxHeight: '94vh', display: 'flex', flexDirection: 'column' }
+    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 480, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }
 
   const btnBg = loading ? `${GOLD}55`
     : method === 'cash' && received !== '' && receivedNum < finalTotal ? `${RED}22`
@@ -3381,10 +3381,10 @@ export default function POSClient() {
       )}
 
       {/* ── MAIN SPLIT 60/40 */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
         {/* ── LEFT 60%: MENU */}
-        <div style={{ flex: '0 0 60%', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
 
           {/* Search */}
           <div style={{ padding: '10px 16px', backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, position: 'relative' }}>
@@ -3418,14 +3418,14 @@ export default function POSClient() {
             flexShrink: 0, overflowX: 'auto',
           }}>
             <button onClick={() => selectL1('All')} style={{
-              padding: '0 18px', height: 44, borderRadius: 999, border: 'none', flexShrink: 0,
+              padding: '0 18px', height: 40, borderRadius: 999, border: 'none', flexShrink: 0,
               backgroundColor: activeL1 === 'All' ? GOLD : 'rgba(255,255,255,0.07)',
               color: activeL1 === 'All' ? BLACK : 'rgba(255,255,255,0.5)',
               fontWeight: activeL1 === 'All' ? 700 : 500, fontSize: 13, cursor: 'pointer',
             }}>All</button>
             {l1Categories.map(cat => (
               <button key={cat.id} onClick={() => selectL1(cat.id)} style={{
-                padding: '0 18px', height: 44, borderRadius: 999, border: 'none', flexShrink: 0,
+                padding: '0 18px', height: 40, borderRadius: 999, border: 'none', flexShrink: 0,
                 backgroundColor: activeL1 === cat.id ? GOLD : 'rgba(255,255,255,0.07)',
                 color: activeL1 === cat.id ? BLACK : 'rgba(255,255,255,0.5)',
                 fontWeight: activeL1 === cat.id ? 700 : 500, fontSize: 13, cursor: 'pointer',
@@ -3454,7 +3454,7 @@ export default function POSClient() {
           {/* Recipe grid */}
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
             {loading ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
                 {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton" style={{ height: 108, borderRadius: 8 }} />)}
               </div>
             ) : displayRecipes.length === 0 ? (
@@ -3462,7 +3462,7 @@ export default function POSClient() {
                 {searchQuery ? `ไม่พบ "${searchQuery}"` : 'No items in this category'}
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
                 {displayRecipes.map((recipe, idx) => (
                   <MenuCard
                     key={recipe.id}
@@ -3479,8 +3479,8 @@ export default function POSClient() {
           </div>
         </div>
 
-        {/* ── RIGHT: CART + PAYMENT (40% tablet, 50% desktop) */}
-        <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', backgroundColor: '#111' }}>
+        {/* ── RIGHT: CART + PAYMENT */}
+        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#111', overflow: 'hidden', minWidth: 0 }}>
 
           {/* Cart header */}
           <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
