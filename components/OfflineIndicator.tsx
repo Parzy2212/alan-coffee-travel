@@ -19,8 +19,7 @@ export function OfflineIndicator() {
   useEffect(() => {
     if (!prevOnline && online) {
       setFlash(true)
-      setDismissed(false)  // re-show "back online" flash even if previously dismissed
-      try { sessionStorage.removeItem(DISMISS_KEY) } catch {}
+      // Do NOT reset dismissed — user's explicit dismiss stays in effect
       const t = setTimeout(() => setFlash(false), 3000)
       setPrevOnline(online)
       return () => clearTimeout(t)
@@ -59,8 +58,11 @@ export function OfflineIndicator() {
           title="Dismiss for this session"
           style={{
             background: 'none', border: 'none',
-            color: 'rgba(255,255,255,0.4)', fontSize: 18, cursor: 'pointer',
-            lineHeight: 1, padding: '0 4px', flexShrink: 0,
+            color: 'rgba(255,255,255,0.6)', fontSize: 20, cursor: 'pointer',
+            lineHeight: 1, padding: 0, flexShrink: 0,
+            width: 36, height: 36,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            borderRadius: 6,
           }}
         >×</button>
       )}
