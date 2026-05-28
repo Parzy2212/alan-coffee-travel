@@ -13,7 +13,7 @@ const path = require('path')
 const { execFile } = require('child_process')
 
 const PORT      = 12345
-const USB_PORTS = ['USB001', 'USB002', 'USB003', 'USB004', 'USB005']
+const USB_PORTS = Array.from({ length: 20 }, (_, i) => `USB${String(i + 1).padStart(3, '0')}`)
 const WIFI_PORT = 9100
 
 let cachedUsbPort = null
