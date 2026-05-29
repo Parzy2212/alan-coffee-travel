@@ -60,7 +60,7 @@ export function CustomerSelector({ shopId, onSelect, onClose }: CustomerSelector
         <div style={{
           backgroundColor: '#181818', border: `1px solid ${GOLD}44`,
           borderRadius: 18, width: '100%', maxWidth: 440,
-          maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+          maxHeight: '80dvh', display: 'flex', flexDirection: 'column',
           boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
         }}>
           {/* Header */}

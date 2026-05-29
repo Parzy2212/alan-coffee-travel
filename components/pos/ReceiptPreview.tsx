@@ -89,7 +89,7 @@ export function ReceiptPreview({ receiptText, onPrint, onSkip, onOpenSettings, a
           backgroundColor: '#ffffff',
           borderRadius: 10,
           padding: '20px 16px',
-          maxHeight: '50vh',
+          maxHeight: '50dvh',
           overflowY: 'auto',
           boxShadow: '0 8px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)',
           marginBottom: 14,

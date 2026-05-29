@@ -518,7 +518,7 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
       <div className="cpopup-sheet" style={{
         backgroundColor: '#161616',
         borderRadius: '20px 20px 0 0',
-        width: '100%', maxWidth: 480, maxHeight: '92vh',
+        width: '100%', maxWidth: 480, maxHeight: '85dvh',
         display: 'flex', flexDirection: 'column',
         animation: 'cpopup-sheet 0.22s cubic-bezier(0.2,0,0,1)',
         overflow: 'hidden',
@@ -804,7 +804,7 @@ function DigitalReceiptPopup({
       <div style={{
         backgroundColor: '#121212', border: `1px solid ${GOLD}44`,
         borderRadius: 16, width: '100%', maxWidth: 420,
-        maxHeight: '92vh', display: 'flex', flexDirection: 'column',
+        maxHeight: '85dvh', display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
         {/* Header bar */}
@@ -1166,7 +1166,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
   const boxStyle: React.CSSProperties = isSmall
     ? { position: 'fixed', inset: 0, borderRadius: 0, backgroundColor: '#181818', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
-    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 480, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }
+    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 480, maxHeight: '85dvh', display: 'flex', flexDirection: 'column' }
 
   const btnBg = loading ? `${GOLD}55`
     : method === 'cash' && received !== '' && receivedNum < finalTotal ? `${RED}22`
@@ -1703,7 +1703,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
     }}>
       <div style={{
         backgroundColor: '#181818', border: `1px solid ${GOLD}44`,
-        borderRadius: 14, width: 420, maxHeight: '88vh', display: 'flex', flexDirection: 'column',
+        borderRadius: 14, width: 420, maxHeight: '85dvh', display: 'flex', flexDirection: 'column',
       }}>
         {/* Header */}
         <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2057,7 +2057,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
               }}>
                 <div onClick={e => e.stopPropagation()} style={{
                   backgroundColor: '#fff', borderRadius: 8, padding: '16px',
-                  maxHeight: '80vh', overflowY: 'auto', maxWidth: 360, width: '100%',
+                  maxHeight: '80dvh', overflowY: 'auto', maxWidth: 360, width: '100%',
                 }}>
                   <div style={{ fontSize: 10, color: '#999', marginBottom: 8, fontFamily: 'monospace' }}>
                     ตัวอย่างใบเสร็จ (80mm) — กดพื้นหลังเพื่อปิด
@@ -2488,7 +2488,7 @@ function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose }: {
       onClick={e => { if (e.target === overlayRef.current) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 210, backgroundColor: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
     >
-      <div style={{ backgroundColor: '#131313', border: `1px solid ${GOLD}44`, borderRadius: 16, width: '100%', maxWidth: 500, maxHeight: '84vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ backgroundColor: '#131313', border: `1px solid ${GOLD}44`, borderRadius: 16, width: '100%', maxWidth: 500, maxHeight: '85dvh', display: 'flex', flexDirection: 'column' }}>
 
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -3188,7 +3188,7 @@ export default function POSClient() {
 
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column', height: '100vh',
+      display: 'flex', flexDirection: 'column', height: '100dvh',
       backgroundColor: BLACK, color: '#fff',
       fontFamily: 'var(--font-body, Inter, sans-serif)', overflow: 'hidden',
     }}>
@@ -3381,7 +3381,7 @@ export default function POSClient() {
       )}
 
       {/* ── MAIN SPLIT 60/40 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '65% 35%', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
         {/* ── LEFT 60%: MENU */}
         <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
@@ -3452,9 +3452,9 @@ export default function POSClient() {
           )}
 
           {/* Recipe grid */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
             {loading ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
                 {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton" style={{ height: 108, borderRadius: 8 }} />)}
               </div>
             ) : displayRecipes.length === 0 ? (
@@ -3462,7 +3462,7 @@ export default function POSClient() {
                 {searchQuery ? `ไม่พบ "${searchQuery}"` : 'No items in this category'}
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
                 {displayRecipes.map((recipe, idx) => (
                   <MenuCard
                     key={recipe.id}
