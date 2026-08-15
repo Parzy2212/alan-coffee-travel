@@ -1,0 +1,7 @@
+# Commit messages MUST be ASCII-only (Cloudflare Pages requirement).
+# Use English. No Thai, arrows (->  not →), em dashes (-- not —), or symbols.
+#
+# Good: "Add avatar dropdown with logout to sidebar"
+# Good: "Fix receipt price truncation for orders over 100k LAK"
+# Bad:  "เพิ่ม feature ใหม่"
+# Bad:  "qty_required → qty_normal rename"
