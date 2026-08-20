@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Navbar from '@/components/Navbar'
+import InquiryModal from '@/components/InquiryModal'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
 
@@ -34,6 +35,9 @@ type Guide = {
   phone: string | null
   facebook: string | null
   is_verified: boolean | null
+  contact_whatsapp: string | null
+  contact_line: string | null
+  contact_telegram: string | null
 }
 
 const RATINGS = [
@@ -105,6 +109,7 @@ export default function DestinationDetailClient({
 }) {
   const { lang } = useLang()
   const [bookHovered, setBookHovered] = useState(false)
+  const [inquiryGuide, setInquiryGuide] = useState<Guide | null>(null)
 
   const images: string[] = destination.image_urls ?? []
   const heroImage = images[0] ?? null
@@ -115,6 +120,10 @@ export default function DestinationDetailClient({
   )
 
   return (
+    <>
+      {inquiryGuide && (
+        <InquiryModal guide={inquiryGuide} onClose={() => setInquiryGuide(null)} lang={lang} destinationId={destination.id} />
+      )}
     <main style={{ minHeight: '100vh', backgroundColor: 'var(--background)' }}>
       <script
         type="application/ld+json"
@@ -313,8 +322,18 @@ export default function DestinationDetailClient({
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const }}>
+                      {g.contact_whatsapp && (
+                        <a href={`https://wa.me/${g.contact_whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: '#25D366', color: '#fff', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                          💬 WhatsApp
+                        </a>
+                      )}
+                      <button onClick={() => setInquiryGuide(g)}
+                        style={{ backgroundColor: '#c9a84c', color: '#000', padding: '7px 14px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                        {tr('gp_contact', lang)}
+                      </button>
                       {g.phone && (
-                        <a href={`tel:${g.phone}`} style={{ backgroundColor: '#c9a84c', color: '#000', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                        <a href={`tel:${g.phone}`} style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
                           📞 {tr('guides_call', lang)}
                         </a>
                       )}
@@ -340,5 +359,6 @@ export default function DestinationDetailClient({
       </footer>
 
     </main>
+    </>
   )
 }
