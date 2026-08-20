@@ -112,7 +112,9 @@ export default function HomeClient() {
     }).catch(() => { /* render with empty data */ })
   }, [])
 
-  // Scroll-triggered fade-up animation
+  // Scroll-triggered fade-up animation.
+  // Re-runs when async-loaded sections (destinations/guides/experiences) render,
+  // since their .fade-up cards don't exist in the DOM on first mount.
   useEffect(() => {
     const els = document.querySelectorAll('.fade-up')
     const obs = new IntersectionObserver(
@@ -128,7 +130,7 @@ export default function HomeClient() {
     )
     els.forEach(el => obs.observe(el))
     return () => obs.disconnect()
-  }, [])
+  }, [destinations, guides, featuredExps])
 
   const stats = [
     { value: '18',                          label: tr('stat_provinces',    lang) },
