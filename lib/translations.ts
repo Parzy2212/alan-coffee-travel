@@ -245,6 +245,9 @@ const strings: Record<string, S> = {
   map_go_admin:      { en: 'Go to Admin →',          lo: 'ໄປ Admin →',              th: 'ไปที่ Admin →'           },
   map_guide_avail:   { en: 'Guide Available',        lo: 'ມີມັກກ້ຽວ',              th: 'มีไกด์'                  },
   map_details:       { en: 'Details',                lo: 'ລາຍລະອຽດ',               th: 'รายละเอียด'              },
+  map_coming_soon:   { en: 'Coming soon',            lo: 'ກຳລັງຈະມາ',             th: 'เร็วๆ นี้'               },
+  dest_show_map:     { en: 'Show Map',               lo: 'ສະແດງແຜນທີ່',            th: 'แสดงแผนที่'              },
+  dest_show_list:    { en: 'Show List',              lo: 'ສະແດງລາຍການ',           th: 'แสดงรายการ'              },
 
   // ── Destination detail page ───────────────────────────────────────────
   detail_all_dest:       { en: '← All Destinations',        lo: '← ທຸກບ່ອນທ່ຽວ',         th: '← จุดหมายทั้งหมด'       },

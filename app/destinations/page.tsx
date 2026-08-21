@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { matchesSearch } from '@/lib/search'
 import Navbar from '@/components/Navbar'
+import DestinationMap from '@/components/DestinationMap'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
 
@@ -24,6 +25,10 @@ type Destination = {
   rating_tranquility: number | null
   rating_traveler_value: number | null
   featured: boolean | null
+  transport_price: string | null
+  has_guide: boolean | null
+  location_lat: number | null
+  location_lng: number | null
 }
 
 function avgRating(d: Destination): number | null {
@@ -47,6 +52,7 @@ export default function DestinationsPage() {
   const [province, setProvince] = useState('all')
   const [assessment, setAssessment] = useState('all')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [showMap, setShowMap] = useState(false)
 
   useEffect(() => {
     supabase
@@ -141,11 +147,12 @@ export default function DestinationsPage() {
         </div>
       </section>
 
-      {/* GRID */}
-      <section style={{ padding: '48px 20px', maxWidth: '1280px', margin: '0 auto' }}>
+      {/* SPLIT VIEW: list + map */}
+      <div className={`dest-split ${showMap ? 'show-map' : 'show-list'}`}>
+        <div className="dest-split-list">
 
         {loading ? (
-          <div className="grid-3">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '20px' }}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ borderRadius: '8px', overflow: 'hidden', backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.07)' }}>
                 <div className="skeleton" style={{ height: '220px' }} />
@@ -176,7 +183,7 @@ export default function DestinationsPage() {
             <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>{tr('dest_no_results_sub', lang)}</p>
           </div>
         ) : (
-          <div className="grid-3">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '20px' }}>
             {filtered.map(d => {
               const heroImage = d.image_urls?.[0] ?? null
               const isAssessed = d.assessment_status === 'assessed'
@@ -268,7 +275,19 @@ export default function DestinationsPage() {
             })}
           </div>
         )}
-      </section>
+        </div>
+
+        <div className="dest-split-map">
+          <DestinationMap destinations={filtered} lang={lang} />
+        </div>
+      </div>
+
+      <button
+        className="dest-map-toggle"
+        onClick={() => setShowMap(m => !m)}
+      >
+        {showMap ? `☰ ${tr('dest_show_list', lang)}` : `🗺️ ${tr('dest_show_map', lang)}`}
+      </button>
 
       {/* FOOTER */}
       <footer style={{ backgroundColor: 'var(--color-black-soft)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '40px 20px' }}>
