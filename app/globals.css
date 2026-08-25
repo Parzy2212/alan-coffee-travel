@@ -103,6 +103,14 @@ html[data-lang="th"] body * {
   .nav-contact-btn { display: inline-block; }
 }
 
+/* CafeOS pill — hidden below 1024px (still reachable via the mobile hamburger menu) */
+.nav-cafeos-btn {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .nav-cafeos-btn { display: inline-block; }
+}
+
 .nav-mobile-menu {
   display: none;
   position: fixed;

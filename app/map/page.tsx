@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
+import Navbar from '@/components/Navbar'
 
 type Destination = {
   id: string
@@ -98,17 +99,7 @@ export default function MapPage() {
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
 
-      {/* TOP NAV BAR */}
-      <div style={{ backgroundColor: 'var(--color-black)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '0 20px', height: '52px', display: 'flex', alignItems: 'center' }}>
-        <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '16px', color: 'var(--color-white)' }}>ALAN</span>
-          <span style={{ width: '3px', height: '3px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
-          <span style={{ color: 'var(--color-gray-400)', fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
-        </a>
-        <a href="/destinations" style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {tr('map_page_all_dest', lang)}
-        </a>
-      </div>
+      <Navbar />
 
       {/* HEADER */}
       <section style={{ backgroundColor: 'var(--color-black)', padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>

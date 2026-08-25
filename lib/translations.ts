@@ -264,6 +264,8 @@ const strings: Record<string, S> = {
   detail_view_maps:      { en: 'View on Google Maps 🗺️',    lo: 'ເບິ່ງໃນ Google Maps 🗺️',  th: 'ดูใน Google Maps 🗺️'    },
   detail_alan_standard:  { en: '★ Alan Travel Standard',    lo: '★ Alan Travel Standard',  th: '★ Alan Travel Standard'  },
   detail_book:           { en: 'Book Experience',            lo: 'ຈອງປະສົບການ',             th: 'จองประสบการณ์'           },
+  detail_chat_whatsapp:  { en: 'Chat on WhatsApp',           lo: 'ສົນທະນາທາງ WhatsApp',      th: 'แชทผ่าน WhatsApp'        },
+  detail_other_ways:     { en: 'Other ways to contact',      lo: 'ຊ່ອງທາງອື່ນ',              th: 'ช่องทางอื่น'             },
   detail_guides_h2:      { en: 'Available Guides',           lo: 'ມັກກ້ຽວທີ່ມີ',            th: 'ไกด์ที่พร้อม'            },
   detail_more_guides: {
     en: 'More guides available at',

@@ -76,8 +76,13 @@ export default function Navbar() {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    padding: '4px 6px',
-                    fontSize: '11px',
+                    minWidth: '44px',
+                    minHeight: '44px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '4px 8px',
+                    fontSize: '12px',
                     fontWeight: lang === opt.code ? 700 : 400,
                     color: lang === opt.code ? 'var(--color-gold)' : 'var(--color-gray-400)',
                     borderRight: i < LANG_OPTIONS.length - 1 ? '1px solid var(--color-cream-border)' : 'none',
@@ -93,7 +98,7 @@ export default function Navbar() {
               ))}
             </div>
 
-            <a href="/pos-product" style={{
+            <a href="/pos-product" className="nav-cafeos-btn" style={{
               border: '1px solid rgba(201,168,76,0.35)',
               color: 'var(--color-gold)',
               padding: '7px 13px',
@@ -164,9 +169,14 @@ export default function Navbar() {
                 background: lang === opt.code ? 'var(--color-gold)' : 'var(--color-cream-dark)',
                 border: 'none',
                 cursor: 'pointer',
-                padding: '6px 14px',
+                minWidth: '44px',
+                minHeight: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px 16px',
                 borderRadius: '4px',
-                fontSize: '12px',
+                fontSize: '13px',
                 fontWeight: 700,
                 color: lang === opt.code ? '#0a0a0a' : 'var(--color-gray-600)',
                 fontFamily: 'var(--font-lao)',

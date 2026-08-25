@@ -109,7 +109,16 @@ export default function DestinationDetailClient({
 }) {
   const { lang } = useLang()
   const [bookHovered, setBookHovered] = useState(false)
+  const [showInquiry, setShowInquiry] = useState(false)
   const [inquiryGuide, setInquiryGuide] = useState<Guide | null>(null)
+  const [topExpanded, setTopExpanded] = useState(false)
+  const [expandedGuideId, setExpandedGuideId] = useState<string | null>(null)
+
+  const openInquiry = (guide: Guide | null) => {
+    setInquiryGuide(guide)
+    setShowInquiry(true)
+  }
+  const closeInquiry = () => setShowInquiry(false)
 
   const images: string[] = destination.image_urls ?? []
   const heroImage = images[0] ?? null
@@ -118,11 +127,12 @@ export default function DestinationDetailClient({
   const ratedDims = RATINGS.filter(
     d => (destination as any)[d.key] != null && (destination as any)[d.key] > 0
   )
+  const primaryGuide = linkedGuides.find(g => g.contact_whatsapp) ?? linkedGuides[0] ?? null
 
   return (
     <>
-      {inquiryGuide && (
-        <InquiryModal guide={inquiryGuide} onClose={() => setInquiryGuide(null)} lang={lang} destinationId={destination.id} />
+      {showInquiry && (
+        <InquiryModal guide={inquiryGuide} onClose={closeInquiry} lang={lang} destinationId={destination.id} />
       )}
     <main style={{ minHeight: '100vh', backgroundColor: 'var(--background)' }}>
       <script
@@ -273,15 +283,63 @@ export default function DestinationDetailClient({
               </div>
             )}
 
-            {/* Book button */}
-            <a
-              href="/contact"
-              onMouseEnter={() => setBookHovered(true)}
-              onMouseLeave={() => setBookHovered(false)}
-              style={{ display: 'block', width: '100%', backgroundColor: bookHovered ? 'var(--color-gold-light)' : 'var(--color-gold)', color: 'var(--color-black)', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none', textAlign: 'center' as const, boxSizing: 'border-box' as const, transform: bookHovered ? 'translateY(-1px)' : 'none', transition: 'background-color 0.15s, transform 0.15s' }}
+            {/* Primary CTA — one clear action; everything else collapses below */}
+            {primaryGuide?.contact_whatsapp ? (
+              <a
+                href={`https://wa.me/${primaryGuide.contact_whatsapp.replace(/\D/g,'')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onMouseEnter={() => setBookHovered(true)}
+                onMouseLeave={() => setBookHovered(false)}
+                style={{ display: 'block', width: '100%', backgroundColor: '#25D366', color: '#fff', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none', textAlign: 'center' as const, boxSizing: 'border-box' as const, transform: bookHovered ? 'translateY(-1px)' : 'none', transition: 'transform 0.15s' }}
+              >
+                💬 {tr('detail_chat_whatsapp', lang)}
+              </a>
+            ) : (
+              <button
+                onClick={() => openInquiry(primaryGuide)}
+                onMouseEnter={() => setBookHovered(true)}
+                onMouseLeave={() => setBookHovered(false)}
+                style={{ display: 'block', width: '100%', backgroundColor: bookHovered ? 'var(--color-gold-light)' : 'var(--color-gold)', color: 'var(--color-black)', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, border: 'none', cursor: 'pointer', textAlign: 'center' as const, boxSizing: 'border-box' as const, transform: bookHovered ? 'translateY(-1px)' : 'none', transition: 'background-color 0.15s, transform 0.15s' }}
+              >
+                {tr('detail_book', lang)}
+              </button>
+            )}
+
+            <button
+              onClick={() => setTopExpanded(v => !v)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-gray-400)', fontSize: '12px', padding: '4px 0', textAlign: 'center' as const, width: '100%' }}
             >
-              {tr('detail_book', lang)}
-            </a>
+              {tr('detail_other_ways', lang)} {topExpanded ? '▴' : '▾'}
+            </button>
+            {topExpanded && (
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '8px' }}>
+                {primaryGuide?.contact_whatsapp && (
+                  <button onClick={() => openInquiry(primaryGuide)}
+                    style={{ backgroundColor: 'rgba(0,0,0,0.04)', color: 'var(--color-gray-600)', padding: '10px', borderRadius: '4px', border: '1px solid var(--color-cream-border)', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
+                    {tr('gp_contact', lang)}
+                  </button>
+                )}
+                {primaryGuide?.phone && (
+                  <a href={`tel:${primaryGuide.phone}`}
+                    style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.04)', color: 'var(--color-gray-600)', padding: '10px', borderRadius: '4px', border: '1px solid var(--color-cream-border)', textDecoration: 'none', textAlign: 'center' as const, fontSize: '13px', fontWeight: 600 }}>
+                    📞 {tr('guides_call', lang)}
+                  </a>
+                )}
+                {primaryGuide?.facebook && (
+                  <a href={primaryGuide.facebook} target="_blank" rel="noopener noreferrer"
+                    style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.04)', color: 'var(--color-gray-600)', padding: '10px', borderRadius: '4px', border: '1px solid var(--color-cream-border)', textDecoration: 'none', textAlign: 'center' as const, fontSize: '13px', fontWeight: 600 }}>
+                    Facebook
+                  </a>
+                )}
+                {!primaryGuide && (
+                  <a href="/contact"
+                    style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.04)', color: 'var(--color-gray-600)', padding: '10px', borderRadius: '4px', border: '1px solid var(--color-cream-border)', textDecoration: 'none', textAlign: 'center' as const, fontSize: '13px', fontWeight: 600 }}>
+                    {tr('nav_contact', lang)}
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -321,26 +379,45 @@ export default function DestinationDetailClient({
                         ))}
                       </div>
                     )}
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const }}>
-                      {g.contact_whatsapp && (
-                        <a href={`https://wa.me/${g.contact_whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
-                          style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: '#25D366', color: '#fff', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
-                          💬 WhatsApp
-                        </a>
+                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const }}>
+                        {g.contact_whatsapp ? (
+                          <a href={`https://wa.me/${g.contact_whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: '#25D366', color: '#fff', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                            💬 WhatsApp
+                          </a>
+                        ) : (
+                          <button onClick={() => openInquiry(g)}
+                            style={{ backgroundColor: '#c9a84c', color: '#000', padding: '7px 14px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                            {tr('gp_contact', lang)}
+                          </button>
+                        )}
+                      </div>
+                      {(g.contact_whatsapp || g.phone || g.facebook) && (
+                        <button onClick={() => setExpandedGuideId(v => v === g.id ? null : g.id)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.35)', fontSize: '11px', padding: '2px 0', textAlign: 'left' as const, alignSelf: 'flex-start' as const }}>
+                          {tr('detail_other_ways', lang)} {expandedGuideId === g.id ? '▴' : '▾'}
+                        </button>
                       )}
-                      <button onClick={() => setInquiryGuide(g)}
-                        style={{ backgroundColor: '#c9a84c', color: '#000', padding: '7px 14px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
-                        {tr('gp_contact', lang)}
-                      </button>
-                      {g.phone && (
-                        <a href={`tel:${g.phone}`} style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
-                          📞 {tr('guides_call', lang)}
-                        </a>
-                      )}
-                      {g.facebook && (
-                        <a href={g.facebook} target="_blank" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
-                          Facebook
-                        </a>
+                      {expandedGuideId === g.id && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const }}>
+                          {g.contact_whatsapp && (
+                            <button onClick={() => openInquiry(g)}
+                              style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '7px 14px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
+                              {tr('gp_contact', lang)}
+                            </button>
+                          )}
+                          {g.phone && (
+                            <a href={`tel:${g.phone}`} style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
+                              📞 {tr('guides_call', lang)}
+                            </a>
+                          )}
+                          {g.facebook && (
+                            <a href={g.facebook} target="_blank" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
+                              Facebook
+                            </a>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

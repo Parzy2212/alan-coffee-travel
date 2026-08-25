@@ -66,7 +66,7 @@ export default function InquiryModal({
               </>
             ) : (
               <h3 style={{ color: 'white', fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, marginBottom: 24 }}>
-                {tr('gp_contact', lang as any)} — {guide?.name}
+                {guide ? `${tr('gp_contact', lang as any)} — ${guide.name}` : tr('detail_book', lang as any)}
               </h3>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
