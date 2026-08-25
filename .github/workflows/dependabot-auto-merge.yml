@@ -1,0 +1,119 @@
+name: Dependabot Auto-Merge
+
+# Patch/minor Dependabot PRs only. Fails closed at every step: any error,
+# any missing signal, or any low-confidence review leaves the PR open for
+# a human instead of merging. Major version bumps are never auto-merged.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  review-and-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure review label exists
+        run: gh label create "needs-manual-review" --color "D93F0B" --description "Dependabot PR held back from auto-merge" --force
+
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Hold major version bumps for manual review
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body "Major version bump ($UPDATE_TYPE) -- never auto-merged. Needs manual review."
+          gh pr edit "$PR_URL" --add-label "needs-manual-review"
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+
+      - name: Setup Node.js
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: npm ci
+
+      - name: Build (must pass before any review happens)
+        id: build
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Comment if build failed
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && failure()
+        run: gh pr comment "$PR_URL" --body "Build failed on this update -- not auto-merging. Needs manual review."
+
+      - name: Quality review (same standard as .claude/agents/quality-reviewer.md)
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.build.outcome == 'success'
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this Dependabot pull request in the same spirit as this repo's
+            .claude/agents/quality-reviewer.md: unbiased, adversarial, and willing to say no.
+
+            This is a ${{ steps.metadata.outputs.update-type }} update for
+            ${{ steps.metadata.outputs.dependency-names }}, from
+            ${{ steps.metadata.outputs.previous-version }} to
+            ${{ steps.metadata.outputs.new-version }}. The build already passed.
+
+            Check specifically:
+            1. Does the diff touch ONLY package.json / package-lock.json (or the relevant
+               manifest for this ecosystem)? Any unrelated file changes are an automatic
+               reject -- Dependabot PRs should never contain surprise edits.
+            2. Is there a changelog or release notes entry available (check the PR body /
+               linked release) mentioning breaking changes, deprecations, or security
+               advisories that a patch/minor bump shouldn't normally carry?
+            3. Does this package appear anywhere in this project in a way that a routine
+               bump could plausibly break (check actual usage in the codebase, not just
+               that it's listed as a dependency) -- e.g. this project cannot use
+               `export const runtime = 'edge'`-incompatible Node APIs (see CLAUDE.md),
+               so an update introducing a Node-only API in a package used from an edge
+               route is a real risk here specifically.
+            4. Is the reported update-type consistent with the actual version numbers
+               (semver-minor should never jump a major version digit)?
+
+            Return your assessment as structured output.
+          claude_args: |
+            --max-turns 8
+            --allowedTools Read,Grep,Glob,Bash(git diff:*),Bash(git show:*)
+            --json-schema '{"type":"object","properties":{"confidence":{"type":"integer","minimum":1,"maximum":5},"reasoning":{"type":"string"},"safe_to_merge":{"type":"boolean"}},"required":["confidence","reasoning","safe_to_merge"]}'
+
+      - name: Merge if confidence is high enough
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.build.outcome == 'success' && fromJSON(steps.review.outputs.structured_output).safe_to_merge == true && fromJSON(steps.review.outputs.structured_output).confidence >= 4
+        run: |
+          gh pr comment "$PR_URL" --body "Auto-merging: quality-reviewer confidence ${CONFIDENCE}/5. ${REASONING}"
+          gh pr merge "$PR_URL" --auto --squash
+        env:
+          CONFIDENCE: ${{ fromJSON(steps.review.outputs.structured_output).confidence }}
+          REASONING: ${{ fromJSON(steps.review.outputs.structured_output).reasoning }}
+
+      - name: Leave for human review if confidence is low
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.build.outcome == 'success' && (fromJSON(steps.review.outputs.structured_output).safe_to_merge != true || fromJSON(steps.review.outputs.structured_output).confidence < 4)
+        run: |
+          gh pr comment "$PR_URL" --body "Not auto-merging: quality-reviewer confidence ${CONFIDENCE}/5. ${REASONING}"
+          gh pr edit "$PR_URL" --add-label "needs-manual-review"
+        env:
+          CONFIDENCE: ${{ fromJSON(steps.review.outputs.structured_output).confidence }}
+          REASONING: ${{ fromJSON(steps.review.outputs.structured_output).reasoning }}
