@@ -101,19 +101,19 @@ jobs:
             --json-schema '{"type":"object","properties":{"confidence":{"type":"integer","minimum":1,"maximum":5},"reasoning":{"type":"string"},"safe_to_merge":{"type":"boolean"}},"required":["confidence","reasoning","safe_to_merge"]}'
 
       - name: Merge if confidence is high enough
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.build.outcome == 'success' && fromJSON(steps.review.outputs.structured_output).safe_to_merge == true && fromJSON(steps.review.outputs.structured_output).confidence >= 4
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.build.outcome == 'success' && fromJSON(steps.review.outputs.structured_output || '{}').safe_to_merge == true && fromJSON(steps.review.outputs.structured_output || '{}').confidence >= 4
         run: |
           gh pr comment "$PR_URL" --body "Auto-merging: quality-reviewer confidence ${CONFIDENCE}/5. ${REASONING}"
           gh pr merge "$PR_URL" --auto --squash
         env:
-          CONFIDENCE: ${{ fromJSON(steps.review.outputs.structured_output).confidence }}
-          REASONING: ${{ fromJSON(steps.review.outputs.structured_output).reasoning }}
+          CONFIDENCE: ${{ fromJSON(steps.review.outputs.structured_output || '{}').confidence }}
+          REASONING: ${{ fromJSON(steps.review.outputs.structured_output || '{}').reasoning }}
 
       - name: Leave for human review if confidence is low
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.build.outcome == 'success' && (fromJSON(steps.review.outputs.structured_output).safe_to_merge != true || fromJSON(steps.review.outputs.structured_output).confidence < 4)
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.build.outcome == 'success' && (fromJSON(steps.review.outputs.structured_output || '{}').safe_to_merge != true || fromJSON(steps.review.outputs.structured_output || '{}').confidence < 4)
         run: |
           gh pr comment "$PR_URL" --body "Not auto-merging: quality-reviewer confidence ${CONFIDENCE}/5. ${REASONING}"
           gh pr edit "$PR_URL" --add-label "needs-manual-review"
         env:
-          CONFIDENCE: ${{ fromJSON(steps.review.outputs.structured_output).confidence }}
-          REASONING: ${{ fromJSON(steps.review.outputs.structured_output).reasoning }}
+          CONFIDENCE: ${{ fromJSON(steps.review.outputs.structured_output || '{}').confidence }}
+          REASONING: ${{ fromJSON(steps.review.outputs.structured_output || '{}').reasoning }}
