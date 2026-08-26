@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { tr } from '@/lib/translations'
 import type { Lang } from '@/contexts/LanguageContext'
 
@@ -35,6 +35,12 @@ export default function DestinationMap({
   onSelectRef.current = onSelect
 
   const markersByIdRef = useRef<Record<string, any>>({})
+  // 'marker' when the current selectedId change originated from clicking a
+  // pin directly (Leaflet already opened its popup with zero camera move --
+  // panning/zooming again would be an unrequested, jarring side effect).
+  // Left null/'list' for a card click, where the map genuinely needs to fly.
+  const selectSourceRef = useRef<'marker' | null>(null)
+  const [mapReady, setMapReady] = useState(false)
 
   const stringsRef = useRef({ guideAvail: tr('map_guide_avail', lang), details: tr('map_details', lang), comingSoon: tr('map_coming_soon', lang) })
   stringsRef.current = { guideAvail: tr('map_guide_avail', lang), details: tr('map_details', lang), comingSoon: tr('map_coming_soon', lang) }
@@ -167,7 +173,10 @@ export default function DestinationMap({
               </div>`,
               { className: 'custom-popup', maxWidth: 280 }
             )
-            .on('click', () => onSelectRef.current?.(dest.id))
+            .on('click', () => {
+              selectSourceRef.current = 'marker'
+              onSelectRef.current?.(dest.id)
+            })
           markers.push(marker)
           markersByIdRef.current[dest.id] = { marker, dest }
         })
@@ -187,6 +196,7 @@ export default function DestinationMap({
       ;(window as any)._destUpdateProvinces = updateProvinceStyles
       ;(window as any)._destFlyToMarker = flyToMarker
       ;(window as any)._destMap = map
+      if (!cancelled) setMapReady(true)
     })
 
     return () => {
@@ -204,11 +214,20 @@ export default function DestinationMap({
 
   // Card (in the list) was clicked/selected from outside -- pan the map to
   // that marker and open its popup, mirroring what clicking the marker
-  // itself already does in the other direction.
+  // itself already does in the other direction. Depends on mapReady too:
+  // Leaflet's script/CSS load asynchronously, so a card click that lands
+  // before that resolves must still be honored once the map finishes
+  // setting up, not silently dropped.
   useEffect(() => {
+    if (selectSourceRef.current === 'marker') {
+      // Selection came from clicking the pin itself -- Leaflet already
+      // opened its popup with no camera move needed; don't re-pan/zoom.
+      selectSourceRef.current = null
+      return
+    }
     const flyToMarker = (window as any)._destFlyToMarker
     if (flyToMarker) flyToMarker(selectedId)
-  }, [selectedId])
+  }, [selectedId, mapReady])
 
   return (
     <>

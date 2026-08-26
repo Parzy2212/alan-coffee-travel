@@ -104,6 +104,7 @@
 | 2 | **Admin district dropdown** only shows Attapeu's 5 districts — should have all 18 provinces with cascading districts | Not started |
 | 3 | **i18n (EN/LO/TH) rolled back** — caused by `localStorage` throwing `SecurityError` on iOS Safari Private mode, AND Supabase client calling `localStorage` during init. Fix when ready: wrap all `localStorage` calls in `try/catch`; init Supabase with `{auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}}` | Rolled back, needs redo |
 | 4 | **CVE-2025-66478** (Next.js RSC RCE) — deferred until Cloudflare adapter migration | Deferred |
+| 5 | **Destinations map basemap tiles** (`components/DestinationMap.tsx`) use Esri's free no-signup `World_Dark_Gray_Base` REST endpoint (`server.arcgisonline.com`) after CARTO retired their anonymous tier (same failure mode: every tile silently became an "API KEY REQUIRED" watermark that looked like a broken map, not a missing key). Esri's endpoint is also a free/no-key tier oriented at light/eval use, not a guaranteed indefinite commercial SLA — if it ever gets rate-limited or retired the same way, watch for the map looking "blank/broken" again rather than an obvious error. | Working, same class of risk as before |
 
 ---
 

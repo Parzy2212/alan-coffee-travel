@@ -890,7 +890,7 @@ export default function HomeClient() {
           {/* Bottom bar */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '28px', display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
             <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
-            <a href="tel:+85620943666635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>📞 +856 20 94 366 635</a>
+            <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>📞 +856 20 94 366 635</a>
             <p style={{ color: 'rgba(255,255,255,0.09)', fontSize: '11px', letterSpacing: '0.5px' }}>ທ່ອງທ່ຽວລາວ &nbsp;·&nbsp; ท่องเที่ยวลาว &nbsp;·&nbsp; Discover Laos Authentically</p>
           </div>
         </div>

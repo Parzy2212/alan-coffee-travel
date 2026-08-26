@@ -275,7 +275,7 @@ export default function ExperiencesPage() {
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'white' }}>ALAN</span>
             <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', marginLeft: 8 }}>Coffee & Travel</span>
             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginTop: 4 }}>{tr('footer_copy', lang)}</p>
-            <a href="tel:+85620943666635" style={{ color: 'var(--color-gold)', fontSize: 12, textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: 4 }}>📞 +856 20 94 366 635</a>
+            <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: 12, textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: 4 }}>📞 +856 20 94 366 635</a>
           </div>
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
             {['/destinations','/guides','/experiences','/about','/contact'].map(href => (
