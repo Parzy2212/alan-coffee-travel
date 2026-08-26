@@ -1,0 +1,91 @@
+name: Dependabot Build Check
+
+# Untrusted half of the Dependabot auto-merge pipeline. Runs with the
+# pull_request event, which is the ONLY reason it exists as a separate
+# workflow: GitHub does not pass repository secrets to workflow runs
+# triggered by a pull_request event opened by dependabot[bot] (GITHUB_TOKEN
+# is the only thing that still comes through). This job only ever needs
+# GITHUB_TOKEN, so that restriction is fine here -- the privileged half
+# (quality review + merge, which needs ANTHROPIC_API_KEY and the Supabase
+# secrets) lives in dependabot-auto-merge.yml, triggered by workflow_run
+# so it always runs with base-repo permissions and real secrets.
+#
+# Metadata + build result are handed to that second workflow via an
+# artifact, since workflow_run has no access to this run's step outputs.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  build-check:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure review label exists
+        run: gh label create "needs-manual-review" --color "D93F0B" --description "Dependabot PR held back from auto-merge" --force
+
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Hold major version bumps for manual review
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body "Major version bump ($UPDATE_TYPE) -- never auto-merged. Needs manual review."
+          gh pr edit "$PR_URL" --add-label "needs-manual-review"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+
+      - name: Setup Node.js
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: npm ci
+
+      - name: Build (must pass before any review happens)
+        id: build
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: npm run build
+
+      - name: Save metadata for the review/merge workflow
+        if: always()
+        run: |
+          mkdir -p dependabot-meta
+          cat > dependabot-meta/meta.json <<EOF
+          {
+            "pr_number": ${{ github.event.pull_request.number }},
+            "pr_url": "${{ github.event.pull_request.html_url }}",
+            "head_sha": "${{ github.event.pull_request.head.sha }}",
+            "update_type": "${{ steps.metadata.outputs.update-type }}",
+            "dependency_names": ${{ toJSON(steps.metadata.outputs.dependency-names) }},
+            "previous_version": ${{ toJSON(steps.metadata.outputs.previous-version) }},
+            "new_version": ${{ toJSON(steps.metadata.outputs.new-version) }},
+            "build_outcome": "${{ steps.build.outcome }}"
+          }
+          EOF
+          cat dependabot-meta/meta.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependabot-meta
+          path: dependabot-meta/meta.json
+          retention-days: 1
