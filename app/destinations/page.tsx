@@ -52,7 +52,16 @@ export default function DestinationsPage() {
   const [province, setProvince] = useState('all')
   const [assessment, setAssessment] = useState('all')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showMap, setShowMap] = useState(false)
+
+  // Card <-> pin sync: when a pin is clicked on the map, scroll the matching
+  // card into view and highlight it. When a card is clicked, the map effect
+  // in DestinationMap reacts to selectedId and flies to that pin.
+  useEffect(() => {
+    if (!selectedId) return
+    document.getElementById(`dest-card-${selectedId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [selectedId])
 
   useEffect(() => {
     supabase
@@ -191,17 +200,22 @@ export default function DestinationsPage() {
               const stars = avg != null ? Math.round(avg) : null
 
               const isHovered = hoveredId === d.id
+              const isSelected = selectedId === d.id
               const borderColor = d.featured
                 ? isHovered ? 'rgba(201,168,76,0.5)' : 'rgba(201,168,76,0.22)'
                 : isHovered ? 'rgba(201,168,76,0.35)' : 'rgba(255,255,255,0.07)'
 
               return (
-                <a
+                <div
                   key={d.id}
-                  href={`/destinations/${d.slug}`}
+                  id={`dest-card-${d.id}`}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => setSelectedId(d.id)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(d.id) } }}
                   onMouseEnter={() => setHoveredId(d.id)}
                   onMouseLeave={() => setHoveredId(null)}
-                  style={{ textDecoration: 'none', display: 'block', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#111', border: `1px solid ${borderColor}`, transform: isHovered ? 'translateY(-4px)' : 'none', boxShadow: isHovered ? '0 16px 48px rgba(0,0,0,0.45)' : 'none', transition: 'border-color 0.2s, transform 0.22s, box-shadow 0.22s' }}
+                  style={{ cursor: 'pointer', display: 'block', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#111', border: `1px solid ${borderColor}`, boxShadow: isSelected ? '0 0 0 2px var(--color-gold)' : isHovered ? '0 16px 48px rgba(0,0,0,0.45)' : 'none', transform: isHovered ? 'translateY(-4px)' : 'none', transition: 'border-color 0.2s, transform 0.22s, box-shadow 0.22s' }}
                 >
                   {/* Image */}
                   <div style={{ position: 'relative', height: '220px', backgroundColor: '#0a0a0a', overflow: 'hidden' }}>
@@ -265,12 +279,16 @@ export default function DestinationsPage() {
                           <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>{tr('dest_not_assessed_label', lang)}</span>
                         )}
                       </div>
-                      <span style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' as const }}>
+                      <a
+                        href={`/destinations/${d.slug}`}
+                        onClick={e => e.stopPropagation()}
+                        style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none' }}
+                      >
                         {tr('dest_discover_link', lang)}
-                      </span>
+                      </a>
                     </div>
                   </div>
-                </a>
+                </div>
               )
             })}
           </div>
@@ -278,7 +296,7 @@ export default function DestinationsPage() {
         </div>
 
         <div className="dest-split-map">
-          <DestinationMap destinations={filtered} lang={lang} />
+          <DestinationMap destinations={filtered} lang={lang} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
       </div>
 
@@ -300,6 +318,7 @@ export default function DestinationsPage() {
                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
               </div>
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
+              <a href="tel:+85620943666635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: '4px' }}>📞 +856 20 94 366 635</a>
             </div>
             <div className="footer-links">
               {[
