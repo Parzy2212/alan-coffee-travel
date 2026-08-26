@@ -60,7 +60,7 @@ jobs:
 
       - name: Checkout PR head
         if: steps.meta.outputs.update_type != 'version-update:semver-major' && steps.meta.outputs.build_outcome == 'success'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
