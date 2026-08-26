@@ -84,6 +84,15 @@ html[data-lang="th"] body * {
   .nav-links-desktop { display: flex; gap: 36px; }
 }
 
+/* Tagline — hidden on narrow phones so the logo + language switcher
+   don't push the hamburger past the right edge of the viewport */
+.nav-logo-tagline {
+  display: inline;
+}
+@media (max-width: 599px) {
+  .nav-logo-tagline { display: none; }
+}
+
 /* Hamburger — hidden at 1024px+ */
 .nav-hamburger {
   display: flex;

@@ -76,10 +76,15 @@ export default function InquiryModal({
                 <input placeholder={tr('inq_country', lang as any)} value={form.country} onChange={e => set('country', e.target.value)} style={{ ...inputStyle, flex: 1 }} />
                 <input type="date" value={form.date} onChange={e => set('date', e.target.value)} style={{ ...inputStyle, flex: 1 }} />
               </div>
-              <input
-                placeholder={experience ? tr('inq_group', lang as any) : `${tr('inq_group', lang as any)} (${tr('exp_min_max', lang as any)})`}
-                type="number" min={1} max={50} value={form.group} onChange={e => set('group', e.target.value)} style={inputStyle}
-              />
+              <div>
+                <label style={{ display: 'block', color: 'rgba(255,255,255,0.45)', fontSize: 12, marginBottom: 6 }}>
+                  {tr('inq_group', lang as any)}
+                  {experience ? '' : ` (${tr('exp_min_max', lang as any)})`}
+                </label>
+                <input
+                  type="number" min={1} max={50} value={form.group} onChange={e => set('group', e.target.value)} style={inputStyle}
+                />
+              </div>
               <textarea placeholder={tr('inq_message', lang as any)} value={form.message} onChange={e => set('message', e.target.value)} rows={4} style={{ ...inputStyle, resize: 'vertical' }} />
             </div>
 
