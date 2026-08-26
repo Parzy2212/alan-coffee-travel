@@ -72,6 +72,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "dependabot[bot]"
           prompt: |
             Review this Dependabot pull request in the same spirit as this repo's
             .claude/agents/quality-reviewer.md: unbiased, adversarial, and willing to say no.
