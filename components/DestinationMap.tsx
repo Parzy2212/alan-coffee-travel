@@ -17,9 +17,24 @@ type Destination = {
 
 const HOME_PROVINCE = 'Attapeu'
 
-export default function DestinationMap({ destinations, lang }: { destinations: Destination[]; lang: Lang }) {
+export default function DestinationMap({
+  destinations,
+  lang,
+  selectedId,
+  onSelect,
+}: {
+  destinations: Destination[]
+  lang: Lang
+  selectedId?: string | null
+  onSelect?: (id: string) => void
+}) {
   const destinationsRef = useRef(destinations)
   destinationsRef.current = destinations
+
+  const onSelectRef = useRef(onSelect)
+  onSelectRef.current = onSelect
+
+  const markersByIdRef = useRef<Record<string, any>>({})
 
   const stringsRef = useRef({ guideAvail: tr('map_guide_avail', lang), details: tr('map_details', lang), comingSoon: tr('map_coming_soon', lang) })
   stringsRef.current = { guideAvail: tr('map_guide_avail', lang), details: tr('map_details', lang), comingSoon: tr('map_coming_soon', lang) }
@@ -68,8 +83,13 @@ export default function DestinationMap({ destinations, lang }: { destinations: D
 
       const map = L.map('dest-map', { zoomControl: true, scrollWheelZoom: true })
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-        attribution: '© CARTO',
+      // CARTO's free basemap tiles now require a signed-up API key (their
+      // anonymous tier was retired) -- without one every tile just shows an
+      // "API KEY REQUIRED" watermark, which at a glance looks like a broken
+      // map. Esri's World Dark Gray Base is a real no-signup alternative.
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '© Esri',
+        maxZoom: 16,
       }).addTo(map)
 
       const res = await fetch('/lao_admin1.geojson')
@@ -127,6 +147,7 @@ export default function DestinationMap({ destinations, lang }: { destinations: D
       function drawMarkers(list: Destination[]) {
         markers.forEach(m => map.removeLayer(m))
         markers = []
+        markersByIdRef.current = {}
         list.forEach(dest => {
           if (!dest.location_lat || !dest.location_lng) return
           const pinIcon = L.divIcon({
@@ -146,13 +167,25 @@ export default function DestinationMap({ destinations, lang }: { destinations: D
               </div>`,
               { className: 'custom-popup', maxWidth: 280 }
             )
+            .on('click', () => onSelectRef.current?.(dest.id))
           markers.push(marker)
+          markersByIdRef.current[dest.id] = { marker, dest }
         })
+      }
+
+      function flyToMarker(id: string | null | undefined) {
+        if (!id) return
+        const entry = markersByIdRef.current[id]
+        if (!entry) return
+        const { marker, dest } = entry
+        map.flyTo([dest.location_lat, dest.location_lng], Math.max(map.getZoom(), 11), { duration: 0.6 })
+        marker.openPopup()
       }
 
       drawMarkers(destinationsRef.current)
       ;(window as any)._destRedrawMarkers = drawMarkers
       ;(window as any)._destUpdateProvinces = updateProvinceStyles
+      ;(window as any)._destFlyToMarker = flyToMarker
       ;(window as any)._destMap = map
     })
 
@@ -164,9 +197,18 @@ export default function DestinationMap({ destinations, lang }: { destinations: D
         ;(window as any)._destMap = null
         ;(window as any)._destRedrawMarkers = null
         ;(window as any)._destUpdateProvinces = null
+        ;(window as any)._destFlyToMarker = null
       }
     }
   }, [])
+
+  // Card (in the list) was clicked/selected from outside -- pan the map to
+  // that marker and open its popup, mirroring what clicking the marker
+  // itself already does in the other direction.
+  useEffect(() => {
+    const flyToMarker = (window as any)._destFlyToMarker
+    if (flyToMarker) flyToMarker(selectedId)
+  }, [selectedId])
 
   return (
     <>
