@@ -580,9 +580,9 @@ const strings: Record<string, S> = {
   footer_nav:     { en: 'Navigate', lo: 'ລາຍການ',   th: 'เมนู'        },
   footer_company: { en: 'Company',  lo: 'ກ່ຽວກັບ',  th: 'เกี่ยวกับเรา' },
   footer_copy: {
-    en: '© 2025 Alan Coffee & Travel — Attapeu, Laos',
-    lo: '© 2025 ອາລັນ ກາເຟ & ທ່ຽວ — ອັດຕະປື, ລາວ',
-    th: '© 2025 Alan Coffee & Travel — อัตตะปือ, ลาว',
+    en: '© 2026 Alan Coffee & Travel — Attapeu, Laos',
+    lo: '© 2026 ອາລັນ ກາເຟ & ທ່ຽວ — ອັດຕະປື, ລາວ',
+    th: '© 2026 Alan Coffee & Travel — อัตตะปือ, ลาว',
   },
 }
 
