@@ -101,7 +101,7 @@ jobs:
             Return your assessment as structured output.
           claude_args: |
             --max-turns 8
-            --allowedTools Read,Grep,Glob,Bash(git diff:*),Bash(git show:*)
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*)"
             --json-schema '{"type":"object","properties":{"confidence":{"type":"integer","minimum":1,"maximum":5},"reasoning":{"type":"string"},"safe_to_merge":{"type":"boolean"}},"required":["confidence","reasoning","safe_to_merge"]}'
 
       - name: Merge if confidence is high enough
