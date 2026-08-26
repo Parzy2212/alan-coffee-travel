@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { tr } from '@/lib/translations'
+import { displayGuideName } from '@/lib/guideNameOverrides'
 
 const GOLD = '#c9a84c'
 
@@ -66,7 +67,7 @@ export default function InquiryModal({
               </>
             ) : (
               <h3 style={{ color: 'white', fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, marginBottom: 24 }}>
-                {guide ? `${tr('gp_contact', lang as any)} — ${guide.name}` : tr('detail_book', lang as any)}
+                {guide ? `${tr('gp_contact', lang as any)} — ${displayGuideName(guide)}` : tr('detail_book', lang as any)}
               </h3>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

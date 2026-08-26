@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar'
 import InquiryModal from '@/components/InquiryModal'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
+import { displayGuideName } from '@/lib/guideNameOverrides'
 
 type Destination = {
   id: string
@@ -359,13 +360,13 @@ export default function DestinationDetailClient({
               {linkedGuides.map(g => (
                 <div key={g.id} style={{ backgroundColor: '#111', borderRadius: '12px', padding: '20px', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                   {g.photo_url ? (
-                    <img src={g.photo_url} alt={g.name} style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(201,168,76,0.35)', flexShrink: 0 }} />
+                    <img src={g.photo_url} alt={displayGuideName(g)} style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(201,168,76,0.35)', flexShrink: 0 }} />
                   ) : (
                     <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 }}>👤</div>
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' as const }}>
-                      <p style={{ color: 'var(--color-white)', fontWeight: 700, fontSize: '15px', margin: 0 }}>{g.name}</p>
+                      <p style={{ color: 'var(--color-white)', fontWeight: 700, fontSize: '15px', margin: 0 }}>{displayGuideName(g)}</p>
                       {g.is_verified && (
                         <span style={{ backgroundColor: 'rgba(201,168,76,0.12)', color: '#c9a84c', padding: '2px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700 }}>
                           ✓ {tr('guides_verified', lang)}
