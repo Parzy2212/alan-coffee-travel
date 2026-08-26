@@ -30,7 +30,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Ensure review label exists
         run: gh label create "needs-manual-review" --color "D93F0B" --description "Dependabot PR held back from auto-merge" --force
