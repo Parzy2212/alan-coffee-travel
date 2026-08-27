@@ -75,6 +75,10 @@ export default function HomeClient() {
   const [guides, setGuides] = useState<Guide[]>([])
   const [featuredExps, setFeaturedExps] = useState<FeaturedExp[]>([])
   const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
+  const [destError, setDestError] = useState(false)
+  const [guidesError, setGuidesError] = useState(false)
+  const [expError, setExpError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
 
   useEffect(() => {
     const supabase = getSupabase()
@@ -104,13 +108,40 @@ export default function HomeClient() {
         .select('value')
         .eq('key', 'hero_image_url')
         .maybeSingle(),
-    ]).then(([{ data: destData }, { data: guideData }, { data: expData }, { data: heroSetting }]) => {
-      if (destData) setDestinations(destData)
-      if (guideData) setGuides(guideData as Guide[])
-      if (expData) setFeaturedExps(expData as unknown as FeaturedExp[])
-      if (heroSetting?.value) setHeroImageUrl(heroSetting.value)
-    }).catch(() => { /* render with empty data */ })
-  }, [])
+    ]).then(([destRes, guideRes, expRes, heroRes]) => {
+      if (destRes.error) {
+        console.error('HomeClient: failed to load destinations', destRes.error)
+        setDestError(true)
+      } else {
+        setDestError(false)
+        if (destRes.data) setDestinations(destRes.data)
+      }
+      if (guideRes.error) {
+        console.error('HomeClient: failed to load guides', guideRes.error)
+        setGuidesError(true)
+      } else {
+        setGuidesError(false)
+        if (guideRes.data) setGuides(guideRes.data as Guide[])
+      }
+      if (expRes.error) {
+        console.error('HomeClient: failed to load experiences', expRes.error)
+        setExpError(true)
+      } else {
+        setExpError(false)
+        if (expRes.data) setFeaturedExps(expRes.data as unknown as FeaturedExp[])
+      }
+      if (heroRes.error) {
+        console.error('HomeClient: failed to load hero image setting', heroRes.error)
+      } else if (heroRes.data?.value) {
+        setHeroImageUrl(heroRes.data.value)
+      }
+    }).catch(err => {
+      console.error('HomeClient: failed to load homepage data', err)
+      setDestError(true)
+      setGuidesError(true)
+      setExpError(true)
+    })
+  }, [loadAttempt])
 
   // Scroll-triggered fade-up animation.
   // Re-runs when async-loaded sections (destinations/guides/experiences) render,
@@ -345,7 +376,17 @@ export default function HomeClient() {
           </div>
 
           {/* Cards */}
-          {destinations.length === 0 ? (
+          {destError ? (
+            <div style={{ textAlign: 'center' as const, padding: '80px 0' }}>
+              <p style={{ color: 'var(--color-gray-400)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
+              <button
+                onClick={() => setLoadAttempt(n => n + 1)}
+                style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}
+              >
+                {tr('try_again', lang)}
+              </button>
+            </div>
+          ) : destinations.length === 0 ? (
             <div style={{ textAlign: 'center' as const, padding: '80px 0' }}>
               <p style={{ color: 'var(--color-gray-400)', fontSize: '15px' }}>{tr('dest_coming_soon', lang)}</p>
             </div>
@@ -536,7 +577,7 @@ export default function HomeClient() {
       {/* ═══════════════════════════════════════════════════════
           VERIFIED GUIDES
       ═══════════════════════════════════════════════════════ */}
-      {guides.length > 0 && (
+      {(guides.length > 0 || guidesError) && (
         <section style={{ backgroundColor: 'var(--color-cream)', padding: 'clamp(64px, 9vw, 112px) clamp(24px, 4vw, 56px)' }}>
           <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
             {/* Header */}
@@ -564,7 +605,17 @@ export default function HomeClient() {
               </a>
             </div>
 
-            {/* Guide cards */}
+            {guidesError ? (
+              <div style={{ textAlign: 'center' as const, padding: '60px 0' }}>
+                <p style={{ color: 'var(--color-gray-400)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
+                <button
+                  onClick={() => setLoadAttempt(n => n + 1)}
+                  style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}
+                >
+                  {tr('try_again', lang)}
+                </button>
+              </div>
+            ) : (
             <div className="grid-3">
               {guides.map((g, i) => {
                 const photo = g.profile_photo_url ?? g.photo_url
@@ -664,19 +715,22 @@ export default function HomeClient() {
                 )
               })}
             </div>
+            )}
 
             {/* Bottom CTA */}
-            <div className="fade-up" style={{ textAlign: 'center' as const, marginTop: '52px' }}>
-              <a href="/guides" style={{
-                display: 'inline-flex', alignItems: 'center',
-                backgroundColor: 'var(--color-black)', color: 'var(--color-gold)',
-                padding: '15px 40px', borderRadius: '4px',
-                fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px',
-                textTransform: 'uppercase' as const, textDecoration: 'none',
-              }}>
-                {tr('meet_all_guides', lang)}
-              </a>
-            </div>
+            {!guidesError && (
+              <div className="fade-up" style={{ textAlign: 'center' as const, marginTop: '52px' }}>
+                <a href="/guides" style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  backgroundColor: 'var(--color-black)', color: 'var(--color-gold)',
+                  padding: '15px 40px', borderRadius: '4px',
+                  fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px',
+                  textTransform: 'uppercase' as const, textDecoration: 'none',
+                }}>
+                  {tr('meet_all_guides', lang)}
+                </a>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -701,7 +755,17 @@ export default function HomeClient() {
             </a>
           </div>
 
-          {featuredExps.length === 0 ? (
+          {expError ? (
+            <div style={{ textAlign: 'center' as const, padding: '60px 0' }}>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
+              <button
+                onClick={() => setLoadAttempt(n => n + 1)}
+                style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}
+              >
+                {tr('try_again', lang)}
+              </button>
+            </div>
+          ) : featuredExps.length === 0 ? (
             <div style={{ textAlign: 'center' as const, padding: '60px 0 40px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '24px' }}>
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '15px' }}>{tr('home_exp_empty', lang)}</p>
               <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' as const, justifyContent: 'center' }}>

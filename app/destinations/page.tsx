@@ -64,16 +64,27 @@ export default function DestinationsPage() {
   }, [selectedId])
 
   useEffect(() => {
-    supabase
-      .from('destinations')
-      .select('*')
-      .eq('status', 'active')
-      .order('featured', { ascending: false })
-      .then(({ data, error: err }) => {
-        if (err) { setError(tr('dest_no_results', lang)); setLoading(false); return }
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from('destinations')
+          .select('*')
+          .eq('status', 'active')
+          .order('featured', { ascending: false })
+        if (err) {
+          console.error('Destinations page: failed to load destinations', err)
+          setError(tr('fetch_error_msg', lang))
+          setLoading(false)
+          return
+        }
         setDestinations((data as Destination[]) ?? [])
         setLoading(false)
-      })
+      } catch (err) {
+        console.error('Destinations page: failed to load destinations', err)
+        setError(tr('fetch_error_msg', lang))
+        setLoading(false)
+      }
+    })()
   }, [])
 
   const provinces = useMemo(() => {

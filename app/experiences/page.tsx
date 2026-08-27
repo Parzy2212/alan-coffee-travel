@@ -50,16 +50,27 @@ export default function ExperiencesPage() {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase
-      .from('experiences')
-      .select('*, guides(name, profile_photo_url, photo_url)')
-      .eq('status', 'active')
-      .order('featured', { ascending: false })
-      .then(({ data, error: err }) => {
-        if (err) { setError(err.message); setLoading(false); return }
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from('experiences')
+          .select('*, guides(name, profile_photo_url, photo_url)')
+          .eq('status', 'active')
+          .order('featured', { ascending: false })
+        if (err) {
+          console.error('Experiences page: failed to load experiences', err)
+          setError(tr('fetch_error_msg', lang))
+          setLoading(false)
+          return
+        }
         setExperiences((data as Experience[]) ?? [])
         setLoading(false)
-      })
+      } catch (err) {
+        console.error('Experiences page: failed to load experiences', err)
+        setError(tr('fetch_error_msg', lang))
+        setLoading(false)
+      }
+    })()
   }, [])
 
   const categories = useMemo(() => Array.from(new Set(experiences.map(e => e.category).filter(Boolean))).sort() as string[], [experiences])

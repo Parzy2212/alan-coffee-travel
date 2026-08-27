@@ -81,6 +81,14 @@ const strings: Record<string, S> = {
     lo: 'ກຳລັງເພີ່ມບ່ອນທ່ຽວໃໝ່.',
     th: 'กำลังเพิ่มจุดหมายใหม่เร็วๆ นี้',
   },
+  // Shared: real fetch failure (network/timeout/db down), distinct from a
+  // genuinely empty result set -- see dest_coming_soon / dest_no_results
+  // for the "no data yet" message, which this must never be confused with.
+  fetch_error_msg: {
+    en: "Couldn't load this right now. Please try again.",
+    lo: 'ໂຫລດຂໍ້ມູນບໍ່ໄດ້ຕອນນີ້. ກະລຸນາລອງໃໝ່.',
+    th: 'ไม่สามารถโหลดข้อมูลได้ตอนนี้ ลองรีเฟรชหน้าอีกครั้ง',
+  },
   not_assessed: {
     en: 'Not yet rated',
     lo: 'ຍັງບໍ່ທັນໃຫ້ຄະແນນ',
@@ -192,9 +200,9 @@ const strings: Record<string, S> = {
     th: 'ขยายทั่วลาว.',
   },
   map_desc: {
-    en: 'Tap a province, explore its districts. Tap a district, find pinned destinations with GPS coordinates you can use in the field. From Phongsali in the far north to Champasack along the Mekong — every corner of Laos, laid out.',
-    lo: 'ກົດທີ່ແຂວງ, ເຫັນເມືອງ. ກົດທີ່ເມືອງ, ເຫັນບ່ອນທ່ຽວພ້ອມ GPS. ຕັ້ງແຕ່ຜົ້ງສາລີທາງເໜືອ ຈົນຮອດຈຳປາສັກທາງໃຕ້ — ລາວທັງໝົດ, ໃນທັດສະນະດຽວ.',
-    th: 'คลิกจังหวัด ดูอำเภอ คลิกอำเภอ ดูจุดหมายพร้อมพิกัด GPS ที่ใช้งานได้จริง ตั้งแต่ผ้งสาลีทางเหนือสุดถึงจำปาสักริมโขง — ลาวทั้งหมด ในมุมเดียว',
+    en: "Tap any of Laos's 18 provinces to see its districts. Pinned destinations with real GPS coordinates start right here in Attapeu — and we're mapping the rest of Laos as we go.",
+    lo: 'ກົດເບິ່ງໄດ້ທັງ 18 ແຂວງຂອງລາວ ເພື່ອເບິ່ງເມືອງ. ບ່ອນທ່ຽວທີ່ປັກໝຸດພ້ອມ GPS ແທ້ ເລີ່ມທີ່ອັດຕະປືກ່ອນ — ແລ້ວພວກເຮົາກຳລັງເພີ່ມແຂວງອື່ນຕໍ່ໄປ.',
+    th: 'แตะได้ครบทั้ง 18 จังหวัดของลาวเพื่อดูอำเภอ จุดหมายที่ปักหมุดพร้อมพิกัด GPS จริงเริ่มต้นที่อัตตะปือก่อน — แล้วเรากำลังเพิ่มจังหวัดอื่นตามมาเรื่อยๆ',
   },
   map_cta: {
     en: 'Open the Map',

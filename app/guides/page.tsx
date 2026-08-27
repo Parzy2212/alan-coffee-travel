@@ -65,16 +65,27 @@ export default function GuidesPage() {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase
-      .from('guides')
-      .select('*')
-      .or('status.eq.active,active.eq.true')
-      .order('featured', { ascending: false })
-      .then(({ data, error: err }) => {
-        if (err) { setError(err.message); setLoading(false); return }
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from('guides')
+          .select('*')
+          .or('status.eq.active,active.eq.true')
+          .order('featured', { ascending: false })
+        if (err) {
+          console.error('Guides page: failed to load guides', err)
+          setError(tr('fetch_error_msg', lang))
+          setLoading(false)
+          return
+        }
         setGuides((data as Guide[]) ?? [])
         setLoading(false)
-      })
+      } catch (err) {
+        console.error('Guides page: failed to load guides', err)
+        setError(tr('fetch_error_msg', lang))
+        setLoading(false)
+      }
+    })()
   }, [])
 
   const provinces = useMemo(() => {
