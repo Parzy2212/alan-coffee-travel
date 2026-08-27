@@ -279,8 +279,13 @@ function InteractiveMap({ onSelectProvince, onSelectDistrict, onDistrictsLoaded,
       const map = L.map('main-map', { zoomControl: true, scrollWheelZoom: true })
       ;(window as any)._map = map
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-        attribution: '© CARTO'
+      // CARTO's free basemap tiles now require a signed-up API key (their
+      // anonymous tier was retired) -- without one every tile just shows an
+      // "API KEY REQUIRED" watermark, which at a glance looks like a broken
+      // map. Esri's World Dark Gray Base is a real no-signup alternative.
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '© Esri',
+        maxZoom: 16,
       }).addTo(map)
 
       // Attapeu-specific corrections for backward compat with existing DB slugs

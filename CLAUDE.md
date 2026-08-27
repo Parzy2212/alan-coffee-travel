@@ -1,7 +1,7 @@
 # Alan Coffee & Travel — CLAUDE.md
 
 > One repo, two products: **Alan Coffee & Travel** (travel website) and **Alan Cafe OS** (POS system).
-> Last updated: 2026-08-25
+> Last updated: 2026-08-27
 
 ---
 
@@ -42,9 +42,11 @@
 ## CRITICAL: Cloudflare / Next.js Constraint
 
 - Still uses `@cloudflare/next-on-pages@1.13.16` (deprecated)
-- **Must migrate to `@opennextjs/cloudflare` BEFORE upgrading Next.js** — two PRs were attempted and closed (#2, #3)
-- **NEVER add `export const runtime = 'edge'`** to any route or page file
-- CVE-2025-66478 (Next.js RSC RCE) is unpatched — intentionally deferred until adapter migration is done; risk is LOW (cafe not launched yet)
+- **Must migrate to `@opennextjs/cloudflare` BEFORE a *major* Next.js upgrade** — two PRs attempting that were closed (#2, #3). A minor/patch bump within 15.x does NOT require this migration first — verified compatible (build passes with `@cloudflare/next-on-pages@1.13.16`) on branch `security/next-15.3.8-patch`.
+- `export const runtime = 'edge'` is present in 11 files (all `/api/*` routes, plus `destinations/[slug]`, `guides/[slug]`, `experiences/[slug]`). **This is fine — the rule banning it here was based on a mistaken premise, corrected 2026-08-27.** Per `nextjs.org/blog/CVE-2025-66478`: *"Next.js 13.x, Next.js 14.x stable, Pages Router applications, and the Edge Runtime are not affected."* The real risk is the Next.js version + App Router/RSC, not the runtime — no action needed on these 11 files for this CVE family.
+- **CVE-2025-66478 (RCE, CVSS 10.0)** + follow-up **CVE-2025-55183** (source code exposure) + **CVE-2025-55184** (DoS, High): `main` is still on Next.js 15.3.4 — unpatched for all three. Fully patched release for the 15.3.x line is **15.3.8** (15.3.6 alone only fixes the original RCE, not the two later ones — see `nextjs.org/blog/security-update-2025-12-11`). A verified upgrade sits on branch `security/next-15.3.8-patch` (build + next-on-pages compat + full Playwright regression pass all green) awaiting a merge decision.
+  - Partial mitigation already live: Cloudflare's free "Cloudflare managed ruleset" (Security → Settings → Web application exploits) has **Block** rules tagged `cve-2025-55182` (the upstream RCE CVE) and `cve-2025-55183` — confirmed on the dashboard. **No rule yet for `cve-2025-55184` (DoS).** WAF coverage is a mitigating layer, not a substitute for the version bump — Cloudflare's own advisory says patch regardless.
+  - Deployed via Cloudflare **Pages** (`@cloudflare/next-on-pages` → `wrangler pages deploy`), not raw Workers — Cloudflare's "Workers are inherently immune" claim (`blog.cloudflare.com/react2shell-rsc-vulnerabilities-exploitation-threat-brief`) never explicitly names Pages/adapter deployments, so don't treat it as proof this project is covered.
 
 ---
 
@@ -100,11 +102,11 @@
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | **Image upload UI** in admin not built — `image_urls` column exists in DB but upload to Supabase Storage has no UI | Not started |
-| 2 | **Admin district dropdown** only shows Attapeu's 5 districts — should have all 18 provinces with cascading districts | Not started |
+| 1 | **Image upload UI** in admin — uploads to Supabase Storage (`destination-images`, `site-assets` buckets via anon client) | Implemented (`app/admin/page.tsx`) |
+| 2 | **Admin district dropdown** — `PROVINCE_DISTRICTS` in `app/admin/page.tsx` covers all 18 provinces (extracted from `lao_admin2.geojson`), cascading district selection | Implemented |
 | 3 | **i18n (EN/LO/TH) rolled back** — caused by `localStorage` throwing `SecurityError` on iOS Safari Private mode, AND Supabase client calling `localStorage` during init. Fix when ready: wrap all `localStorage` calls in `try/catch`; init Supabase with `{auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}}` | Rolled back, needs redo |
-| 4 | **CVE-2025-66478** (Next.js RSC RCE) — deferred until Cloudflare adapter migration | Deferred |
-| 5 | **Destinations map basemap tiles** (`components/DestinationMap.tsx`) use Esri's free no-signup `World_Dark_Gray_Base` REST endpoint (`server.arcgisonline.com`) after CARTO retired their anonymous tier (same failure mode: every tile silently became an "API KEY REQUIRED" watermark that looked like a broken map, not a missing key). Esri's endpoint is also a free/no-key tier oriented at light/eval use, not a guaranteed indefinite commercial SLA — if it ever gets rate-limited or retired the same way, watch for the map looking "blank/broken" again rather than an obvious error. | Working, same class of risk as before |
+| 4 | **CVE-2025-66478 / CVE-2025-55183 / CVE-2025-55184** (Next.js RSC RCE + follow-up DoS/source-exposure CVEs) — see "CRITICAL: Cloudflare / Next.js Constraint" above | Unpatched on `main`; fix verified on `security/next-15.3.8-patch`, awaiting merge |
+| 5 | **Map basemap tiles** — both `components/DestinationMap.tsx` (destination detail pages) and `app/map/page.tsx` (main Interactive Map) use Esri's free no-signup `World_Dark_Gray_Base` REST endpoint (`server.arcgisonline.com`) after CARTO retired their anonymous tier (same failure mode: every tile silently became an "API KEY REQUIRED" watermark that looked like a broken map, not a missing key — this actually recurred once already: `app/map/page.tsx` was missed in the original DestinationMap.tsx migration and was still on the broken CARTO URL until it was caught and fixed). Esri's endpoint is also a free/no-key tier oriented at light/eval use, not a guaranteed indefinite commercial SLA — if it ever gets rate-limited or retired the same way, watch for the map looking "blank/broken" again on *both* components. | Working, same class of risk as before |
 
 ---
 
