@@ -31,7 +31,7 @@
 
 ## Stack
 
-- **Next.js 15.3.4** — App Router, TypeScript, Tailwind CSS v4 (`@import "tailwindcss"`)
+- **Next.js 15.3.9** — App Router, TypeScript, Tailwind CSS v4 (`@import "tailwindcss"`)
 - **Supabase** — anon key only in `.env.local`; cannot run DDL from this client
 - **Deployment (travel site)** — Vercel: https://alan-coffee-travel.vercel.app
 - **Deployment (POS)** — Netlify (planned, not yet deployed)
@@ -42,11 +42,15 @@
 ## CRITICAL: Cloudflare / Next.js Constraint
 
 - Still uses `@cloudflare/next-on-pages@1.13.16` (deprecated)
-- **Must migrate to `@opennextjs/cloudflare` BEFORE a *major* Next.js upgrade** — two PRs attempting that were closed (#2, #3). A minor/patch bump within 15.x does NOT require this migration first — verified compatible (build passes with `@cloudflare/next-on-pages@1.13.16`) on branch `security/next-15.3.8-patch`.
-- `export const runtime = 'edge'` is present in 11 files (all `/api/*` routes, plus `destinations/[slug]`, `guides/[slug]`, `experiences/[slug]`). **This is fine — the rule banning it here was based on a mistaken premise, corrected 2026-08-27.** Per `nextjs.org/blog/CVE-2025-66478`: *"Next.js 13.x, Next.js 14.x stable, Pages Router applications, and the Edge Runtime are not affected."* The real risk is the Next.js version + App Router/RSC, not the runtime — no action needed on these 11 files for this CVE family.
-- **CVE-2025-66478 (RCE, CVSS 10.0)** + follow-up **CVE-2025-55183** (source code exposure) + **CVE-2025-55184** (DoS, High): `main` is still on Next.js 15.3.4 — unpatched for all three. Fully patched release for the 15.3.x line is **15.3.8** (15.3.6 alone only fixes the original RCE, not the two later ones — see `nextjs.org/blog/security-update-2025-12-11`). A verified upgrade sits on branch `security/next-15.3.8-patch` (build + next-on-pages compat + full Playwright regression pass all green) awaiting a merge decision.
-  - Partial mitigation already live: Cloudflare's free "Cloudflare managed ruleset" (Security → Settings → Web application exploits) has **Block** rules tagged `cve-2025-55182` (the upstream RCE CVE) and `cve-2025-55183` — confirmed on the dashboard. **No rule yet for `cve-2025-55184` (DoS).** WAF coverage is a mitigating layer, not a substitute for the version bump — Cloudflare's own advisory says patch regardless.
-  - Deployed via Cloudflare **Pages** (`@cloudflare/next-on-pages` → `wrangler pages deploy`), not raw Workers — Cloudflare's "Workers are inherently immune" claim (`blog.cloudflare.com/react2shell-rsc-vulnerabilities-exploitation-threat-brief`) never explicitly names Pages/adapter deployments, so don't treat it as proof this project is covered.
+- **Must migrate to `@opennextjs/cloudflare` BEFORE a *major* Next.js upgrade** — two PRs attempting that were closed (#2, #3). A minor/patch bump within 15.x does NOT require this migration first — confirmed twice (15.3.8, then 15.3.9), both times building successfully with `@cloudflare/next-on-pages@1.13.16` in a `node:20` container matching CI, and confirmed for real on the actual production deploy (see CVE line below).
+- `export const runtime = 'edge'` is present in ~11-14 files (all `/api/*` routes, plus `destinations/[slug]`, `guides/[slug]`, `experiences/[slug]`). **This is fine — the rule banning it here was based on a mistaken premise, corrected 2026-08-27.** Per `nextjs.org/blog/CVE-2025-66478`: *"Next.js 13.x, Next.js 14.x stable, Pages Router applications, and the Edge Runtime are not affected."* The real risk is the Next.js version + App Router/RSC, not the runtime — no action needed on these files for this CVE family.
+- **PATCHED 2026-08-27**: `main` is on Next.js **15.3.9** (via PR #17, squash-merged), closing out:
+  - **CVE-2025-66478** (RCE, CVSS 10.0), **CVE-2025-55183** (source code exposure), **CVE-2025-55184** (DoS, High) — all fixed at 15.3.8 (`nextjs.org/blog/security-update-2025-12-11`; 15.3.6 alone only fixed the RCE, not the two later ones)
+  - **CVE-2026-23864** (DoS in `react-server-dom-*`, CVSS 7.5, affects React 19.0.x-19.2.x — this app runs React 19.2.8) — fixed at 15.3.9 (`vercel.com/changelog/summary-of-cve-2026-23864`)
+  - Verified on the real deployed build, not just assumed: the GitHub Actions `deploy.yml` build log for the merge commit shows `▲ Next.js 15.3.9` printed during `next build`.
+  - Partial mitigation was already live before the patch and remains as defense-in-depth: Cloudflare's free "Cloudflare managed ruleset" (Security → Settings → Web application exploits) has **Block** rules tagged `cve-2025-55182` (the upstream RCE CVE) and `cve-2025-55183`. No rule for `cve-2025-55184` or `cve-2026-23864` as of this writing.
+  - **Known small gap, low priority cleanup**: `eslint-config-next` is still pinned at `15.3.4` (only `next` itself was bumped, on purpose, to keep the PR minimal). No practical impact right now because the build's lint step (`ESLint: nextVitals is not iterable`) was already broken before this bump on 15.3.4 too — pre-existing, unrelated. Bump `eslint-config-next` to match `next` next time someone's in this area.
+  - If a newer patch than 15.3.9 comes out for the 15.3.x line later, re-run the same process: check `npm view next versions` / the official advisory pages, don't assume 15.3.9 stays current forever.
 
 ---
 
@@ -105,7 +109,7 @@
 | 1 | **Image upload UI** in admin — uploads to Supabase Storage (`destination-images`, `site-assets` buckets via anon client) | Implemented (`app/admin/page.tsx`) |
 | 2 | **Admin district dropdown** — `PROVINCE_DISTRICTS` in `app/admin/page.tsx` covers all 18 provinces (extracted from `lao_admin2.geojson`), cascading district selection | Implemented |
 | 3 | **i18n (EN/LO/TH) rolled back** — caused by `localStorage` throwing `SecurityError` on iOS Safari Private mode, AND Supabase client calling `localStorage` during init. Fix when ready: wrap all `localStorage` calls in `try/catch`; init Supabase with `{auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}}` | Rolled back, needs redo |
-| 4 | **CVE-2025-66478 / CVE-2025-55183 / CVE-2025-55184** (Next.js RSC RCE + follow-up DoS/source-exposure CVEs) — see "CRITICAL: Cloudflare / Next.js Constraint" above | Unpatched on `main`; fix verified on `security/next-15.3.8-patch`, awaiting merge |
+| 4 | **CVE-2025-66478 / CVE-2025-55183 / CVE-2025-55184 / CVE-2026-23864** (Next.js/RSC RCE + DoS + source-exposure CVEs) — see "CRITICAL: Cloudflare / Next.js Constraint" above | **Patched 2026-08-27** — `main` on Next.js 15.3.9 |
 | 5 | **Map basemap tiles** — both `components/DestinationMap.tsx` (destination detail pages) and `app/map/page.tsx` (main Interactive Map) use Esri's free no-signup `World_Dark_Gray_Base` REST endpoint (`server.arcgisonline.com`) after CARTO retired their anonymous tier (same failure mode: every tile silently became an "API KEY REQUIRED" watermark that looked like a broken map, not a missing key — this actually recurred once already: `app/map/page.tsx` was missed in the original DestinationMap.tsx migration and was still on the broken CARTO URL until it was caught and fixed). Esri's endpoint is also a free/no-key tier oriented at light/eval use, not a guaranteed indefinite commercial SLA — if it ever gets rate-limited or retired the same way, watch for the map looking "blank/broken" again on *both* components. | Working, same class of risk as before |
 
 ---
