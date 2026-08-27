@@ -182,14 +182,14 @@ const strings: Record<string, S> = {
     th: 'แผนที่ออนไลน์',
   },
   map_h2_line1: {
-    en: 'All 18 provinces.',
-    lo: 'ທັງ 18 ແຂວງ.',
-    th: 'ทุก 18 จังหวัด.',
+    en: 'Starting in Attapeu.',
+    lo: 'ເລີ່ມທີ່ອັດຕະປື.',
+    th: 'เริ่มต้นที่อัตตะปือ.',
   },
   map_h2_line2: {
-    en: 'One map.',
-    lo: 'ໃນແຜນທີ່ດຽວ.',
-    th: 'บนแผนที่เดียว.',
+    en: 'Expanding across Laos.',
+    lo: 'ຂະຫຍາຍທົ່ວລາວ.',
+    th: 'ขยายทั่วลาว.',
   },
   map_desc: {
     en: 'Tap a province, explore its districts. Tap a district, find pinned destinations with GPS coordinates you can use in the field. From Phongsali in the far north to Champasack along the Mekong — every corner of Laos, laid out.',
@@ -573,9 +573,9 @@ const strings: Record<string, S> = {
     th: 'จังหวัดอัตตะปือ · ลาวใต้',
   },
   footer_hours: {
-    en: 'Mon–Fri 8:00–18:00 · Sat–Sun 9:00–17:00',
-    lo: 'ຈ–ສ 8:00–18:00 · ອາທິດ 9:00–17:00',
-    th: 'จ–ศ 8:00–18:00 · ส–อ 9:00–17:00',
+    en: '6:30–11:30am · 3:00–10:00pm (closed for lunch)',
+    lo: '06:30–11:30 · 15:00–22:00 (ພັກທ່ຽງ)',
+    th: '06:30–11:30 น. · 15:00–22:00 น. (พักเที่ยง)',
   },
   footer_nav:     { en: 'Navigate', lo: 'ລາຍການ',   th: 'เมนู'        },
   footer_company: { en: 'Company',  lo: 'ກ່ຽວກັບ',  th: 'เกี่ยวกับเรา' },
