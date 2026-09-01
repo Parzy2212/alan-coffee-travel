@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next'
 
 export const dynamic = 'force-static'
 
-const BASE_URL = 'https://www.alan-coffee-travel.com'
+const BASE_URL = 'https://alancoffeetravel.com'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const hasEnv =

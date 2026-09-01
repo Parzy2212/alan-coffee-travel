@@ -36,7 +36,7 @@ const notoSansLao = Noto_Sans_Lao({
   weight: ['400', '700'],
 })
 
-const BASE_URL = 'https://www.alan-coffee-travel.com'
+const BASE_URL = 'https://alancoffeetravel.com'
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

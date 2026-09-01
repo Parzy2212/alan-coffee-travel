@@ -5,7 +5,7 @@ import ExperienceDetailClient from './ExperienceDetailClient'
 
 export const runtime = 'edge'
 
-const BASE_URL = 'https://www.alan-coffee-travel.com'
+const BASE_URL = 'https://alancoffeetravel.com'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params

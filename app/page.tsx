@@ -11,13 +11,13 @@ export const metadata: Metadata = {
     'อัตตะปือ', 'ອັດຕະປື', 'Laos local guide', 'travel café Laos', 'ຄາເຟລາວ',
   ],
   alternates: {
-    canonical: 'https://www.alan-coffee-travel.com',
+    canonical: 'https://alancoffeetravel.com',
   },
   openGraph: {
     title: 'Alan Coffee & Travel — Discover Laos | ທ່ອງທ່ຽວລາວ | ท่องเที่ยวลาว',
     description:
       'The only café in Attapeu built for international travelers. Coffee, local guides, and curated Laos destinations. ທ່ອງທ່ຽວລາວ | ท่องเที่ยวลาว',
-    url: 'https://www.alan-coffee-travel.com',
+    url: 'https://alancoffeetravel.com',
     images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: 'Alan Coffee & Travel — Attapeu, Laos' }],
   },
 }
