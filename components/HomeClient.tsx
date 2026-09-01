@@ -915,34 +915,34 @@ export default function HomeClient() {
                 <span style={{ width: '5px', height: '5px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }} />
                 <span style={{ color: 'var(--color-gray-400)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
               </div>
-              <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: '14px', lineHeight: 1.75, maxWidth: '300px', marginBottom: '24px' }}>
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px', lineHeight: 1.75, maxWidth: '300px', marginBottom: '24px' }}>
                 {tr('footer_tagline', lang)}
               </p>
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
-                <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: '12px', letterSpacing: '0.5px' }}>{tr('footer_location', lang)}</span>
-                <span style={{ color: 'rgba(255,255,255,0.1)', fontSize: '12px' }}>{tr('footer_hours', lang)}</span>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', letterSpacing: '0.5px' }}>{tr('footer_location', lang)}</span>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{tr('footer_hours', lang)}</span>
               </div>
             </div>
 
             {/* Links columns */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '32px', alignContent: 'start' }}>
               <div>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_nav', lang)}</p>
+                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_nav', lang)}</p>
                 {FOOTER_LINK_KEYS.slice(0, 3).map(l => (
-                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
+                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--color-gold)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.6)' }}
                   >
                     {tr(l.key, lang)}
                   </a>
                 ))}
               </div>
               <div>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_company', lang)}</p>
+                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_company', lang)}</p>
                 {FOOTER_LINK_KEYS.slice(3).map(l => (
-                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
+                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--color-gold)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.6)' }}
                   >
                     {tr(l.key, lang)}
                   </a>
@@ -953,9 +953,9 @@ export default function HomeClient() {
 
           {/* Bottom bar */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '28px', display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
-            <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
             <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>📞 +856 20 94 366 635</a>
-            <p style={{ color: 'rgba(255,255,255,0.09)', fontSize: '11px', letterSpacing: '0.5px' }}>ທ່ອງທ່ຽວລາວ &nbsp;·&nbsp; ท่องเที่ยวลาว &nbsp;·&nbsp; Discover Laos Authentically</p>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', letterSpacing: '0.5px' }}>ທ່ອງທ່ຽວລາວ &nbsp;·&nbsp; ท่องเที่ยวลาว &nbsp;·&nbsp; Discover Laos Authentically</p>
           </div>
         </div>
       </footer>

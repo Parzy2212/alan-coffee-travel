@@ -44,23 +44,23 @@ export function InstallPrompt() {
 
   return (
     <div style={{
-      position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+      position: 'fixed', top: 84, left: '50%', transform: 'translateX(-50%)',
       width: 'calc(100% - 32px)', maxWidth: 420,
       padding: '16px 20px', borderRadius: 16,
       backgroundColor: '#1a1a1a', border: '1px solid rgba(201,168,76,0.4)',
       boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
       display: 'flex', alignItems: 'center', gap: 14,
-      zIndex: 9999, animation: 'slideUp 0.3s ease',
+      zIndex: 45, animation: 'slideDown 0.3s ease',
     }}>
       <img src="/icons/icon-72x72.png" alt="" width={44} height={44} style={{ borderRadius: 10, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 2 }}>Install Alan Cafe OS</div>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Add to home screen for offline access</div>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>Add to home screen for offline access</div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
         <button onClick={handleDismiss} style={{
           padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)',
-          backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer',
+          backgroundColor: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer',
         }}>Later</button>
         <button onClick={() => void handleInstall()} style={{
           padding: '6px 14px', borderRadius: 8, border: 'none',

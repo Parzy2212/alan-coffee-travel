@@ -155,15 +155,15 @@ export default function GuidesPage() {
         <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={tr('guides_search', lang)}
             style={{ ...selStyle, minWidth: 200, flex: '0 1 220px' }} />
-          <select value={province} onChange={e => setProvince(e.target.value)} style={selStyle}>
+          <select value={province} onChange={e => setProvince(e.target.value)} style={selStyle} aria-label={tr('guides_all_provinces', lang)}>
             <option value="all">{tr('guides_all_provinces', lang)}</option>
             {provinces.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
-          <select value={language} onChange={e => setLanguage(e.target.value)} style={selStyle}>
+          <select value={language} onChange={e => setLanguage(e.target.value)} style={selStyle} aria-label={tr('guides_all_languages', lang)}>
             <option value="all">{tr('guides_all_languages', lang)}</option>
             {allLanguages.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
-          <select value={sort} onChange={e => setSort(e.target.value as typeof sort)} style={selStyle}>
+          <select value={sort} onChange={e => setSort(e.target.value as typeof sort)} style={selStyle} aria-label="Sort by">
             <option value="featured">{tr('guides_sort_feat', lang)}</option>
             <option value="rating">{tr('guides_sort_rating', lang)}</option>
             <option value="exp">{tr('guides_sort_exp', lang)}</option>
@@ -356,13 +356,13 @@ export default function GuidesPage() {
         <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20 }}>
           <div>
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'white' }}>ALAN</span>
-            <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', marginLeft: 8 }}>Coffee & Travel</span>
-            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginTop: 4 }}>{tr('footer_copy', lang)}</p>
+            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', marginLeft: 8 }}>Coffee & Travel</span>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4 }}>{tr('footer_copy', lang)}</p>
             <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: 12, textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: 4 }}>📞 +856 20 94 366 635</a>
           </div>
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
             {['/destinations','/guides','/experiences','/about','/contact'].map(href => (
-              <a key={href} href={href} style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, textDecoration: 'none' }}>{href.slice(1).charAt(0).toUpperCase() + href.slice(2)}</a>
+              <a key={href} href={href} style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, textDecoration: 'none' }}>{href.slice(1).charAt(0).toUpperCase() + href.slice(2)}</a>
             ))}
           </div>
         </div>

@@ -14,7 +14,7 @@
 
   --color-gold:         #c9a84c;
   --color-gold-light:   #e8c97a;
-  --color-gold-dark:    #a07830;
+  --color-gold-dark:    #826A27; /* darkened for 4.5:1+ contrast on white/cream — was #a07830 (unused elsewhere, only 4.02:1) */
 
   --color-wood:         #8B6343;
   --color-wood-light:   #c4956a;
@@ -530,6 +530,11 @@ button, a {
 @keyframes scrollBounce {
   0%, 100% { opacity: 0.4; transform: translateX(-50%) translateY(0); }
   50%       { opacity: 0.8; transform: translateX(-50%) translateY(7px); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateX(-50%) translateY(-16px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 @keyframes heroPulse {

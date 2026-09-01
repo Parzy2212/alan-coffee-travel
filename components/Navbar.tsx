@@ -84,7 +84,7 @@ export default function Navbar() {
                     padding: '4px 8px',
                     fontSize: '12px',
                     fontWeight: lang === opt.code ? 700 : 400,
-                    color: lang === opt.code ? 'var(--color-gold)' : 'var(--color-gray-400)',
+                    color: lang === opt.code ? 'var(--color-gold-dark)' : 'var(--color-gray-600)',
                     borderRight: i < LANG_OPTIONS.length - 1 ? '1px solid var(--color-cream-border)' : 'none',
                     lineHeight: 1,
                     letterSpacing: '0.5px',
@@ -100,7 +100,7 @@ export default function Navbar() {
 
             <a href="/pos-product" className="nav-cafeos-btn" style={{
               border: '1px solid rgba(201,168,76,0.35)',
-              color: 'var(--color-gold)',
+              color: 'var(--color-gold-dark)',
               padding: '7px 13px',
               borderRadius: '4px',
               textDecoration: 'none',
@@ -198,7 +198,7 @@ export default function Navbar() {
           <a
             href="/pos-product"
             onClick={() => setMenuOpen(false)}
-            style={{ display: 'inline-block', border: '1px solid rgba(201,168,76,0.4)', color: 'var(--color-gold)', padding: '12px 20px', borderRadius: '4px', textDecoration: 'none', fontWeight: 700, fontSize: '12px', letterSpacing: '1.5px', textTransform: 'uppercase' as const }}
+            style={{ display: 'inline-block', border: '1px solid rgba(201,168,76,0.4)', color: 'var(--color-gold-dark)', padding: '12px 20px', borderRadius: '4px', textDecoration: 'none', fontWeight: 700, fontSize: '12px', letterSpacing: '1.5px', textTransform: 'uppercase' as const }}
           >
             CafeOS
           </a>

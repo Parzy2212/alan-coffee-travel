@@ -138,7 +138,7 @@ export default function AboutClient() {
                 <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
                 <span style={{ color: 'var(--color-gray-400)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
               </div>
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
               <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: '4px' }}>📞 +856 20 94 366 635</a>
             </div>
             <div className="footer-links">
@@ -148,7 +148,7 @@ export default function AboutClient() {
                 { label: tr('nav_about', lang),        href: '/about'        },
                 { label: tr('nav_contact', lang),      href: '/contact'      },
               ].map(item => (
-                <a key={item.href} href={item.href} style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
+                <a key={item.href} href={item.href} style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
               ))}
             </div>
           </div>
