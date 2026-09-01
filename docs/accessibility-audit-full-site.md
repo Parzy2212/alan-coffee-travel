@@ -1,3 +1,5 @@
+> **อัปเดต 2026-09-01 (รอบที่ 2):** แก้ 3 ปัญหาที่ซ้ำหลายหน้าแล้ว (PWA banner, navbar/footer contrast, filter select label) — deploy ขึ้น production จริงแล้ว (commit `d616662`) และตรวจซ้ำครบทั้ง 8 หน้า+โมดัลด้วย Chrome DevTools MCP ยืนยันผ่านจริง ดูตารางเทียบก่อน-หลังท้ายเอกสาร ปัญหาที่เหลือ (canonical, font preload, touch target, Leaflet marker, heading order, contrast เฉพาะหน้าอื่นๆ) **ยังไม่แตะ** ตามที่ตกลงไว้
+
 # Accessibility Audit — เว็บทั้งเว็บ (Chrome DevTools MCP + Modern Web Guidance)
 
 > ตรวจ 2026-09-01 ผ่าน `alancoffeetravel.com` (production จริง) ด้วย Chrome DevTools MCP (Lighthouse a11y/SEO/Best Practices/**Agentic Browsing**, accessibility tree snapshot, console Issues panel, network) ทั้ง desktop และ mobile viewport (emulated, มือถือ = Moto G Power) ครบ 8 หน้าตามที่ขอ (ไม่รวม Sae Pong Lai ที่ตรวจไปแล้วรอบก่อน — เอาผลรอบนั้นมารวมในเอกสารนี้ด้วย) **ยังไม่มีการแก้โค้ดใดๆ ทั้งสิ้น — เอกสารนี้บันทึกไว้เพื่อวางแผนแก้ทีเดียวเท่านั้น**
@@ -79,6 +81,35 @@ Banner เด้งขึ้นอัตโนมัติที่ล่าง�
 
 ### Contact (`/contact`)
 - ฟอร์มติดต่อ (Name/Email/Message) มี `<label>` ผูกถูกต้องครบ — **ไม่พบปัญหา label ที่หน้านี้** ต่างจาก inquiry modal ของหน้าอื่น (ดูข้อ Sae Pong Lai ด้านบน) น่าจะเป็นเพราะฟอร์มนี้คนละ component กับ "Contact Guide" modal
+
+---
+
+## ผลการแก้ไขรอบที่ 2 (2026-09-01) — เทียบก่อน-หลัง บน production จริง
+
+| หน้า | A11y ก่อน | A11y หลัง | Agentic ก่อน | Agentic หลัง |
+|---|---|---|---|---|
+| Home | 95 | 95* | 100 | 100 |
+| Destinations list | 88 | **93** | 50 | **100** |
+| Guides list | 90 | **96** | 50 | **100** |
+| Experiences list | 90 | **96** | 50 | **100** |
+| Map | 100 | 100 | 100 | 100 |
+| About | 95 | 95* | 100 | 100 |
+| Contact | 96 | 96* | 100 | 100 |
+| Guide profile | 95 | 95* | 100 | 100 |
+| Destination detail (Sae Pong Lai) | 94 | 94* | 100 | 100 |
+
+*หน้าที่ตัวเลขเท่าเดิม (Home/About/Contact/Guide profile/Destination detail) เป็นเพราะ contrast ของ navbar/footer หายไปจากรายการ fail จริง แต่บังเอิญมีจำนวนปัญหาอื่นที่ยังไม่แก้ (เช่น cream-section labels ของ About/Contact, tab button ของ guide profile) มาแทนที่พอดี — ตรวจสอบรายการ fail จริงแล้วยืนยันว่า navbar/footer ไม่ติดในรายการอีกต่อไป
+
+**ยืนยันด้วยตาจริง:** คลิก "Contact Guide" บนหน้า Sae Pong Lai (production) สำเร็จ ไม่ timeout, modal เปิดแล้วปุ่ม Cancel/Send Inquiry มองเห็นเต็ม ไม่ถูก banner บัง — banner ถูกย้ายไปแสดงใต้ navbar (บนสุด) แทนที่จะลอยชนกับปุ่มต่างๆ ที่ก้นจอ
+
+### สิ่งที่แก้จริง
+1. **`components/InstallPrompt.tsx`** — ย้ายจาก `position:fixed;bottom:80;zIndex:9999` เป็น `top:84;zIndex:45` (ต่ำกว่า modal's zIndex 1000 และต่ำกว่า mobile menu's zIndex 49) + เพิ่ม contrast ของตัวหนังสือในการ์ดเอง (0.4→0.6 alpha) ระบบจำค่า dismiss (`localStorage`, throttle 7 วัน) มีอยู่แล้วในโค้ด ไม่ต้องเพิ่ม — ยืนยันจากการทดสอบว่าไม่เด้งซ้ำในเซสชันเดียวกันหลัง trigger ครั้งแรก
+2. **`components/Navbar.tsx`** — ปุ่มภาษาที่ active + ปุ่ม CafeOS: `var(--color-gold)` → `var(--color-gold-dark)` (ปรับค่าเป็น `#826A27`, 5.19:1); ปุ่มภาษาที่ไม่ active: `var(--color-gray-400)` → `var(--color-gray-600)` (token ที่มีอยู่แล้ว, 6.9:1) ไม่แตะ `--color-gold`/`--color-gray-400` ตรงๆ เพราะใช้ร่วมกับพื้นหลังดำที่อื่นอยู่
+3. **Footer (ไม่มี component ร่วมจริง — เป็น 8 ไฟล์ที่ copy โค้ดแยกกัน):** `app/page.tsx`(ผ่าน `HomeClient.tsx`), `app/guides/page.tsx`, `app/experiences/page.tsx`, `app/become-a-guide/page.tsx`, `app/contact/page.tsx`, `app/about/AboutClient.tsx`, `app/destinations/page.tsx`, `app/destinations/[slug]/DestinationDetailClient.tsx` — ปรับ `rgba(255,255,255, 0.09–0.4)` เป็น `0.6` ทุกจุด (คำนวณให้ผ่าน 4.5:1 บนพื้นมืดช่วง `#0a0a0a`–`#1a1a1a` ที่แต่ละไฟล์ใช้ พร้อม margin ปลอดภัย)
+4. **9 filter `<select>`** ใน `app/destinations/page.tsx`, `app/guides/page.tsx`, `app/experiences/page.tsx` — เพิ่ม `aria-label` ทุกตัว (ไม่กระทบหน้าตา)
+
+### Deploy
+Commit `d616662` push ขึ้น `main` → GitHub Actions "Deploy to Cloudflare Pages" รันสำเร็จ (2m24s) → ยืนยันบน `alancoffeetravel.com` จริงตามตารางด้านบน
 
 ---
 
