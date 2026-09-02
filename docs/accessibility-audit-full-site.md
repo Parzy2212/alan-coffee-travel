@@ -1,4 +1,6 @@
-> **อัปเดต 2026-09-01 (รอบที่ 2):** แก้ 3 ปัญหาที่ซ้ำหลายหน้าแล้ว (PWA banner, navbar/footer contrast, filter select label) — deploy ขึ้น production จริงแล้ว (commit `d616662`) และตรวจซ้ำครบทั้ง 8 หน้า+โมดัลด้วย Chrome DevTools MCP ยืนยันผ่านจริง ดูตารางเทียบก่อน-หลังท้ายเอกสาร ปัญหาที่เหลือ (canonical, font preload, touch target, Leaflet marker, heading order, contrast เฉพาะหน้าอื่นๆ) **ยังไม่แตะ** ตามที่ตกลงไว้
+> **อัปเดต 2026-09-01 (รอบที่ 2):** แก้ 3 ปัญหาที่ซ้ำหลายหน้าแล้ว (PWA banner, navbar/footer contrast, filter select label) — deploy ขึ้น production จริงแล้ว (commit `d616662`) และตรวจซ้ำครบทั้ง 8 หน้า+โมดัลด้วย Chrome DevTools MCP ยืนยันผ่านจริง ดูตารางเทียบก่อน-หลังท้ายเอกสาร
+>
+> **อัปเดต 2026-09-02 (รอบที่ 3):** แก้ปัญหาที่เหลือครบทั้ง 5 ข้อ (canonical, touch target, Leaflet marker label, heading order, font/gtag preload) — deploy ขึ้น production แล้ว (commit `2d449f1`) ยืนยันด้วย Chrome DevTools MCP ทั้ง 9 หน้าอีกรอบ ดูตาราง "ผลการแก้ไขรอบที่ 3" ท้ายเอกสาร **ตอนนี้ไม่มีปัญหาที่ตั้งใจเหลือค้างจากรายงานนี้แล้ว** เหลือแต่ contrast เฉพาะหน้า (นอก Navbar/Footer) ที่ยังไม่ได้ตัดสินใจว่าจะแก้หรือไม่ — ดูรายละเอียดในหัวข้อ "ปัญหาเฉพาะหน้า" ด้านล่าง (ยังเป็นข้อมูลเดิมจากรอบที่ 1)
 
 # Accessibility Audit — เว็บทั้งเว็บ (Chrome DevTools MCP + Modern Web Guidance)
 
@@ -110,6 +112,43 @@ Banner เด้งขึ้นอัตโนมัติที่ล่าง�
 
 ### Deploy
 Commit `d616662` push ขึ้น `main` → GitHub Actions "Deploy to Cloudflare Pages" รันสำเร็จ (2m24s) → ยืนยันบน `alancoffeetravel.com` จริงตามตารางด้านบน
+
+---
+
+## ผลการแก้ไขรอบที่ 3 (2026-09-02) — ปัญหาที่เหลือทั้ง 5 ข้อ
+
+| หน้า | A11y ก่อน (รอบ 2) | A11y หลัง (รอบ 3) | SEO ก่อน | SEO หลัง |
+|---|---|---|---|---|
+| Home | 95 | 95 | 100 | 100 |
+| Destinations list | 93 | **96** | 92 | **100** |
+| Guides list | 96 | 96 | 92 | **100** |
+| Experiences list | 96 | 96 | 92 | **100** |
+| Map | 100 | 100 | 92 | **100** |
+| About | 95 | 95 | 100 | 100 |
+| Contact | 96 | 96 | 92 | **100** |
+| Guide profile | 95 | 95 | 100 | 100 |
+| Destination detail (Sae Pong Lai) | 94 | **96** | 100 | 100 |
+
+**Font preload บน production จริง (นับ `<link rel="preload" as="font">` ในเอชทีเอ็มแอลจริง):**
+- Home: 12 ไฟล์ → **2 ไฟล์**
+- Sae Pong Lai / Guide profile (หน้าที่เจอปัญหาหนักสุดตอนแรก): 11–12 ไฟล์ → **0 ไฟล์**
+- ไม่มีไฟล์ Sarabun (ไทย) หรือ Noto Sans Lao (ลาว) ติด preload บนหน้าไหนเลยหลังแก้ (ตรวจด้วย `curl` จริงกับ production)
+- gtag.js: เปลี่ยนจาก `strategy="afterInteractive"` เป็น `"lazyOnload"` แล้วไม่มี `<link rel="preload">` สำหรับ gtag ในเอชทีเอ็มแอลอีกต่อไป
+
+**ยืนยันด้วยตาจริงอีกรอบ:** heading order บน Sae Pong Lai เป็น h1→h2→h2 แล้ว (เดิม h1→h3), คลิก "Contact Guide" ยังใช้งานได้ปกติไม่ timeout (ไม่กระทบจากการแก้รอบนี้)
+
+### สิ่งที่แก้จริง
+1. **Canonical URL หายทั้งดวง** — ต้นเหตุจริงคือ `/destinations` `/guides` `/experiences` `/map` `/contact` เป็น **Client Component ที่ page.tsx เอง** (`'use client'` ตรงๆ) ซึ่ง Next.js ไม่อนุญาตให้ export `metadata` จาก Client Component ได้เลย ไม่ใช่แค่ลืมใส่ — แก้โดยแยกเป็น Server Component `page.tsx` บางๆ (export `metadata.alternates.canonical` แบบเดียวกับ `/` และ `/about`) + ย้ายโค้ดเดิมทั้งหมดไปเป็น `XxxClient.tsx` (`DestinationsClient.tsx`, `GuidesClient.tsx`, `ExperiencesClient.tsx`, `ContactClient.tsx`, `MapClient.tsx`) ไม่แตะ logic เดิมเลย
+2. **Touch target เล็กเกิน** — ลิงก์ "DISCOVER →" ใน `DestinationsClient.tsx`: เพิ่ม `padding` + `margin` ติดลบเท่ากันเพื่อขยายพื้นที่แตะเป็น 44×44px โดยไม่ขยับตำแหน่ง/ขนาดตัวอักษรที่เห็น; `<select>`/`<input>` ทั้งหมดใน 3 หน้า list: เพิ่ม `minHeight: 44px` เข้าไปใน `selectStyle`/`selStyle` ที่ใช้ร่วมกันอยู่แล้ว จุดเดียวจบทั้งไฟล์
+3. **Leaflet marker ไม่มีชื่อ** — ทั้ง `components/DestinationMap.tsx` (mini-map) และ `app/map/MapClient.tsx` (หน้า `/map` เต็ม): เพิ่ม `alt` ใน marker options (สำหรับ marker ที่เป็น `<img>`) **และ** `marker.getElement()?.setAttribute('aria-label'|'title', ...)` เพิ่มอีกชั้น เพราะ `alt` ของ Leaflet ใช้ไม่ได้กับ divIcon ที่เรนเดอร์เป็น `<div>` (ไม่ใช่ `<img>`) — ชื่อที่ใส่คือ "ชื่อสถานที่ — จังหวัด/อำเภอ"
+4. **Heading order ข้ามระดับ** — `DestinationDetailClient.tsx`: เปลี่ยน `<h3>` ของการ์ด "DETAILS" และ "Alan Travel Standard" เป็น `<h2>` ทำให้ลำดับเป็น h1→h2→h2→h2 (h2 "Available Guides" เดิม) ไม่ข้ามระดับอีก
+5. **Font/gtag preload เกินจำเป็น** — `app/layout.tsx`: Sarabun (ไทย) กับ Noto Sans Lao ตั้ง `preload: false` เพราะภาษา default ของเว็บคือ `en` การโหลดหน้าส่วนใหญ่ไม่ได้ใช้ตัวอักษรไทย/ลาวเลย (ฟอนต์ยังโหลดได้ปกติตอนสลับภาษา แค่ไม่ preload ล่วงหน้า); gtag.js script tag เปลี่ยน `strategy` จาก `afterInteractive` เป็น `lazyOnload`
+
+### ข้อจำกัดของการยืนยันรอบนี้
+ไม่สามารถทดสอบคลิกหมุด (marker) บนหน้า `/map` แบบ end-to-end อัตโนมัติได้จริง เพราะต้องคลิกลาก polygon จังหวัด→อำเภอก่อนหมุดจะโผล่ ซึ่ง Leaflet ใช้ event system ของตัวเองที่ synthetic click ผ่าน DevTools MCP จำลองแทนไม่ได้ตรงๆ — ยืนยันด้วยการอ่านโค้ดแทนว่าใช้ pattern เดียวกับ mini-map ที่ยืนยันผ่านแล้วจริงทุกตัวอักษร (ยกเว้นชื่อ label ที่ใส่จังหวัด/อำเภอต่างกันตามบริบทของแต่ละไฟล์)
+
+### Deploy
+Commit `2d449f1` push ขึ้น `main` → GitHub Actions "Deploy to Cloudflare Pages" รันสำเร็จ (2m23s) → ยืนยันด้วย `curl` + Chrome DevTools MCP บน `alancoffeetravel.com` จริงตามตารางด้านบน
 
 ---
 
