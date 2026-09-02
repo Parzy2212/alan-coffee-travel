@@ -164,7 +164,7 @@ export default function DestinationsClient() {
               <option value="assessed">{tr('dest_filter_assessed', lang)}</option>
               <option value="not_assessed">{tr('dest_filter_not_assessed', lang)}</option>
             </select>
-            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>{countLabel}</span>
+            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{countLabel}</span>
           </div>
         </div>
       </section>
@@ -275,7 +275,7 @@ export default function DestinationsClient() {
                     </h2>
 
                     {d.excerpt_en && (
-                      <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', lineHeight: 1.6, marginBottom: '16px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                      <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', lineHeight: 1.6, marginBottom: '16px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
                         {d.excerpt_en}
                       </p>
                     )}
@@ -289,7 +289,7 @@ export default function DestinationsClient() {
                             ))}
                           </div>
                         ) : (
-                          <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>{tr('dest_not_assessed_label', lang)}</span>
+                          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>{tr('dest_not_assessed_label', lang)}</span>
                         )}
                       </div>
                       <a

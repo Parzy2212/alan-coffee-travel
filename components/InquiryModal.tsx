@@ -96,19 +96,19 @@ export default function InquiryModal({
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {guide.contact_whatsapp && (
                     <a href={`https://wa.me/${guide.contact_whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#25D366', color: '#fff', padding: '8px 14px', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#1D7A46', color: '#fff', padding: '8px 14px', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
                       WhatsApp
                     </a>
                   )}
                   {guide.contact_line && (
                     <a href={`https://line.me/R/ti/p/${guide.contact_line}`} target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#00B900', color: '#fff', padding: '8px 14px', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#008000', color: '#fff', padding: '8px 14px', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
                       LINE
                     </a>
                   )}
                   {guide.contact_telegram && (
                     <a href={`https://t.me/${guide.contact_telegram.replace('@','')}`} target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#2CA5E0', color: '#fff', padding: '8px 14px', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#1A6E99', color: '#fff', padding: '8px 14px', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
                       Telegram
                     </a>
                   )}

@@ -141,7 +141,7 @@ export default function ExperiencesClient() {
             <option value="pop">{tr('exp_sort_pop', lang)}</option>
             <option value="rating">{tr('exp_sort_rating', lang)}</option>
           </select>
-          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13, marginLeft: 'auto' }}>
+          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginLeft: 'auto' }}>
             {loading ? '…' : `${filtered.length} ${filtered.length === 1 ? tr('exp_singular', lang) : tr('exp_plural', lang)}`}
           </span>
         </div>
@@ -172,7 +172,7 @@ export default function ExperiencesClient() {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>🗺️</div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 16 }}>{tr('exp_no_results', lang)}</p>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16 }}>{tr('exp_no_results', lang)}</p>
           </div>
         ) : (
           <div className="grid-3">

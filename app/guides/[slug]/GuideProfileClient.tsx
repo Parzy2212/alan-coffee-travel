@@ -74,7 +74,7 @@ export default function GuideProfileClient({
   const tabStyle = (k: Tab): React.CSSProperties => ({
     background: 'none', border: 'none', cursor: 'pointer',
     padding: '14px 20px', fontSize: 14, fontWeight: activeTab === k ? 700 : 500,
-    color: activeTab === k ? 'white' : 'rgba(255,255,255,0.4)',
+    color: activeTab === k ? 'white' : 'rgba(255,255,255,0.6)',
     borderBottom: `2px solid ${activeTab === k ? GOLD : 'transparent'}`,
     transition: 'all 0.15s',
     whiteSpace: 'nowrap' as const,
@@ -132,7 +132,7 @@ export default function GuideProfileClient({
                   <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: GOLD, padding: '3px 8px', borderRadius: 99, fontSize: 10, fontWeight: 600 }}>★ FEATURED</span>
                 )}
               </div>
-              <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, margin: '0 0 10px' }}>
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, margin: '0 0 10px' }}>
                 {guide.province}{expYrs ? ` · ${expYrs} ${tr('gp_years_exp', lang)}` : ''}
               </p>
               {ratingAvg > 0 && <StarRating rating={ratingAvg} count={revCount} size={15} />}

@@ -146,7 +146,7 @@ export default function DestinationDetailClient({
       {/* BREADCRUMB */}
       <div style={{ backgroundColor: 'var(--color-black)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '12px 24px' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-          <a href="/destinations" style={{ color: 'rgba(255,255,255,0.35)', fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px', transition: 'color 0.15s' }}>
+          <a href="/destinations" style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px', transition: 'color 0.15s' }}>
             {tr('detail_all_dest', lang)}
           </a>
         </div>
@@ -210,7 +210,7 @@ export default function DestinationDetailClient({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('detail_about_eyebrow', lang)}</span>
+              <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('detail_about_eyebrow', lang)}</span>
             </div>
             <p style={{ color: 'var(--color-gray-600)', fontSize: '16px', lineHeight: 1.8 }}>
               {destination.description_en || destination.excerpt_en || tr('detail_desc_coming', lang)}
@@ -225,20 +225,20 @@ export default function DestinationDetailClient({
               <h2 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-gold)', fontSize: '14px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>{tr('detail_details_card', lang)}</h2>
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '16px' }}>
                 <div>
-                  <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '4px' }}>{tr('detail_label_region', lang)}</p>
+                  <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '4px' }}>{tr('detail_label_region', lang)}</p>
                   <p style={{ color: 'var(--color-white)', fontSize: '14px', fontWeight: 600 }}>{destination.region || '—'}</p>
                 </div>
                 <div>
-                  <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '4px' }}>{tr('detail_label_assessment', lang)}</p>
+                  <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '4px' }}>{tr('detail_label_assessment', lang)}</p>
                   {isAssessed ? (
                     <span style={{ backgroundColor: 'rgba(201,168,76,0.12)', color: '#c9a84c', padding: '4px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 600 }}>{tr('detail_assessed_badge', lang)}</span>
                   ) : (
-                    <span style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)', padding: '4px 10px', borderRadius: '999px', fontSize: '12px' }}>{tr('detail_not_assessed', lang)}</span>
+                    <span style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', padding: '4px 10px', borderRadius: '999px', fontSize: '12px' }}>{tr('detail_not_assessed', lang)}</span>
                   )}
                 </div>
                 {destination.transport_price && (
                   <div>
-                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '4px' }}>{tr('detail_label_transport', lang)}</p>
+                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '4px' }}>{tr('detail_label_transport', lang)}</p>
                     <p style={{ color: 'var(--color-white)', fontSize: '14px', fontWeight: 600 }}>🚗 {destination.transport_price}</p>
                   </div>
                 )}
@@ -276,7 +276,7 @@ export default function DestinationDetailClient({
                             ))}
                           </div>
                         </div>
-                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', margin: 0, lineHeight: 1.5 }}>{dim.criteria[val - 1]}</p>
+                        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', margin: 0, lineHeight: 1.5 }}>{dim.criteria[val - 1]}</p>
                       </div>
                     )
                   })}
@@ -292,7 +292,7 @@ export default function DestinationDetailClient({
                 rel="noopener noreferrer"
                 onMouseEnter={() => setBookHovered(true)}
                 onMouseLeave={() => setBookHovered(false)}
-                style={{ display: 'block', width: '100%', backgroundColor: '#25D366', color: '#fff', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none', textAlign: 'center' as const, boxSizing: 'border-box' as const, transform: bookHovered ? 'translateY(-1px)' : 'none', transition: 'transform 0.15s' }}
+                style={{ display: 'block', width: '100%', backgroundColor: '#1D7A46', color: '#fff', padding: '16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, textDecoration: 'none', textAlign: 'center' as const, boxSizing: 'border-box' as const, transform: bookHovered ? 'translateY(-1px)' : 'none', transition: 'transform 0.15s' }}
               >
                 💬 {tr('detail_chat_whatsapp', lang)}
               </a>
@@ -309,7 +309,7 @@ export default function DestinationDetailClient({
 
             <button
               onClick={() => setTopExpanded(v => !v)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-gray-400)', fontSize: '12px', padding: '4px 0', textAlign: 'center' as const, width: '100%' }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-gray-600)', fontSize: '12px', padding: '4px 0', textAlign: 'center' as const, width: '100%' }}
             >
               {tr('detail_other_ways', lang)} {topExpanded ? '▴' : '▾'}
             </button>
@@ -384,7 +384,7 @@ export default function DestinationDetailClient({
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' as const }}>
                         {g.contact_whatsapp ? (
                           <a href={`https://wa.me/${g.contact_whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
-                            style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: '#25D366', color: '#fff', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: '#1D7A46', color: '#fff', padding: '7px 14px', borderRadius: '4px', textDecoration: 'none', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
                             💬 WhatsApp
                           </a>
                         ) : (
@@ -396,7 +396,7 @@ export default function DestinationDetailClient({
                       </div>
                       {(g.contact_whatsapp || g.phone || g.facebook) && (
                         <button onClick={() => setExpandedGuideId(v => v === g.id ? null : g.id)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.35)', fontSize: '11px', padding: '2px 0', textAlign: 'left' as const, alignSelf: 'flex-start' as const }}>
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', fontSize: '11px', padding: '2px 0', textAlign: 'left' as const, alignSelf: 'flex-start' as const }}>
                           {tr('detail_other_ways', lang)} {expandedGuideId === g.id ? '▴' : '▾'}
                         </button>
                       )}
@@ -425,8 +425,8 @@ export default function DestinationDetailClient({
                 </div>
               ))}
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '12px', marginTop: '20px' }}>
-              {tr('detail_more_guides', lang)} <a href="/guides" style={{ color: '#c9a84c' }}>Alan Café · Attapeu</a>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginTop: '20px' }}>
+              {tr('detail_more_guides', lang)} <a href="/guides" style={{ color: '#c9a84c', textDecoration: 'underline' }}>Alan Café · Attapeu</a>
             </p>
           </div>
         </section>

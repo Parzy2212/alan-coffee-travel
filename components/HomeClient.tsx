@@ -767,12 +767,12 @@ export default function HomeClient() {
             </div>
           ) : featuredExps.length === 0 ? (
             <div style={{ textAlign: 'center' as const, padding: '60px 0 40px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '24px' }}>
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '15px' }}>{tr('home_exp_empty', lang)}</p>
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '15px' }}>{tr('home_exp_empty', lang)}</p>
               <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' as const, justifyContent: 'center' }}>
                 <a href="/guides" style={{ backgroundColor: 'rgba(201,168,76,0.12)', color: 'var(--color-gold)', padding: '12px 28px', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '13px', border: '1px solid rgba(201,168,76,0.25)', letterSpacing: '0.5px' }}>
                   {tr('home_guide_cta', lang)}
                 </a>
-                <a href="/become-a-guide" style={{ backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', padding: '12px 24px', borderRadius: '6px', textDecoration: 'none', fontSize: '13px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <a href="/become-a-guide" style={{ backgroundColor: 'transparent', color: 'rgba(255,255,255,0.6)', padding: '12px 24px', borderRadius: '6px', textDecoration: 'none', fontSize: '13px', border: '1px solid rgba(255,255,255,0.1)' }}>
                   {tr('bag_apply', lang)}
                 </a>
               </div>

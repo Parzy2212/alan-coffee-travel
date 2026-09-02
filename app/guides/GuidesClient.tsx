@@ -169,7 +169,7 @@ export default function GuidesClient() {
             <option value="rating">{tr('guides_sort_rating', lang)}</option>
             <option value="exp">{tr('guides_sort_exp', lang)}</option>
           </select>
-          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13, marginLeft: 'auto' }}>
+          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginLeft: 'auto' }}>
             {loading ? '…' : `${filtered.length} ${filtered.length === 1 ? tr('guides_singular', lang) : tr('guides_plural', lang)}`}
           </span>
         </div>
@@ -252,7 +252,7 @@ export default function GuidesClient() {
                           <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: '#c9a84c', padding: '1px 6px', borderRadius: 99, fontSize: 9, fontWeight: 600 }}>★ FEATURED</span>
                         )}
                       </div>
-                      <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 12, margin: 0 }}>
+                      <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, margin: 0 }}>
                         {g.province}{expYrs ? ` · ${expYrs} ${tr('guides_yrs_exp', lang)}` : ''}
                       </p>
                     </div>
@@ -281,7 +281,7 @@ export default function GuidesClient() {
                     <div style={{ padding: '8px 22px 0' }}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                         {(g.specialties ?? []).slice(0, 4).map(sp => (
-                          <span key={sp} style={{ backgroundColor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.45)', padding: '2px 8px', borderRadius: 99, fontSize: 11 }}>{sp}</span>
+                          <span key={sp} style={{ backgroundColor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: 99, fontSize: 11 }}>{sp}</span>
                         ))}
                       </div>
                     </div>
@@ -289,7 +289,7 @@ export default function GuidesClient() {
 
                   {/* Bio */}
                   {bio && (
-                    <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13, lineHeight: 1.6, padding: '10px 22px 0', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1.6, padding: '10px 22px 0', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {bio}
                     </p>
                   )}

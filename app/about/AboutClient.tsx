@@ -32,7 +32,7 @@ export default function AboutClient() {
       <section className="prose-section">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
           <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-          <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s1_eyebrow', lang)}</span>
+          <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s1_eyebrow', lang)}</span>
         </div>
         <h2 className="page-h2" style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-black)' }}>
           {tr('about_s1_h2', lang)}
@@ -54,7 +54,7 @@ export default function AboutClient() {
       <section className="prose-section">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
           <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-          <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s2_eyebrow', lang)}</span>
+          <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s2_eyebrow', lang)}</span>
         </div>
         <h2 className="page-h2" style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-black)' }}>
           {tr('about_s2_h2_line1', lang)}<br />{tr('about_s2_h2_line2', lang)}
@@ -76,7 +76,7 @@ export default function AboutClient() {
       <section className="prose-section">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
           <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-          <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s3_eyebrow', lang)}</span>
+          <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s3_eyebrow', lang)}</span>
         </div>
         <h2 className="page-h2" style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-black)' }}>
           {tr('about_s3_h2_line1', lang)}<br />{tr('about_s3_h2_line2', lang)}
@@ -98,7 +98,7 @@ export default function AboutClient() {
       <section className="prose-section">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
           <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-          <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s4_eyebrow', lang)}</span>
+          <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('about_s4_eyebrow', lang)}</span>
         </div>
         <h2 className="page-h2" style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-black)' }}>
           {tr('about_s4_h2', lang)}
@@ -117,7 +117,7 @@ export default function AboutClient() {
       {/* CLOSING */}
       <section className="hero-section-sm" style={{ backgroundColor: 'var(--color-black)' }}>
         <div style={{ maxWidth: '720px', margin: '0 auto' }}>
-          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '13px', letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '24px' }}>Alan Coffee & Travel</p>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', letterSpacing: '3px', textTransform: 'uppercase' as const, marginBottom: '24px' }}>Alan Coffee & Travel</p>
           <h2 className="page-h2" style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-white)', marginBottom: '40px' }}>
             {tr('about_closing_h2_line1', lang)}<br />
             <span style={{ color: 'var(--color-gold)' }}>{tr('about_closing_h2_line2', lang)}</span>

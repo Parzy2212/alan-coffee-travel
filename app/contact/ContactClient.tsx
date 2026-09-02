@@ -44,7 +44,7 @@ export default function ContactClient() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('contact_find_us', lang)}</span>
+              <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('contact_find_us', lang)}</span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '40px' }}>
@@ -58,15 +58,15 @@ export default function ContactClient() {
                 <p style={{ color: 'var(--color-gray-600)', fontSize: '16px', lineHeight: 1.7 }}>
                   {tr('contact_hours_weekday', lang)}<br />
                   {tr('contact_hours_weekday_t', lang)}<br />
-                  <span style={{ color: 'var(--color-gray-400)', fontSize: '14px' }}>{tr('contact_hours_weekend', lang)}</span>
+                  <span style={{ color: 'var(--color-gray-600)', fontSize: '14px' }}>{tr('contact_hours_weekend', lang)}</span>
                 </p>
               </div>
 
               <div>
                 <p style={{ color: 'var(--color-black)', fontWeight: 700, fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('contact_social_label', lang)}</p>
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '8px' }}>
-                  <a href="#" style={{ color: 'var(--color-gold)', fontSize: '15px', textDecoration: 'none', fontWeight: 500 }}>Facebook →</a>
-                  <a href="#" style={{ color: 'var(--color-gold)', fontSize: '15px', textDecoration: 'none', fontWeight: 500 }}>Instagram →</a>
+                  <a href="#" style={{ color: 'var(--color-gold-dark)', fontSize: '15px', textDecoration: 'none', fontWeight: 500 }}>Facebook →</a>
+                  <a href="#" style={{ color: 'var(--color-gold-dark)', fontSize: '15px', textDecoration: 'none', fontWeight: 500 }}>Instagram →</a>
                 </div>
               </div>
 
@@ -83,7 +83,7 @@ export default function ContactClient() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
               <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }}></div>
-              <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('contact_send_label', lang)}</span>
+              <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('contact_send_label', lang)}</span>
             </div>
 
             {sent ? (
