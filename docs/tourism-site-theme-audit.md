@@ -70,7 +70,7 @@ Footer — มืด เสมอ
 
 ### กลุ่ม B — "หน้าเรียกดู/browsing" (มืดล้วน ไม่มีครีมเลย)
 
-**สมาชิกกลุ่ม:** Destinations list (`/destinations`), Guides list (`/guides`), Experiences list (`/experiences`), Map (`/map`) — ตรวจเพิ่มครบแล้วทั้ง 2 หน้าที่ค้างไว้
+**สมาชิกกลุ่ม:** Destinations list (`/destinations`), Guides list (`/guides`), Experiences list (`/experiences`), Map (`/map`), **Guide profile (`/guides/[slug]`)**, **Experience detail (`/experiences/[slug]`)** — ตรวจเพิ่มครบแล้วทั้ง 2 หน้าที่ค้างไว้ + จัดกลุ่ม Guide profile/Experience detail เข้ากลุ่ม B อย่างเป็นทางการเมื่อ 2026-09-02 (ดูหมายเหตุด้านล่าง)
 
 **Pattern มาตรฐาน:**
 ```
@@ -80,6 +80,10 @@ Navbar (ครีม เหมือนกันทุกหน้าในก�
 ไม่มีจุดเปลี่ยนเป็นครีมเลยตลอดทั้งหน้า การ์ดแต่ละใบใช้โทนมืดเข้มกว่าพื้นหลังเล็กน้อย (เช่น `#111` บนพื้น `#0a0a0a`) เพื่อสร้างมิติ ไม่ใช่เปลี่ยนธีม
 
 **หมายเหตุ Experiences list:** ยังไม่มีข้อมูลจริง (ขึ้น "0 experiences" / "No experiences found") แต่โครงสร้างหน้าที่มีอยู่แล้วเป็นมืดล้วนตรงตามกลุ่ม B ครบถ้วน — ใช้แม่แบบเดียวกับ Destinations/Guides list ได้เลยเมื่อมีข้อมูลจริง
+
+**✅ จัดกลุ่มแล้ว (2026-09-02): Guide profile (`/guides/[slug]`) และ Experience detail (`/experiences/[slug]`)** — สองหน้านี้ไม่เคยถูกจัดกลุ่มมาก่อน (หลุดจากการตรวจรอบ 2026-09-01) ตรวจโค้ดจริงพบว่า navbar ครีม ✅ และพื้นหลังมืดล้วนทั้งหน้าตรงกับ pattern กลุ่ม B อยู่แล้ว แต่ **ไม่มี `<footer>` เลย** ณ ตอนตรวจ — เพิ่ม footer แบบเดียวกับ Guides/Experiences list เข้าไปแล้ว (โค้ดก็อปมาเหมือนกันทุกตัวอักษร ยกเว้น `padding-bottom` เพิ่มเป็น `116px` แทน `40px` เพื่อกันไม่ให้ sticky "Contact Guide"/"Book" bar ที่ลอยอยู่ล่างจอบนมือถือบังเนื้อหา footer — ทั้งสองหน้ามี sticky CTA bar แบบนี้อยู่แล้วซึ่งหน้าอื่นในกลุ่ม B ไม่มี) ยืนยันบน production แล้วว่า footer โผล่ครบและปุ่ม Contact Guide/modal ไม่ได้รับผลกระทบ — **ตอนนี้ทั้งสองหน้าเป็นสมาชิกกลุ่ม B อย่างเป็นทางการ ไม่ใช่หน้าที่ยังไม่จัดกลุ่มอีกต่อไป**
+
+หมายเหตุ: `/experiences/[slug]` ยังไม่มีข้อมูลจริงให้เปิดดู (เหมือน experiences list) จึงยืนยันด้วยตาจริงบน production ได้เฉพาะ `/guides/[slug]` เท่านั้น — โค้ดของทั้งสองไฟล์เหมือนกันทุกจุดที่เกี่ยวข้อง (คัดลอกแพทเทิร์นเดียวกัน) จึงเชื่อได้ในระดับสูงว่าใช้ได้เหมือนกัน แต่ยังไม่ใช่การยืนยันด้วยตาจริง 100%
 
 **✅ แก้แล้ว/ยืนยันแล้ว (2026-09-01):** ตัดสินใจแล้วว่า `/map` ต้องใช้ navbar ครีมเหมือนเพื่อนกลุ่ม B ที่เหลือ (Destinations/Guides/Experiences list) ไม่ใช่ดึงทั้งกลุ่มไปเป็นดำ — เหตุผลอยู่ในกฎด้านบน (navbar = จุดยึดสายตา/ทางออกที่สม่ำเสมอ)
 
@@ -98,6 +102,6 @@ Navbar (ครีม เหมือนกันทุกหน้าในก�
 | เว็บ production ใช้งานได้ปกติ | ✅ ยืนยัน (มี ChunkLoadError เป็นครั้งคราวหลัง deploy ใหม่ — ไม่ block) |
 | Metadata/sitemap อ้างอิงโดเมนผิด (`alan-coffee-travel.com`) | ✅ แก้แล้ว 2026-09-01 (7 ไฟล์ + robots.txt, ตัด www. ออกด้วยเพราะไม่ resolve) |
 | กลุ่ม A (Home/About/Contact/Destination detail) — pattern สลับมืด-ครีม | ✅ บันทึกเป็นมาตรฐานแล้ว |
-| กลุ่ม B (Destinations/Guides/Experiences list, Map) — มืดล้วน | ✅ บันทึกเป็นมาตรฐานแล้ว |
+| กลุ่ม B (Destinations/Guides/Experiences list, Map, Guide profile, Experience detail) — มืดล้วน | ✅ บันทึกเป็นมาตรฐานแล้ว (Guide profile/Experience detail เพิ่มเข้ากลุ่มและเพิ่ม footer แล้ว 2026-09-02) |
 | Navbar = ครีมเสมอทุกหน้า ไม่ขึ้นกับกลุ่ม A/B (รวม `/map`) | ✅ ตัดสินใจแล้ว + ยืนยันตรงกับ production จริง 2026-09-01 |
 | pos-product | ✅ ยืนยันแยกธีม ไม่ต้องปรับ |
