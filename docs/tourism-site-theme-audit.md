@@ -70,7 +70,7 @@ Footer — มืด เสมอ
 
 ### กลุ่ม B — "หน้าเรียกดู/browsing" (มืดล้วน ไม่มีครีมเลย)
 
-**สมาชิกกลุ่ม:** Destinations list (`/destinations`), Guides list (`/guides`), Experiences list (`/experiences`), Map (`/map`), **Guide profile (`/guides/[slug]`)**, **Experience detail (`/experiences/[slug]`)** — ตรวจเพิ่มครบแล้วทั้ง 2 หน้าที่ค้างไว้ + จัดกลุ่ม Guide profile/Experience detail เข้ากลุ่ม B อย่างเป็นทางการเมื่อ 2026-09-02 (ดูหมายเหตุด้านล่าง)
+**สมาชิกกลุ่ม:** Destinations list (`/destinations`), Guides list (`/guides`), Experiences list (`/experiences`), Map (`/map`), Guide profile (`/guides/[slug]`), Experience detail (`/experiences/[slug]`), **Become a Guide (`/become-a-guide`)** — ตรวจครบแล้วทั้งหมด + จัดกลุ่มอย่างเป็นทางการเมื่อ 2026-09-02 (ดูหมายเหตุด้านล่าง)
 
 **Pattern มาตรฐาน:**
 ```
@@ -91,6 +91,8 @@ Navbar (ครีม เหมือนกันทุกหน้าในก�
 
 ตรวจโค้ดจริงพบว่า `app/map/page.tsx` **ใช้ shared `<Navbar />` component เดียวกับหน้าอื่นอยู่แล้ว** ไม่มี dark-theme override ใดๆ ในโค้ด — แก้ไปแล้วตั้งแต่ commit `03065cb` (2026-08-25, "unify /map navbar") ซึ่งอยู่ใน `main` ปัจจุบันแล้ว เช็คบน production จริงผ่านเบราว์เซอร์ (`getComputedStyle` บน `<nav>` ของทั้ง `/map` และ `/destinations`) ยืนยันตรงกัน: `background-color: rgb(255, 255, 255)` ทั้งคู่ — **ไม่ต้องแก้โค้ดเพิ่ม เพียงบันทึกกฎไว้กันหลุดในอนาคต** (รายงานเดิมที่บอกว่า `/map` navbar ดำอาจมาจากแคชเบราว์เซอร์เก่าตอนตรวจ — ดูบั๊ก ChunkLoadError/แคชด้านบนประกอบ)
 
+**✅ จัดกลุ่มแล้ว (2026-09-02): Become a Guide (`/become-a-guide`)** — ตรวจโค้ดจริง (`app/become-a-guide/page.tsx`) พบว่า **ตรงกฎกลุ่ม B ครบทุกข้ออยู่แล้วตั้งแต่แรก ไม่ต้องแก้โค้ดใดๆ**: `<main>` ใช้ `backgroundColor: 'var(--color-black)'` มืดล้วนตลอดทั้งหน้า (hero/perks/how-it-works/apply form ไม่มีจุดครีมเลย), ใช้ `<Navbar />` component ร่วม (ครีมเหมือนหน้าอื่น), และมี `<footer>` พื้น `#0a0a0a` อยู่แล้ว (ตรงกับเฉดที่ล็อกไว้สำหรับ Footer component เวอร์ชันรวมพอดี) — เป็นแค่หน้าที่ไม่มีใครประกาศกฎให้อย่างเป็นทางการเท่านั้น ไม่ใช่ช่องโหว่จริง **ตอนนี้เป็นสมาชิกกลุ่ม B อย่างเป็นทางการแล้ว**
+
 ### pos-product — แยกธีมต่างหาก ไม่รวมในกลุ่ม A/B
 `pos-product` (`/pos-product`, หน้าขาย SaaS ให้ร้านอื่น) ยืนยันแล้วว่าเป็นธีมดำ-ทองเดียวกับ POS ภายใน ไม่ต้องปรับให้เข้ากับกลุ่มไหนของเว็บท่องเที่ยว
 
@@ -104,6 +106,6 @@ Navbar (ครีม เหมือนกันทุกหน้าในก�
 | เว็บ production ใช้งานได้ปกติ | ✅ ยืนยัน (มี ChunkLoadError เป็นครั้งคราวหลัง deploy ใหม่ — ไม่ block) |
 | Metadata/sitemap อ้างอิงโดเมนผิด (`alan-coffee-travel.com`) | ✅ แก้แล้ว 2026-09-01 (7 ไฟล์ + robots.txt, ตัด www. ออกด้วยเพราะไม่ resolve) |
 | กลุ่ม A (Home/About/Contact/Destination detail) — pattern สลับมืด-ครีม | ✅ บันทึกเป็นมาตรฐานแล้ว |
-| กลุ่ม B (Destinations/Guides/Experiences list, Map, Guide profile, Experience detail) — มืดล้วน | ✅ บันทึกเป็นมาตรฐานแล้ว (Guide profile/Experience detail เพิ่มเข้ากลุ่มและเพิ่ม footer แล้ว 2026-09-02) |
+| กลุ่ม B (Destinations/Guides/Experiences list, Map, Guide profile, Experience detail, Become a Guide) — มืดล้วน | ✅ บันทึกเป็นมาตรฐานแล้ว (Guide profile/Experience detail เพิ่มเข้ากลุ่ม+เพิ่ม footer 2026-09-02; Become a Guide เพิ่มเข้ากลุ่ม 2026-09-02 — compliant อยู่แล้วไม่ต้องแก้โค้ด) |
 | Navbar = ครีมเสมอทุกหน้า ไม่ขึ้นกับกลุ่ม A/B (รวม `/map`) | ✅ ตัดสินใจแล้ว + ยืนยันตรงกับ production จริง 2026-09-01 |
 | pos-product | ✅ ยืนยันแยกธีม ไม่ต้องปรับ |
