@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Navbar from '@/components/Navbar'
+import Footer from '@/components/Footer'
 import { getSupabase } from '@/lib/supabase'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
@@ -60,14 +61,6 @@ function avgRating(d: Destination): number | null {
   if (!vals.length) return null
   return vals.reduce((a, b) => a + b, 0) / vals.length
 }
-
-const FOOTER_LINK_KEYS = [
-  { key: 'nav_destinations' as const, href: '/destinations' },
-  { key: 'nav_guides'       as const, href: '/guides'       },
-  { key: 'map_eyebrow'      as const, href: '/map'          },
-  { key: 'nav_about'        as const, href: '/about'        },
-  { key: 'nav_contact'      as const, href: '/contact'      },
-]
 
 export default function HomeClient() {
   const { lang } = useLang()
@@ -902,63 +895,7 @@ export default function HomeClient() {
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════════════════
-          FOOTER
-      ═══════════════════════════════════════════════════════ */}
-      <footer style={{ backgroundColor: '#111', borderTop: '1px solid rgba(255,255,255,0.06)', padding: 'clamp(48px, 6vw, 80px) clamp(24px, 4vw, 56px) 40px' }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
-          <div className="footer-full">
-            {/* Brand column */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '22px', color: 'var(--color-white)' }}>ALAN</span>
-                <span style={{ width: '5px', height: '5px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }} />
-                <span style={{ color: 'var(--color-gray-400)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
-              </div>
-              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px', lineHeight: 1.75, maxWidth: '300px', marginBottom: '24px' }}>
-                {tr('footer_tagline', lang)}
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', letterSpacing: '0.5px' }}>{tr('footer_location', lang)}</span>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{tr('footer_hours', lang)}</span>
-              </div>
-            </div>
-
-            {/* Links columns */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '32px', alignContent: 'start' }}>
-              <div>
-                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_nav', lang)}</p>
-                {FOOTER_LINK_KEYS.slice(0, 3).map(l => (
-                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--color-gold)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.6)' }}
-                  >
-                    {tr(l.key, lang)}
-                  </a>
-                ))}
-              </div>
-              <div>
-                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '18px' }}>{tr('footer_company', lang)}</p>
-                {FOOTER_LINK_KEYS.slice(3).map(l => (
-                  <a key={l.href} href={l.href} style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '13px', textDecoration: 'none', marginBottom: '12px', transition: 'color 0.15s' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--color-gold)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.6)' }}
-                  >
-                    {tr(l.key, lang)}
-                  </a>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom bar */}
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '28px', display: 'flex', flexDirection: 'column' as const, gap: '6px' }}>
-            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
-            <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>📞 +856 20 94 366 635</a>
-            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', letterSpacing: '0.5px' }}>ທ່ອງທ່ຽວລາວ &nbsp;·&nbsp; ท่องเที่ยวลาว &nbsp;·&nbsp; Discover Laos Authentically</p>
-          </div>
-        </div>
-      </footer>
+      <Footer lang={lang} />
     </main>
   )
 }

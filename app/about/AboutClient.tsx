@@ -1,5 +1,6 @@
 'use client'
 import Navbar from '@/components/Navbar'
+import Footer from '@/components/Footer'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
 
@@ -128,32 +129,7 @@ export default function AboutClient() {
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer style={{ backgroundColor: 'var(--color-black-soft)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '40px 24px' }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
-          <div className="footer-layout">
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '18px', color: 'var(--color-white)' }}>ALAN</span>
-                <span style={{ width: '4px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--color-gold)' }}></span>
-                <span style={{ color: 'var(--color-gray-400)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' as const }}>Coffee & Travel</span>
-              </div>
-              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
-              <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: '4px' }}>📞 +856 20 94 366 635</a>
-            </div>
-            <div className="footer-links">
-              {[
-                { label: tr('nav_destinations', lang), href: '/destinations' },
-                { label: tr('nav_guides', lang),       href: '/guides'       },
-                { label: tr('nav_about', lang),        href: '/about'        },
-                { label: tr('nav_contact', lang),      href: '/contact'      },
-              ].map(item => (
-                <a key={item.href} href={item.href} style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', textDecoration: 'none' }}>{item.label}</a>
-              ))}
-            </div>
-          </div>
-        </div>
-      </footer>
+      <Footer lang={lang} />
 
     </main>
   )

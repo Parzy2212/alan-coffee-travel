@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
+import Footer from '@/components/Footer'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
 
@@ -352,22 +353,7 @@ export default function GuidesClient() {
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer style={{ backgroundColor: 'var(--color-black-soft)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '40px 20px' }}>
-        <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20 }}>
-          <div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'white' }}>ALAN</span>
-            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', marginLeft: 8 }}>Coffee & Travel</span>
-            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4 }}>{tr('footer_copy', lang)}</p>
-            <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: 12, textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: 4 }}>📞 +856 20 94 366 635</a>
-          </div>
-          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-            {['/destinations','/guides','/experiences','/about','/contact'].map(href => (
-              <a key={href} href={href} style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, textDecoration: 'none' }}>{href.slice(1).charAt(0).toUpperCase() + href.slice(2)}</a>
-            ))}
-          </div>
-        </div>
-      </footer>
+      <Footer lang={lang} />
     </main>
   )
 }

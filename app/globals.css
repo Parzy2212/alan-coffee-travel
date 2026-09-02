@@ -576,6 +576,20 @@ button, a {
   .footer-full { grid-template-columns: 1.4fr 1fr; gap: 80px; }
 }
 
+/* Unified <Footer /> (components/Footer.tsx) — stacked → 2 col → 4 col, per Claude Design 2d */
+.footer-unified-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  padding-bottom: 32px;
+}
+@media (min-width: 640px) {
+  .footer-unified-grid { grid-template-columns: 1fr 1fr; gap: 36px; }
+}
+@media (min-width: 1024px) {
+  .footer-unified-grid { grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 44px; padding-bottom: 40px; }
+}
+
 /* ─── Skeleton loading ─────────────────────────────────────── */
 
 @keyframes skeleton-shimmer {

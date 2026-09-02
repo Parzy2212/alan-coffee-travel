@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Navbar from '@/components/Navbar'
+import Footer from '@/components/Footer'
 import InquiryModal from '@/components/InquiryModal'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
@@ -432,10 +433,7 @@ export default function DestinationDetailClient({
         </section>
       )}
 
-      <footer style={{ backgroundColor: 'var(--color-black)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '40px 32px', textAlign: 'center' as const }}>
-        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{tr('footer_copy', lang)}</p>
-        <a href="tel:+8562094366635" style={{ color: 'var(--color-gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 600, display: 'inline-block', marginTop: '4px' }}>📞 +856 20 94 366 635</a>
-      </footer>
+      <Footer lang={lang} />
 
     </main>
     </>
