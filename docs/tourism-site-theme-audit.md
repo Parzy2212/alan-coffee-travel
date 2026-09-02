@@ -85,6 +85,8 @@ Navbar (ครีม เหมือนกันทุกหน้าในก�
 
 หมายเหตุ: `/experiences/[slug]` ยังไม่มีข้อมูลจริงให้เปิดดู (เหมือน experiences list) จึงยืนยันด้วยตาจริงบน production ได้เฉพาะ `/guides/[slug]` เท่านั้น — โค้ดของทั้งสองไฟล์เหมือนกันทุกจุดที่เกี่ยวข้อง (คัดลอกแพทเทิร์นเดียวกัน) จึงเชื่อได้ในระดับสูงว่าใช้ได้เหมือนกัน แต่ยังไม่ใช่การยืนยันด้วยตาจริง 100%
 
+**Deploy + ยืนยันจริงบน production (2026-09-02, commit `58fbab7`):** deploy สำเร็จ (GitHub Actions "Deploy to Cloudflare Pages", 2m23s) ยืนยันด้วย Chrome DevTools MCP บน `alancoffeetravel.com/guides/alan` จริง — footer ขึ้นครบ (ลิงก์ 5 อัน, tel link, copyright), คลิกปุ่ม "Contact Guide" สำเร็จไม่ timeout ทั้งบนหน้าและใน modal ที่เปิดขึ้นมา, Lighthouse Accessibility **100/100 ทั้ง mobile และ desktop ไม่มี regression** จากการเพิ่ม footer เช็ค `/experiences/nonexistent-test` (เพราะยังไม่มีข้อมูลจริง) ไม่พบ console error ใดๆ ยืนยันว่าโค้ดที่เพิ่มไม่มีปัญหาแม้จะดูตัวจริงทั้งหน้าไม่ได้
+
 **✅ แก้แล้ว/ยืนยันแล้ว (2026-09-01):** ตัดสินใจแล้วว่า `/map` ต้องใช้ navbar ครีมเหมือนเพื่อนกลุ่ม B ที่เหลือ (Destinations/Guides/Experiences list) ไม่ใช่ดึงทั้งกลุ่มไปเป็นดำ — เหตุผลอยู่ในกฎด้านบน (navbar = จุดยึดสายตา/ทางออกที่สม่ำเสมอ)
 
 ตรวจโค้ดจริงพบว่า `app/map/page.tsx` **ใช้ shared `<Navbar />` component เดียวกับหน้าอื่นอยู่แล้ว** ไม่มี dark-theme override ใดๆ ในโค้ด — แก้ไปแล้วตั้งแต่ commit `03065cb` (2026-08-25, "unify /map navbar") ซึ่งอยู่ใน `main` ปัจจุบันแล้ว เช็คบน production จริงผ่านเบราว์เซอร์ (`getComputedStyle` บน `<nav>` ของทั้ง `/map` และ `/destinations`) ยืนยันตรงกัน: `background-color: rgb(255, 255, 255)` ทั้งคู่ — **ไม่ต้องแก้โค้ดเพิ่ม เพียงบันทึกกฎไว้กันหลุดในอนาคต** (รายงานเดิมที่บอกว่า `/map` navbar ดำอาจมาจากแคชเบราว์เซอร์เก่าตอนตรวจ — ดูบั๊ก ChunkLoadError/แคชด้านบนประกอบ)
