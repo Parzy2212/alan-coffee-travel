@@ -222,7 +222,7 @@ export default function DestinationDetailClient({
 
             {/* Details card */}
             <div style={{ backgroundColor: 'var(--color-black)', borderRadius: '12px', padding: '28px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-gold)', fontSize: '14px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>{tr('detail_details_card', lang)}</h3>
+              <h2 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-gold)', fontSize: '14px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>{tr('detail_details_card', lang)}</h2>
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '16px' }}>
                 <div>
                   <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const, marginBottom: '4px' }}>{tr('detail_label_region', lang)}</p>
@@ -262,7 +262,7 @@ export default function DestinationDetailClient({
             {/* Alan Travel Standard card */}
             {isAssessed && ratedDims.length > 0 && (
               <div style={{ backgroundColor: 'var(--color-black)', borderRadius: '12px', padding: '28px', border: '1px solid rgba(201,168,76,0.2)' }}>
-                <h3 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-gold)', fontSize: '14px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>{tr('detail_alan_standard', lang)}</h3>
+                <h2 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-gold)', fontSize: '14px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' as const, marginBottom: '20px' }}>{tr('detail_alan_standard', lang)}</h2>
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '18px' }}>
                   {ratedDims.map(dim => {
                     const val = (destination as any)[dim.key] as number

@@ -161,7 +161,8 @@ export default function DestinationMap({
             html: `<div style="background:#c9a84c;width:14px;height:14px;border-radius:999px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.6);cursor:pointer"></div>`,
             iconAnchor: [7, 7],
           })
-          const marker = L.marker([dest.location_lat, dest.location_lng], { icon: pinIcon })
+          const markerLabel = dest.region ? `${dest.title_en} — ${dest.region}` : dest.title_en
+          const marker = L.marker([dest.location_lat, dest.location_lng], { icon: pinIcon, alt: markerLabel })
             .addTo(map)
             .bindPopup(
               `<div style="background:#1a1a1a;border:1px solid rgba(201,168,76,0.25);border-radius:8px;padding:16px;min-width:220px;font-family:sans-serif">
@@ -177,6 +178,11 @@ export default function DestinationMap({
               selectSourceRef.current = 'marker'
               onSelectRef.current?.(dest.id)
             })
+          const markerEl = marker.getElement()
+          if (markerEl) {
+            markerEl.setAttribute('aria-label', markerLabel)
+            markerEl.setAttribute('title', markerLabel)
+          }
           markers.push(marker)
           markersByIdRef.current[dest.id] = { marker, dest }
         })

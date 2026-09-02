@@ -21,6 +21,7 @@ const sarabun = Sarabun({
   variable: '--font-thai',
   display: 'swap',
   weight: ['400', '600', '700', '800'],
+  preload: false, // default lang is 'en' — most page loads never render Thai script, so don't preload it upfront
 })
 
 const inter = Inter({
@@ -34,6 +35,7 @@ const notoSansLao = Noto_Sans_Lao({
   variable: '--font-lao',
   display: 'swap',
   weight: ['400', '700'],
+  preload: false, // default lang is 'en' — most page loads never render Lao script, so don't preload it upfront
 })
 
 const BASE_URL = 'https://alancoffeetravel.com'
@@ -205,9 +207,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </PWAProvider>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-CM6TTHL7CZ"
-          strategy="afterInteractive"
+          strategy="lazyOnload"
         />
-        <Script id="google-analytics" strategy="afterInteractive">
+        <Script id="google-analytics" strategy="lazyOnload">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
