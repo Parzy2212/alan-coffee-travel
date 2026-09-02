@@ -1,6 +1,8 @@
 > **อัปเดต 2026-09-01 (รอบที่ 2):** แก้ 3 ปัญหาที่ซ้ำหลายหน้าแล้ว (PWA banner, navbar/footer contrast, filter select label) — deploy ขึ้น production จริงแล้ว (commit `d616662`) และตรวจซ้ำครบทั้ง 8 หน้า+โมดัลด้วย Chrome DevTools MCP ยืนยันผ่านจริง ดูตารางเทียบก่อน-หลังท้ายเอกสาร
 >
-> **อัปเดต 2026-09-02 (รอบที่ 3):** แก้ปัญหาที่เหลือครบทั้ง 5 ข้อ (canonical, touch target, Leaflet marker label, heading order, font/gtag preload) — deploy ขึ้น production แล้ว (commit `2d449f1`) ยืนยันด้วย Chrome DevTools MCP ทั้ง 9 หน้าอีกรอบ ดูตาราง "ผลการแก้ไขรอบที่ 3" ท้ายเอกสาร **ตอนนี้ไม่มีปัญหาที่ตั้งใจเหลือค้างจากรายงานนี้แล้ว** เหลือแต่ contrast เฉพาะหน้า (นอก Navbar/Footer) ที่ยังไม่ได้ตัดสินใจว่าจะแก้หรือไม่ — ดูรายละเอียดในหัวข้อ "ปัญหาเฉพาะหน้า" ด้านล่าง (ยังเป็นข้อมูลเดิมจากรอบที่ 1)
+> **อัปเดต 2026-09-02 (รอบที่ 3):** แก้ปัญหาที่เหลือครบทั้ง 5 ข้อ (canonical, touch target, Leaflet marker label, heading order, font/gtag preload) — deploy ขึ้น production แล้ว (commit `2d449f1`) ยืนยันด้วย Chrome DevTools MCP ทั้ง 9 หน้าอีกรอบ ดูตาราง "ผลการแก้ไขรอบที่ 3" ท้ายเอกสาร
+>
+> **อัปเดต 2026-09-02 (รอบที่ 4 — ปิดเคส):** แก้ contrast เฉพาะหน้าที่เหลือทั้งหมดครบทุกจุดแล้ว (commit `3f0fb51`, deploy สำเร็จ) **ทั้ง 9 หน้า ได้ Accessibility 100/100 ทั้ง mobile และ desktop บน production จริง ไม่มีปัญหา color-contrast เหลือแม้แต่จุดเดียว** ดูตาราง "ผลการแก้ไขรอบที่ 4" ท้ายเอกสาร — **เอกสารนี้ปิดเคสสมบูรณ์แล้ว** ไม่มีรายการที่ตกลงจะแก้เหลือค้างอีก
 
 # Accessibility Audit — เว็บทั้งเว็บ (Chrome DevTools MCP + Modern Web Guidance)
 
@@ -149,6 +151,57 @@ Commit `d616662` push ขึ้น `main` → GitHub Actions "Deploy to Cloudfla
 
 ### Deploy
 Commit `2d449f1` push ขึ้น `main` → GitHub Actions "Deploy to Cloudflare Pages" รันสำเร็จ (2m23s) → ยืนยันด้วย `curl` + Chrome DevTools MCP บน `alancoffeetravel.com` จริงตามตารางด้านบน
+
+---
+
+## ผลการแก้ไขรอบที่ 4 (2026-09-02) — contrast เฉพาะหน้าที่เหลือทั้งหมด, ปิดเคส
+
+### รายการที่เจอจริงตอนตรวจซ้ำ (Chrome DevTools MCP, mobile + desktop ทุกหน้า เพราะเคยเจอความไม่นิ่งมาก่อน — รอบนี้ mobile/desktop ให้ผลตรงกัน 100% ทุกหน้า ไม่มีความไม่นิ่งอีก)
+
+| หน้า | จุดที่เจอ | ค่าเดิม (contrast) |
+|---|---|---|
+| Home | "Tours coming soon" / "Apply Now" | 2.61:1 / 3.77:1 |
+| Destinations list | "1 destination" count, การ์ด excerpt, "NOT ASSESSED" badge | 2.64:1 / 3.81:1 / 1.84:1 |
+| Guides list | "2 guides" count, "Attapeu · ปี exp", specialty tag, bio | 2.62–4.44:1 |
+| Experiences list | "0 experiences" count, "No experiences found" | 2.62:1 / 3.81:1 |
+| Map | — (ไม่เจอเลยทั้ง mobile/desktop) | — |
+| About | 4 label ทอง (WHAT ALAN IS ฯลฯ), "ALAN COFFEE & TRAVEL" eyebrow | 2.15:1 / 3.19:1 |
+| Contact | FIND US / SEND A MESSAGE / Facebook / Instagram (ทอง), weekend hours (เทา) | 2.15:1 / 2.52:1 |
+| Destination detail | 11 จุด: back link, ABOUT, REGION/ASSESSMENT, badge, ปุ่ม WhatsApp เขียว, "Other ways to contact" x3, "More guides" | 1.98–3.19:1 |
+| Guide profile | "Attapeu", tab ปุ่ม Experiences/Reviews/Photos | 3.81:1 |
+
+**หลังแก้ — ทั้ง 9 หน้า, ทั้ง mobile และ desktop:**
+
+| หน้า | A11y (mobile/desktop) |
+|---|---|
+| Home | **100 / 100** |
+| Destinations list | **100 / 100** |
+| Guides list | **100 / 100** |
+| Experiences list | **100 / 100** |
+| Map | **100 / 100** |
+| About | **100 / 100** |
+| Contact | **100 / 100** |
+| Destination detail (Sae Pong Lai) | **100 / 100** |
+| Guide profile | **100 / 100** |
+
+**ไม่มี color-contrast fail เหลือแม้แต่จุดเดียวในทั้งเว็บ ณ ตอนนี้**
+
+### สิ่งที่แก้จริง
+1. **ทอง (#c9a84c) บนพื้นครีม/ขาว** → เปลี่ยนเป็น `var(--color-gold-dark)` (token ที่เพิ่มไว้ตั้งแต่รอบที่ 2 — มีอยู่แล้วแต่ไม่มีใครเรียกใช้) ที่: 4 label ใน About, FIND US/SEND A MESSAGE/Facebook/Instagram ใน Contact, ABOUT eyebrow ใน destination detail — **ไม่แตะ `--color-gold` ตรงๆ** เพราะยังใช้ถูกต้องอยู่บนพื้นดำที่อื่น
+2. **`var(--color-gray-400)` ที่ใช้ผิดบนพื้นครีม** → เปลี่ยนเป็น `var(--color-gray-600)` ที่: weekend hours ใน Contact, "Other ways to contact" ใน destination detail — ยืนยันแล้วว่า `--color-gray-400` เองไม่มีปัญหา แค่ใช้ผิดบริบทพื้นหลัง
+3. **ตัวหนังสือจางบนพื้นดำ (`rgba(255,255,255,0.2–0.4)`)** → คำนวณแล้วว่า `rgba(255,255,255,0.6)` ผ่าน 4.5:1 บนทุกเฉดพื้นดำที่เว็บนี้ใช้ (ตั้งแต่ #0a0a0a ถึง #1d1d1d) จึงใช้ค่าเดียวกันสม่ำเสมอทั้งเว็บ แก้ที่ Home, 3 หน้า list, guide profile tabs, และ 10 จุดใน destination detail — **ไม่ต้องสร้าง token ใหม่**
+4. **ปุ่ม WhatsApp/LINE/Telegram สีสดใสตัวหนังสือขาว** (ตัวเดียวที่ต้องใช้สีใหม่จริงๆ เพราะตัวหนังสือขาวสว่างสุดอยู่แล้ว ต้องทำพื้นหลังให้เข้มขึ้นแทน) — `#25D366`→`#1D7A46`, `#00B900`→`#008000`, `#2CA5E0`→`#1A6E99` ที่ `InquiryModal.tsx` และ `DestinationDetailClient.tsx` (รวมจุดที่ยังไม่ถูกตรวจเจอเพราะ modal ปิดอยู่ตอน audit ด้วย — แก้ไปพร้อมกันเพราะเป็นบั๊กแบบเดียวกันในคอมโพเนนต์เดียวกัน)
+5. **ผลข้างเคียงที่เจอระหว่างแก้:** พอทำให้ย่อหน้า "More guides available at" สว่างขึ้น ลิงก์ทองข้างในกลับ "แยกไม่ออก" จากข้อความรอบข้าง (`link-in-text-block` — Lighthouse rule คนละตัวจาก color-contrast) เพราะทั้งคู่สว่างใกล้เคียงกัน แก้ด้วยการเพิ่มขีดเส้นใต้ให้ลิงก์แทนที่จะพึ่งสีอย่างเดียว — เป็นตัวอย่างจริงว่าทำไมต้องตรวจซ้ำหลังแก้ทุกครั้ง ไม่ใช่เชื่อว่าแก้แล้วจบ
+
+### อุบัติเหตุระหว่างทดสอบ (ไม่กระทบผลสุดท้าย)
+รัน `npm run build` (production build) ทับขณะที่ `npm run dev` กำลังรันอยู่ในโปรเจกต์เดียวกัน ทำให้ `.next` cache ชนกันจนหน้า Sae Pong Lai ขึ้น 500 ชั่วคราวระหว่างทดสอบ local — แก้ด้วยการ restart dev server ใหม่ทั้งหมด ไม่ใช่บั๊กในโค้ดที่แก้ — จำไว้เป็นบทเรียนว่าไม่ควรรัน build กับ dev พร้อมกันในโฟลเดอร์เดียวกัน
+
+### ยืนยันด้วยตาจริงบน production
+- Contact Guide บน Sae Pong Lai: คลิกสำเร็จทั้ง mobile และ desktop viewport, modal เปิดเห็น Cancel/Send Inquiry เต็ม ไม่มีอะไรบัง
+- ปุ่ม WhatsApp (สีเขียวเข้มขึ้น) และลิงก์ "Alan Café · Attapeu" (มีขีดเส้นใต้แล้ว) แสดงผลถูกต้องในภาพหน้าจอจริง
+
+### Deploy
+Commit `3f0fb51` push ขึ้น `main` → GitHub Actions "Deploy to Cloudflare Pages" รันสำเร็จ → ยืนยันครบทั้ง 9 หน้า × 2 viewport บน `alancoffeetravel.com` จริงตามตารางด้านบน
 
 ---
 
