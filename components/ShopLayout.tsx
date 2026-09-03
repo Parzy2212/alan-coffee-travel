@@ -7,10 +7,12 @@ import { getInitials } from '@/lib/avatar'
 
 const GOLD = '#c9a84c'
 
-const NAV_ITEMS: { href: string; label: string; icon: string; soon?: boolean; dividerBefore?: boolean }[] = [
-  { href: '/shop/settings',          label: 'ทั่วไป',        icon: '⚙️'  },
-  { href: '/shop/settings/receipt',  label: 'ใบเสร็จ',       icon: '🧾'  },
-  { href: '/shop/settings/payment',  label: 'วิธีชำระเงิน',  icon: '💳'  },
+const NAV_ITEMS: { href: string; label: string; icon: string; soon?: boolean; dividerBefore?: boolean; groupLabel?: string }[] = [
+  { href: '/shop/settings',          label: 'ทั่วไป',        icon: '⚙️',  groupLabel: 'ร้าน' },
+  { href: '/shop/settings/currency', label: 'สกุลเงิน',      icon: '💱'  },
+  { href: '/shop/settings/payment',  label: 'วิธีชำระเงิน',  icon: '💳',  groupLabel: 'การรับเงิน' },
+  { href: '/shop/settings/loyalty',  label: 'แต้มสะสม',      icon: '🎁'  },
+  { href: '/shop/settings/receipt',  label: 'ใบเสร็จ',       icon: '🧾',  groupLabel: 'อุปกรณ์' },
   { href: '/shop/settings/printer',  label: 'เครื่องพิมพ์',  icon: '🖨️'  },
   { href: '/shop/team',              label: 'ทีมงาน',        icon: '👥',  dividerBefore: true },
   { href: '/shop/team/employees',    label: 'พนักงาน POS',   icon: '🏷️'  },
@@ -39,6 +41,12 @@ const STYLES = `
   }
   .shop-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
   .shop-nav-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 6px 2px; }
+  .shop-nav-group-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px;
+    color: rgba(201,168,76,0.55); text-transform: uppercase;
+    padding: 14px 14px 4px;
+  }
+  .shop-nav > div:first-child .shop-nav-group-label { padding-top: 2px; }
   .shop-nav-item {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 14px; border-radius: 8px;
@@ -76,6 +84,7 @@ const STYLES = `
     }
     .shop-nav::-webkit-scrollbar { display: none; }
     .shop-nav-divider { display: none; }
+    .shop-nav-group-label { display: none; }
     .shop-nav-item {
       border-left: none !important; border-bottom: 2px solid transparent;
       border-radius: 0; padding: 10px 12px;
@@ -148,6 +157,7 @@ export function ShopLayout({ children }: { children: ReactNode }) {
             {NAV_ITEMS.map(item => (
               <div key={item.href}>
                 {item.dividerBefore && <div className="shop-nav-divider" />}
+                {item.groupLabel && <div className="shop-nav-group-label">{item.groupLabel}</div>}
                 <a
                   href={item.soon ? undefined : item.href}
                   className={[
