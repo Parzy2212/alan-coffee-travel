@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import {
   GOLD, BG_BASE, BG_SURFACE, BG_CARD_ALT,
   BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
-  TEXT_1, TEXT_2, TEXT_3, TEXT_4, TEXT_5,
+  TEXT_1, TEXT_2, TEXT_5,
   SUCCESS, WARNING, DANGER,
   FONT_MONO, RADIUS, SHADOW_MODAL, STATE_HOVER, STATE_FOCUS_RING, STATE_SELECTED_BORDER,
 } from '@/lib/pos-theme-tokens'
@@ -40,7 +40,7 @@ const actionColor = (a: string) =>
   a === 'insert' || a === 'insert_many' ? SUCCESS
   : a === 'update' || a === 'upsert'    ? WARNING
   : a === 'delete' || a === 'delete_match' ? DANGER
-  : TEXT_3
+  : TEXT_2
 
 export default function AuditLogPage() {
   const [logs,         setLogs]         = useState<AuditLog[]>([])
@@ -116,10 +116,10 @@ export default function AuditLogPage() {
   if (noTable) {
     return (
       <ShopLayout>
-        <div className={ibmPlexSansThai.className} style={{ textAlign: 'center', padding: '60px 0', color: TEXT_4 }}>
+        <div className={ibmPlexSansThai.className} style={{ textAlign: 'center', padding: '60px 0', color: TEXT_2 }}>
           <div style={{ fontSize: 36, marginBottom: 14 }}>📋</div>
           <div style={{ fontSize: 15, marginBottom: 8 }}>ยังไม่มีตาราง audit_logs</div>
-          <div style={{ fontSize: 12, color: TEXT_5, fontFamily: FONT_MONO, wordBreak: 'break-all' }}>
+          <div style={{ fontSize: 12, color: TEXT_2, fontFamily: FONT_MONO, wordBreak: 'break-all' }}>
             CREATE TABLE audit_logs (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, created_at timestamptz DEFAULT now(), staff_name text, action text, table_name text, record_id text, payload jsonb);
           </div>
         </div>
@@ -156,7 +156,7 @@ export default function AuditLogPage() {
               style={{ ...INP, flex: 1, minWidth: 260 }}
             />
             <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }} style={INP} />
-            <span style={{ color: TEXT_4, fontSize: 13 }}>—</span>
+            <span style={{ color: TEXT_2, fontSize: 13 }}>—</span>
             <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0) }} style={INP} />
             <select value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(0) }}
               style={{ ...INP, cursor: 'pointer' }}>
@@ -169,7 +169,7 @@ export default function AuditLogPage() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <span
                 onClick={clearFilters}
-                style={{ fontSize: 12, color: TEXT_3, cursor: 'pointer', padding: '4px 2px' }}
+                style={{ fontSize: 12, color: TEXT_2, cursor: 'pointer', padding: '4px 2px' }}
               >ล้างตัวกรองทั้งหมด ✕</span>
             </div>
           )}
@@ -179,7 +179,7 @@ export default function AuditLogPage() {
         <div style={{
           display: 'grid', gridTemplateColumns: '150px 168px 150px 1fr',
           padding: '11px 24px', backgroundColor: BG_SURFACE, borderBottom: `1px solid ${BORDER_SUBTLE}`,
-          fontFamily: FONT_MONO, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: TEXT_3,
+          fontFamily: FONT_MONO, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: TEXT_2,
         }}>
           <div>เวลา</div><div>พนักงาน</div><div>Action</div><div>รายละเอียด</div>
         </div>
@@ -190,7 +190,7 @@ export default function AuditLogPage() {
             {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 44, borderRadius: RADIUS.sm, backgroundColor: STATE_HOVER }} />)}
           </div>
         ) : pageRows.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: TEXT_4, fontSize: 14 }}>ไม่พบรายการ</div>
+          <div style={{ textAlign: 'center', padding: '60px 0', color: TEXT_2, fontSize: 14 }}>ไม่พบรายการ</div>
         ) : (
           pageRows.map((log, i) => (
             <div key={log.id} style={{
@@ -206,7 +206,7 @@ export default function AuditLogPage() {
                   width: 22, height: 22, borderRadius: RADIUS.pill, flexShrink: 0,
                   backgroundColor: log.staff_name ? 'rgba(201,168,76,0.12)' : BG_CARD_ALT,
                   border: `1px solid ${log.staff_name ? BORDER_GOLD : BORDER_DEFAULT}`,
-                  display: 'grid', placeItems: 'center', fontSize: 10, color: log.staff_name ? GOLD : TEXT_3,
+                  display: 'grid', placeItems: 'center', fontSize: 10, color: log.staff_name ? GOLD : TEXT_2,
                 }}>{log.staff_name ? log.staff_name.charAt(0) : '◇'}</div>
                 <span style={{ fontSize: 13, color: log.staff_name ? TEXT_1 : TEXT_2 }}>{log.staff_name ?? 'ระบบ'}</span>
               </div>
@@ -219,7 +219,7 @@ export default function AuditLogPage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span style={{ fontSize: 13, color: TEXT_2 }}>{log.table_name}{log.record_id ? ` · ${log.record_id.slice(0, 8)}…` : ''}</span>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: TEXT_4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: TEXT_2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {JSON.stringify(log.payload)}
                 </span>
               </div>
@@ -233,7 +233,7 @@ export default function AuditLogPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
             padding: '14px 24px', backgroundColor: BG_SURFACE, borderTop: `1px solid ${BORDER_SUBTLE}`,
           }}>
-            <div style={{ fontSize: 12, color: TEXT_3 }}>
+            <div style={{ fontSize: 12, color: TEXT_2 }}>
               แสดง {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} จาก {filtered.length.toLocaleString()}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
