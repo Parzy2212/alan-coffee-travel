@@ -90,24 +90,47 @@ export default function OnboardingPage() {
       }
 
       // Build slug from shop name
-      const slug = shopName.trim().toLowerCase()
+      const baseSlug = shopName.trim().toLowerCase()
         .replace(/\s+/g, '-')
         .replace(/[^a-z0-9-]/g, '')
         .slice(0, 40) || 'my-cafe'
 
-      // Get or create shop record
-      const { data: existing } = await authClient
-        .from('shops')
-        .select('id')
-        .eq('slug', slug)
-        .maybeSingle()
+      // Idempotent re-run check: does the CURRENT USER already own a shop with this slug?
+      // (e.g. they refreshed mid-wizard and are redoing onboarding) — only ever matches
+      // a shop this user already owns, never an unrelated shop that happens to share a slug.
+      const { data: ownedShops } = await authClient
+        .from('shop_users')
+        .select('shop_id')
+        .eq('user_id', currentUser.id)
+        .eq('role', 'owner')
 
-      let shopId: string
+      let shopId: string | null = null
+      if (ownedShops && ownedShops.length > 0) {
+        const { data: matchingShop } = await authClient
+          .from('shops')
+          .select('id')
+          .eq('slug', baseSlug)
+          .in('id', ownedShops.map(s => s.shop_id))
+          .maybeSingle()
+        if (matchingShop?.id) shopId = matchingShop.id
+      }
 
-      if (existing?.id) {
-        shopId = existing.id
+      let slug = baseSlug
+
+      if (shopId) {
         await authClient.from('shops').update({ name: shopName.trim(), city }).eq('id', shopId)
       } else {
+        // Never attach to someone else's shop just because the slug collides —
+        // disambiguate and create a fresh shop instead.
+        const { data: collision } = await authClient
+          .from('shops')
+          .select('id')
+          .eq('slug', slug)
+          .maybeSingle()
+        if (collision?.id) {
+          slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`
+        }
+
         const { data: newShop, error: shopErr } = await authClient
           .from('shops')
           .insert({
