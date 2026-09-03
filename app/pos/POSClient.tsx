@@ -35,7 +35,7 @@ import {
 import {
   BG_BASE, BG_SURFACE, BG_CARD_ALT,
   BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
-  TEXT_1, TEXT_2, TEXT_3, TEXT_4, TEXT_5,
+  TEXT_1, TEXT_2, TEXT_4,
   FONT_MONO, RADIUS, SHADOW_MODAL,
   STATE_FOCUS_RING, STATE_SELECTED_BG, STATE_SELECTED_BORDER,
 } from '@/lib/pos-theme-tokens'
@@ -1191,7 +1191,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     borderRadius: RADIUS.md, padding: '10px 12px', outline: 'none', boxSizing: 'border-box',
   }
   const overlineV2: React.CSSProperties = {
-    fontFamily: FONT_MONO, fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: TEXT_3,
+    fontFamily: FONT_MONO, fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: TEXT_2,
   }
 
   const showSlipRef = method === 'qr' || method === 'transfer'
@@ -1220,13 +1220,13 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
               {fmtLak(finalTotal)}
             </div>
             {discountAmt > 0 && (
-              <div style={{ fontSize: 11, color: TEXT_4, marginTop: 3 }}>
+              <div style={{ fontSize: 11, color: TEXT_2, marginTop: 3 }}>
                 ก่อนลด {fmtLak(subtotal)} · ส่วนลด {fmtLak(discountAmt)}
               </div>
             )}
           </div>
           <button onClick={onClose} disabled={loading}
-            style={{ background: 'none', border: 'none', color: TEXT_3, fontSize: 26, cursor: 'pointer', lineHeight: 1, padding: '4px 8px', marginTop: -4 }}>×</button>
+            style={{ background: 'none', border: 'none', color: TEXT_2, fontSize: 26, cursor: 'pointer', lineHeight: 1, padding: '4px 8px', marginTop: -4 }}>×</button>
         </div>
 
         {/* ── Body: left = choose & enter, right = review & confirm ── */}
@@ -1262,7 +1262,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: TEXT_4, marginTop: 3, display: 'flex', gap: 12 }}>
+                  <div style={{ fontSize: 11, color: TEXT_2, marginTop: 3, display: 'flex', gap: 12 }}>
                     <span>{selectedCustomer.loyalty_points.toLocaleString()} pts</span>
                     {vipPct > 0 && <span style={{ color: '#4cba7f' }}>ส่วนลด VIP {vipPct}% ถูกใช้แล้ว</span>}
                     {birthday && <span style={{ color: GOLD }}>วันเกิดวันนี้!</span>}
@@ -1282,7 +1282,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                   display: 'flex', flexDirection: 'column', gap: 3, transition: 'all .15s',
                 }}>
                   <span style={{ fontSize: 14, fontWeight: method === m.value ? 600 : 500 }}>{m.icon} {m.label}</span>
-                  <span style={{ fontSize: 12, color: method === m.value ? 'rgba(201,168,76,0.7)' : TEXT_4 }}>
+                  <span style={{ fontSize: 12, color: method === m.value ? 'rgba(201,168,76,0.7)' : TEXT_2 }}>
                     F{i + 1}{method === m.value ? ' · เลือกอยู่' : ''}
                   </span>
                 </button>
@@ -1293,7 +1293,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             {method === 'cash' && (<>
               <div style={{ backgroundColor: BG_CARD_ALT, borderRadius: RADIUS.lg, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: `1px solid ${BORDER_DEFAULT}` }}>
                 <span style={overlineV2}>รับมา</span>
-                <span style={{ fontSize: 28, fontWeight: 600, fontFamily: FONT_MONO, fontVariantNumeric: 'tabular-nums', color: received ? TEXT_1 : TEXT_5 }}>
+                <span style={{ fontSize: 28, fontWeight: 600, fontFamily: FONT_MONO, fontVariantNumeric: 'tabular-nums', color: received ? TEXT_1 : TEXT_2 }}>
                   {received ? parseInt(received, 10).toLocaleString('en-US') + ' ₭' : '— ₭'}
                 </span>
               </div>
@@ -1350,11 +1350,11 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             {/* ── TRANSFER: pick a bank account ── */}
             {method === 'transfer' && (
               !banksLoaded ? (
-                <div style={{ padding: 28, textAlign: 'center', color: TEXT_4, fontSize: 13 }}>กำลังโหลด...</div>
+                <div style={{ padding: 28, textAlign: 'center', color: TEXT_2, fontSize: 13 }}>กำลังโหลด...</div>
               ) : banks.length === 0 ? (
                 <div style={{ padding: '28px 16px', textAlign: 'center', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.lg, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                   <div style={{ fontSize: 40 }}>🏦</div>
-                  <div style={{ fontSize: 13, color: TEXT_4 }}>กรุณาเพิ่มธนาคารในตั้งค่า</div>
+                  <div style={{ fontSize: 13, color: TEXT_2 }}>กรุณาเพิ่มธนาคารในตั้งค่า</div>
                   <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปหน้าตั้งค่า →</a>
                 </div>
               ) : (
@@ -1369,7 +1369,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                       <div style={{ width: 36, height: 36, borderRadius: RADIUS.md, backgroundColor: bank.color || GOLD, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🏦</div>
                       <div style={{ flex: 1, textAlign: 'left' }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: TEXT_1 }}>{bank.name}</div>
-                        <div style={{ fontSize: 12, color: TEXT_3, marginTop: 2, fontFamily: FONT_MONO }}>
+                        <div style={{ fontSize: 12, color: TEXT_2, marginTop: 2, fontFamily: FONT_MONO }}>
                           {bank.account_number}{bank.account_name ? ' · ' + bank.account_name : ''}
                         </div>
                       </div>
@@ -1383,7 +1383,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             {/* ── SPLIT ── */}
             {method === 'split' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 12, color: TEXT_3, textAlign: 'center' }}>
+                <div style={{ fontSize: 12, color: TEXT_2, textAlign: 'center' }}>
                   ยอดรวม <span style={{ color: GOLD, fontWeight: 700, fontFamily: FONT_MONO }}>{fmtLak(finalTotal)}</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1407,7 +1407,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                     border: `1px solid ${splitTotal >= finalTotal ? GREEN : RED}33`,
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}>
-                    <span style={{ fontSize: 12, color: TEXT_3 }}>{splitTotal >= finalTotal ? 'รับรวม' : 'ขาดอีก'}</span>
+                    <span style={{ fontSize: 12, color: TEXT_2 }}>{splitTotal >= finalTotal ? 'รับรวม' : 'ขาดอีก'}</span>
                     <span style={{ fontSize: 20, fontWeight: 600, fontFamily: FONT_MONO, color: splitTotal >= finalTotal ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
                       {splitTotal >= finalTotal ? splitTotal.toLocaleString('en-US') + ' ₭' : `${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`}
                     </span>
@@ -1422,7 +1422,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
             {/* ── QR: nothing extra on the left, code itself lives on the right ── */}
             {method === 'qr' && (
-              <div style={{ fontSize: 12, color: TEXT_4, textAlign: 'center', padding: '8px 0' }}>
+              <div style={{ fontSize: 12, color: TEXT_2, textAlign: 'center', padding: '8px 0' }}>
                 คิว QR อยู่ทางขวา — ลูกค้าหันจอมาสแกนได้เลย
               </div>
             )}
@@ -1431,7 +1431,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             <div>
               <button onClick={() => setShowExtra(x => !x)} style={{
                 background: 'none', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.sm,
-                padding: '7px 14px', color: TEXT_3, fontSize: 12,
+                padding: '7px 14px', color: TEXT_2, fontSize: 12,
                 cursor: 'pointer', width: '100%', textAlign: 'left',
               }}>
                 {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · เบอร์โทร · โต๊ะ · หมายเหตุ
@@ -1468,7 +1468,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                   <button key={l} onClick={() => setReceiptLang(l)} style={{
                     padding: '4px 12px', borderRadius: RADIUS.sm, border: 'none',
                     backgroundColor: receiptLang === l ? 'rgba(201,168,76,0.15)' : 'transparent',
-                    color: receiptLang === l ? GOLD : TEXT_4,
+                    color: receiptLang === l ? GOLD : TEXT_2,
                     fontSize: 11, fontWeight: receiptLang === l ? 700 : 500, cursor: 'pointer',
                   }}>{l === 'en' ? 'EN' : l === 'th' ? 'ไทย' : 'ລາວ'}</button>
                 ))}
@@ -1485,7 +1485,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
             {method === 'qr' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
                 {!banksLoaded ? (
-                  <div style={{ padding: 28, color: TEXT_4, fontSize: 13 }}>กำลังโหลด...</div>
+                  <div style={{ padding: 28, color: TEXT_2, fontSize: 13 }}>กำลังโหลด...</div>
                 ) : qrNumber ? (
                   <>
                     <img
@@ -1494,13 +1494,13 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                       style={{ borderRadius: RADIUS.xl, border: `1px solid ${'rgba(201,168,76,0.25)'}` }}
                     />
                     {qrName && <div style={{ fontSize: 13, color: TEXT_2, fontWeight: 600 }}>{qrName}</div>}
-                    <div style={{ fontSize: 11, color: TEXT_4, fontFamily: FONT_MONO }}>{qrNumber}</div>
+                    <div style={{ fontSize: 11, color: TEXT_2, fontFamily: FONT_MONO }}>{qrNumber}</div>
                     <div style={{ fontSize: 24, fontWeight: 600, color: GOLD, fontFamily: FONT_MONO, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</div>
                   </>
                 ) : (
                   <div style={{ padding: '24px 16px', textAlign: 'center', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.lg, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                     <div style={{ fontSize: 36 }}>📱</div>
-                    <div style={{ fontSize: 13, color: TEXT_4 }}>ยังไม่ได้ตั้งค่า QR Payment</div>
+                    <div style={{ fontSize: 13, color: TEXT_2 }}>ยังไม่ได้ตั้งค่า QR Payment</div>
                     <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปตั้งค่า →</a>
                   </div>
                 )}
