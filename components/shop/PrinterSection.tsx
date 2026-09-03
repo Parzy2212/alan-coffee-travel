@@ -1,12 +1,22 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { IBM_Plex_Sans_Thai } from 'next/font/google'
 import { SaveButton } from './ShopIdentitySection'
+import {
+  BG_CARD, BG_CARD_ALT, BORDER_SUBTLE, BORDER_DEFAULT,
+  TEXT_1, TEXT_2, TEXT_3, SUCCESS, DANGER, RADIUS,
+} from '@/lib/pos-theme-tokens'
 
-const CARD: React.CSSProperties = { backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 24, marginBottom: 24 }
-const LABEL: React.CSSProperties = { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, letterSpacing: '0.4px', display: 'block', marginBottom: 6 }
-const INP: React.CSSProperties = { width: '100%', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '12px 14px', color: 'white', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
-const GOLD = '#c9a84c'
+const ibmPlexSansThai = IBM_Plex_Sans_Thai({
+  subsets: ['thai', 'latin'],
+  weight: ['400', '500', '600'],
+  display: 'swap',
+})
+
+const CARD: React.CSSProperties = { backgroundColor: BG_CARD, border: `1px solid ${BORDER_SUBTLE}`, borderRadius: RADIUS['2xl'], padding: 24, marginBottom: 24 }
+const LABEL: React.CSSProperties = { color: TEXT_2, fontSize: 12, fontWeight: 600, letterSpacing: '0.4px', display: 'block', marginBottom: 6 }
+const INP: React.CSSProperties = { width: '100%', backgroundColor: BG_CARD_ALT, border: `1px solid ${BORDER_DEFAULT}`, borderRadius: RADIUS.md, padding: '12px 14px', color: TEXT_1, fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
 
 const PAPER_WIDTHS = [
   { value: '80', label: '80mm — มาตรฐาน (48 chars)' },
@@ -60,9 +70,9 @@ export function PrinterSection() {
   }
 
   return (
-    <>
+    <div className={ibmPlexSansThai.className}>
       <div style={CARD}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: 20 }}>ตั้งค่าเครื่องพิมพ์</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: TEXT_2, marginBottom: 20 }}>ตั้งค่าเครื่องพิมพ์</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <label style={LABEL}>ชื่อเครื่องพิมพ์ (Windows Printer Name)</label>
@@ -73,7 +83,7 @@ export function PrinterSection() {
               placeholder="XP-T80A หรือชื่อเครื่องพิมพ์ใน Windows"
               style={INP}
             />
-            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginTop: 4 }}>
+            <div style={{ color: TEXT_2, fontSize: 12, marginTop: 4 }}>
               เปิด Printers &amp; Scanners แล้วก็อปชื่อเครื่องพิมพ์มาวาง — ทิ้งว่างไว้ถ้าจะใช้ USB auto-detect
             </div>
           </div>
@@ -86,14 +96,14 @@ export function PrinterSection() {
                 style={{ ...INP, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', paddingRight: 36 }}
               >
                 {PAPER_WIDTHS.map(w => (
-                  <option key={w.value} value={w.value} style={{ backgroundColor: '#1a1a1a' }}>{w.label}</option>
+                  <option key={w.value} value={w.value} style={{ backgroundColor: BG_CARD_ALT }}>{w.label}</option>
                 ))}
               </select>
-              <div style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)', pointerEvents: 'none', fontSize: 10 }}>▼</div>
+              <div style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: TEXT_3, pointerEvents: 'none', fontSize: 10 }}>▼</div>
             </div>
           </div>
           <div>
-            <label style={LABEL}>IP เครื่องพิมพ์ WiFi <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: 400 }}>(ถ้ามี)</span></label>
+            <label style={LABEL}>IP เครื่องพิมพ์ WiFi <span style={{ color: TEXT_2, fontWeight: 400 }}>(ถ้ามี)</span></label>
             <input
               type="text"
               value={printerIp}
@@ -101,19 +111,19 @@ export function PrinterSection() {
               placeholder="192.168.1.100"
               style={INP}
             />
-            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginTop: 4 }}>ทิ้งว่างไว้ถ้าเชื่อมต่อผ่าน USB หรือ Windows Printer Driver</div>
+            <div style={{ color: TEXT_2, fontSize: 12, marginTop: 4 }}>ทิ้งว่างไว้ถ้าเชื่อมต่อผ่าน USB หรือ Windows Printer Driver</div>
           </div>
         </div>
       </div>
 
       {/* Print server status */}
       <div style={CARD}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: 16 }}>AlanPOS Print Server</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: TEXT_2, marginBottom: 16 }}>AlanPOS Print Server</div>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
           <div style={{ fontSize: 32 }}>🖨️</div>
           <div>
-            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, marginBottom: 4 }}>ต้องติดตั้ง Print Server บนเครื่อง Windows</div>
-            <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ color: TEXT_1, fontSize: 14, marginBottom: 4 }}>ต้องติดตั้ง Print Server บนเครื่อง Windows</div>
+            <div style={{ color: TEXT_2, fontSize: 13, lineHeight: 1.6 }}>
               AlanPOS Print Server ทำงานที่ localhost:3002 และรับคำสั่งพิมพ์จากหน้า POS<br />
               ดาวน์โหลดและเรียกใช้ AlanPOS-PrintServer.exe บนเครื่องที่ต่อเครื่องพิมพ์
             </div>
@@ -124,10 +134,10 @@ export function PrinterSection() {
           onClick={handleTest}
           disabled={testStatus === 'testing'}
           style={{
-            padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-            backgroundColor: testStatus === 'ok' ? 'rgba(76,186,127,0.15)' : testStatus === 'err' ? 'rgba(255,77,77,0.1)' : 'rgba(255,255,255,0.06)',
-            color: testStatus === 'ok' ? '#4cba7f' : testStatus === 'err' ? '#ff6b6b' : 'rgba(255,255,255,0.6)',
-            border: testStatus === 'ok' ? '1px solid rgba(76,186,127,0.3)' : testStatus === 'err' ? '1px solid rgba(255,77,77,0.2)' : '1px solid rgba(255,255,255,0.1)',
+            padding: '10px 20px', borderRadius: RADIUS.md, fontSize: 13, fontWeight: 600,
+            backgroundColor: testStatus === 'ok' ? `${SUCCESS}14` : testStatus === 'err' ? `${DANGER}14` : BORDER_SUBTLE,
+            color: testStatus === 'ok' ? SUCCESS : testStatus === 'err' ? DANGER : TEXT_2,
+            border: testStatus === 'ok' ? `1px solid ${SUCCESS}33` : testStatus === 'err' ? `1px solid ${DANGER}33` : `1px solid ${BORDER_DEFAULT}`,
             cursor: testStatus === 'testing' ? 'not-allowed' : 'pointer',
             fontFamily: 'inherit', transition: 'all 0.2s',
           }}
@@ -136,13 +146,13 @@ export function PrinterSection() {
         </button>
 
         {testMsg && (
-          <div style={{ marginTop: 10, fontSize: 13, color: testStatus === 'ok' ? '#4cba7f' : '#ff6b6b' }}>
+          <div style={{ marginTop: 10, fontSize: 13, color: testStatus === 'ok' ? SUCCESS : DANGER }}>
             {testMsg}
           </div>
         )}
       </div>
 
       <SaveButton saving={saving} saved={saved} onClick={handleSave} />
-    </>
+    </div>
   )
 }

@@ -1,19 +1,26 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { IBM_Plex_Sans_Thai } from 'next/font/google'
 import { getLoyaltySettings, upsaveLoyaltySettings } from '@/lib/customers'
 import type { LoyaltySettings } from '@/lib/customers'
 import { DEFAULT_SETTINGS, computePointsEarned } from '@/lib/loyalty'
 import { useShop } from '@/lib/use-shop'
+import {
+  GOLD, SUCCESS, BG_BASE, BG_CARD_ALT, BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
+  TEXT_1, TEXT_2, FONT_MONO, RADIUS, STATE_DISABLED_OPACITY, STATE_FOCUS_RING,
+} from '@/lib/pos-theme-tokens'
 
-const GOLD   = '#c9a84c'
-const GREEN  = '#4cba7f'
-const BORDER = 'rgba(255,255,255,0.1)'
+const ibmPlexSansThai = IBM_Plex_Sans_Thai({
+  subsets: ['thai', 'latin'],
+  weight: ['400', '500', '600'],
+  display: 'swap',
+})
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 9,
-  border: `1px solid ${BORDER}`, backgroundColor: '#0f0f0f',
-  color: '#fff', fontSize: 14, boxSizing: 'border-box',
+  width: '100%', padding: '10px 12px', borderRadius: RADIUS.lg,
+  border: `1px solid ${BORDER_DEFAULT}`, backgroundColor: BG_BASE,
+  color: TEXT_1, fontSize: 14, fontFamily: FONT_MONO, boxSizing: 'border-box',
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -26,10 +33,10 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function FieldRow({ label, sub, children }: { label: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: `1px solid ${BORDER_SUBTLE}` }}>
       <div style={{ flex: 1, marginRight: 20 }}>
-        <div style={{ fontSize: 14, color: '#fff', fontWeight: 500 }}>{label}</div>
-        {sub && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{sub}</div>}
+        <div style={{ fontSize: 14, color: TEXT_1, fontWeight: 500 }}>{label}</div>
+        {sub && <div style={{ fontSize: 12, color: TEXT_2, marginTop: 2 }}>{sub}</div>}
       </div>
       <div style={{ width: 100, flexShrink: 0 }}>{children}</div>
     </div>
@@ -72,38 +79,38 @@ export function LoyaltySection() {
   if (loading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} style={{ height: 56, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.04)' }} />)}
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} style={{ height: 56, borderRadius: RADIUS.lg, backgroundColor: BG_CARD_ALT }} />)}
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div className={`${ibmPlexSansThai.className} loyalty-section`} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
       {/* Enable toggle */}
-      <div style={{ padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+      <div style={{ padding: '16px 0', borderBottom: `1px solid ${BORDER_SUBTLE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>เปิดใช้งานสะสมแต้ม</div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>ลูกค้าได้รับคะแนนทุกครั้งที่ซื้อ</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: TEXT_1 }}>เปิดใช้งานสะสมแต้ม</div>
+          <div style={{ fontSize: 12, color: TEXT_2, marginTop: 2 }}>ลูกค้าได้รับคะแนนทุกครั้งที่ซื้อ</div>
         </div>
         <button
           onClick={() => update('enabled', !s.enabled)}
           style={{
-            width: 52, height: 28, borderRadius: 14, border: 'none',
-            backgroundColor: s.enabled ? GOLD : 'rgba(255,255,255,0.12)',
+            width: 52, height: 28, borderRadius: RADIUS.pill, border: 'none',
+            backgroundColor: s.enabled ? GOLD : BORDER_DEFAULT,
             cursor: 'pointer', position: 'relative', transition: 'all 0.2s',
           }}
         >
           <div style={{
             position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%',
-            backgroundColor: '#fff', transition: 'left 0.2s',
+            backgroundColor: TEXT_1, transition: 'left 0.2s',
             left: s.enabled ? 27 : 3,
           }} />
         </button>
       </div>
 
       {/* Points rate */}
-      <div style={{ backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}22`, borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
+      <div style={{ backgroundColor: BG_CARD_ALT, border: `1px solid ${BORDER_GOLD}`, borderRadius: RADIUS['3xl'], padding: '16px 18px', marginBottom: 16 }}>
         <SectionTitle>อัตราสะสมแต้ม</SectionTitle>
         <FieldRow label="แต้มต่อ LAK" sub="คะแนนที่ได้รับต่อ 1 LAK ที่ใช้จ่าย">
           <input
@@ -116,9 +123,9 @@ export function LoyaltySection() {
 
         {/* Preview */}
         <div style={{
-          marginTop: 12, padding: '10px 14px', borderRadius: 10,
-          backgroundColor: `${GREEN}0c`, border: `1px solid ${GREEN}22`,
-          fontSize: 13, color: GREEN, lineHeight: 1.7,
+          marginTop: 12, padding: '10px 14px', borderRadius: RADIUS.lg,
+          backgroundColor: `${SUCCESS}14`, border: `1px solid ${SUCCESS}33`,
+          fontSize: 13, color: SUCCESS, lineHeight: 1.7,
         }}>
           ตัวอย่าง: ซื้อ {sampleTotal.toLocaleString()} ₭ → ได้ <strong>{samplePoints} แต้ม</strong>
           {sampleLak > 0 && <> (≈ {sampleLak.toLocaleString()} ₭ ส่วนลด)</>}
@@ -126,7 +133,7 @@ export function LoyaltySection() {
       </div>
 
       {/* VIP thresholds */}
-      <div style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
+      <div style={{ backgroundColor: BG_CARD_ALT, border: `1px solid ${BORDER_SUBTLE}`, borderRadius: RADIUS['3xl'], padding: '16px 18px', marginBottom: 16 }}>
         <SectionTitle>เกณฑ์ระดับ VIP</SectionTitle>
         {([
           ['vip_silver_threshold', '⭐ Silver', 'จำนวนแต้มขั้นต่ำสำหรับ Silver'],
@@ -145,7 +152,7 @@ export function LoyaltySection() {
       </div>
 
       {/* VIP discounts */}
-      <div style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
+      <div style={{ backgroundColor: BG_CARD_ALT, border: `1px solid ${BORDER_SUBTLE}`, borderRadius: RADIUS['3xl'], padding: '16px 18px', marginBottom: 16 }}>
         <SectionTitle>ส่วนลด VIP (%)</SectionTitle>
         {([
           ['silver_discount_percent',   '⭐ Silver discount %',   'ส่วนลดอัตโนมัติ'],
@@ -168,17 +175,26 @@ export function LoyaltySection() {
       <button
         onClick={handleSave}
         disabled={saving || !shopId}
+        className="loyalty-save-btn"
         style={{
-          height: 52, borderRadius: 12, border: 'none',
-          backgroundColor: saved ? GREEN : GOLD,
-          color: '#000', fontSize: 15, fontWeight: 800,
+          height: 52, borderRadius: RADIUS.xl,
+          border: `1px solid ${saved ? SUCCESS : GOLD}`,
+          backgroundColor: saved ? `${SUCCESS}14` : 'transparent',
+          color: saved ? SUCCESS : GOLD, fontSize: 15, fontWeight: 800,
           cursor: saving ? 'wait' : 'pointer',
-          opacity: saving ? 0.7 : 1,
+          opacity: saving ? STATE_DISABLED_OPACITY : 1,
           transition: 'all 0.2s',
         }}
       >
         {saved ? '✓ บันทึกแล้ว' : saving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
       </button>
+      <style>{`
+        .loyalty-section .loyalty-save-btn:focus-visible,
+        .loyalty-section input:focus-visible {
+          outline: ${STATE_FOCUS_RING};
+          outline-offset: 2px;
+        }
+      `}</style>
     </div>
   )
 }
