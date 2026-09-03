@@ -32,6 +32,13 @@ import {
   effectivePrintLang, hasDismissedFallbackWarning, dismissFallbackWarning,
   checkPrintServer,
 } from '@/lib/thermal-printer'
+import {
+  BG_BASE, BG_SURFACE, BG_CARD_ALT,
+  BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
+  TEXT_1, TEXT_2, TEXT_3, TEXT_4, TEXT_5,
+  FONT_MONO, RADIUS, SHADOW_MODAL,
+  STATE_FOCUS_RING, STATE_SELECTED_BG, STATE_SELECTED_BORDER,
+} from '@/lib/pos-theme-tokens'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1033,6 +1040,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   const [errMsg,         setErrMsg]         = useState('')
   const [splitCash,      setSplitCash]      = useState('')
   const [splitTransfer,  setSplitTransfer]  = useState('')
+  const [slipRef,        setSlipRef]        = useState('') // folded into staff_note on submit — no dedicated DB column
   const overlayRef = useRef<HTMLDivElement>(null)
 
   const discountAmt   = parseFloat(discount) || 0
@@ -1145,7 +1153,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
       p_customer_name:   customerName  || null,
       p_discount_amount: discountAmt,
       p_discount_reason: discountReason || null,
-      p_staff_note:      staffNote || null,
+      p_staff_note:      [staffNote, slipRef ? `อ้างอิง: ${slipRef}` : null].filter(Boolean).join(' · ') || null,
     }).then(null, () => { /* background — non-critical */ })
 
     if (activeEmployeeId) {
@@ -1164,362 +1172,394 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     setLoading(false)
   }
 
-  const boxStyle: React.CSSProperties = isSmall
-    ? { position: 'fixed', inset: 0, borderRadius: 0, backgroundColor: '#181818', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
-    : { backgroundColor: '#181818', border: `1px solid ${GOLD}44`, borderRadius: 16, width: 480, maxHeight: '85dvh', display: 'flex', flexDirection: 'column' }
+  // v2 rule: primary button is a gold outline on transparent/tinted fill, never a solid gold block —
+  // "invalid" states keep a red outline instead, "not started" stays neutral outline.
+  const confirmInvalid = (method === 'cash' && received !== '' && receivedNum < finalTotal)
+    || (method === 'split' && splitTotal > 0 && splitTotal < finalTotal)
+  const confirmEmpty = (method === 'cash' && received === '') || (method === 'transfer' && !selectedBank)
+  const btnBorder = loading ? BORDER_GOLD : confirmInvalid ? `${RED}59` : confirmEmpty ? BORDER_DEFAULT : GOLD
+  const btnBg     = loading ? 'rgba(201,168,76,0.10)' : confirmInvalid ? `${RED}18` : confirmEmpty ? 'transparent' : STATE_SELECTED_BG
+  const btnColor  = loading ? GOLD : confirmInvalid ? RED : confirmEmpty ? TEXT_4 : GOLD
 
-  const btnBg = loading ? `${GOLD}55`
-    : method === 'cash' && received !== '' && receivedNum < finalTotal ? `${RED}22`
-    : method === 'cash' && received === '' ? 'rgba(255,255,255,0.06)'
-    : method === 'transfer' && !selectedBank ? 'rgba(255,255,255,0.06)'
-    : method === 'split' && splitTotal < finalTotal ? `${RED}22`
-    : GOLD
-  const btnColor = method === 'cash' && received !== '' && receivedNum < finalTotal ? RED
-    : method === 'cash' && received === '' ? 'rgba(255,255,255,0.2)'
-    : method === 'transfer' && !selectedBank ? 'rgba(255,255,255,0.2)'
-    : method === 'split' && splitTotal < finalTotal ? RED
-    : BLACK
+  const boxStyle: React.CSSProperties = isSmall
+    ? { position: 'fixed', inset: 0, borderRadius: 0, backgroundColor: BG_BASE, display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+    : { backgroundColor: BG_BASE, border: `1px solid ${BORDER_SUBTLE}`, borderRadius: RADIUS['3xl'], width: 880, maxHeight: '85dvh', display: 'flex', flexDirection: 'column', boxShadow: SHADOW_MODAL, overflow: 'hidden' }
+
+  const inputStyleV2: React.CSSProperties = {
+    width: '100%', fontFamily: 'inherit', fontSize: 13, color: TEXT_1,
+    backgroundColor: BG_CARD_ALT, border: `1px solid ${BORDER_DEFAULT}`,
+    borderRadius: RADIUS.md, padding: '10px 12px', outline: 'none', boxSizing: 'border-box',
+  }
+  const overlineV2: React.CSSProperties = {
+    fontFamily: FONT_MONO, fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: TEXT_3,
+  }
+
+  const showSlipRef = method === 'qr' || method === 'transfer'
+  const confirmLabel = loading ? 'กำลังบันทึก...'
+    : method === 'cash' && received === '' ? 'กรอกจำนวนเงิน'
+    : method === 'transfer' && !selectedBank ? 'เลือกธนาคารก่อน'
+    : method === 'split' && splitTotal < finalTotal ? `ขาดอีก ${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`
+    : showSlipRef ? 'เห็นสลิปแล้ว — ยืนยันรับเงิน'
+    : `ยืนยันชำระ ${fmtLak(finalTotal)}`
 
   return (
     <div ref={overlayRef}
       onClick={e => { if (!isSmall && e.target === overlayRef.current && !loading) onClose() }}
       style={{
         position: 'fixed', inset: 0, zIndex: 200,
-        backgroundColor: isSmall ? '#181818' : 'rgba(0,0,0,0.75)',
+        backgroundColor: isSmall ? BG_BASE : 'rgba(0,0,0,0.75)',
         display: 'flex', alignItems: isSmall ? 'stretch' : 'center', justifyContent: 'center',
       }}>
       <div style={boxStyle}>
 
         {/* ── Header ── */}
-        <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 3 }}>ชำระเงิน</div>
-              <div style={{ fontSize: 34, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-                {fmtLak(finalTotal)}
-              </div>
-              {discountAmt > 0 && (
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>
-                  ก่อนลด {fmtLak(subtotal)} · ส่วนลด {fmtLak(discountAmt)}
-                </div>
-              )}
+        <div style={{ padding: '16px 20px 14px', borderBottom: `1px solid ${BORDER_SUBTLE}`, backgroundColor: BG_SURFACE, flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={overlineV2}>รับชำระเงิน</div>
+            <div style={{ fontSize: 30, fontWeight: 600, color: GOLD, fontFamily: FONT_MONO, fontVariantNumeric: 'tabular-nums', lineHeight: 1.3 }}>
+              {fmtLak(finalTotal)}
             </div>
-            <button onClick={onClose} disabled={loading}
-              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 28, cursor: 'pointer', lineHeight: 1, padding: '4px 8px', marginTop: -4 }}>×</button>
+            {discountAmt > 0 && (
+              <div style={{ fontSize: 11, color: TEXT_4, marginTop: 3 }}>
+                ก่อนลด {fmtLak(subtotal)} · ส่วนลด {fmtLak(discountAmt)}
+              </div>
+            )}
           </div>
+          <button onClick={onClose} disabled={loading}
+            style={{ background: 'none', border: 'none', color: TEXT_3, fontSize: 26, cursor: 'pointer', lineHeight: 1, padding: '4px 8px', marginTop: -4 }}>×</button>
         </div>
 
-        {/* ── Scrollable body ── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* ── Body: left = choose & enter, right = review & confirm ── */}
+        <div style={{
+          flex: 1, overflowY: 'auto',
+          display: isSmall ? 'flex' : 'grid',
+          flexDirection: isSmall ? 'column' : undefined,
+          gridTemplateColumns: isSmall ? undefined : '1fr 1fr',
+        }}>
 
-          {/* Selected customer banner */}
-          {selectedCustomer && (() => {
-            const { color, icon, label } = TIER_META[selectedCustomer.vip_tier]
-            const birthday = isBirthdayToday(selectedCustomer.birthday)
-            const vipPct   = selectedCustomer.vip_tier === 'platinum' ? 10 : selectedCustomer.vip_tier === 'gold' ? 5 : 0
-            return (
-              <div style={{
-                padding: '10px 14px', borderRadius: 12,
-                border: `1px solid ${color}44`,
-                backgroundColor: `${color}0e`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
-                    {birthday ? '🎂 ' : ''}
-                    {selectedCustomer.name ?? selectedCustomer.phone}
-                  </div>
-                  {selectedCustomer.vip_tier !== 'regular' && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color, padding: '1px 7px', borderRadius: 99, border: `1px solid ${color}44`, backgroundColor: `${color}14` }}>
-                      {icon} {label}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 3, display: 'flex', gap: 12 }}>
-                  <span>{selectedCustomer.loyalty_points.toLocaleString()} pts</span>
-                  {vipPct > 0 && <span style={{ color: '#4cba7f' }}>ส่วนลด VIP {vipPct}% ถูกใช้แล้ว</span>}
-                  {birthday && <span style={{ color: GOLD }}>วันเกิดวันนี้!</span>}
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Method selector — 3 main methods */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-            {PAY_METHODS.filter(m => m.value !== 'split').map(m => (
-              <button key={m.value} onClick={() => { setMethod(m.value); setErrMsg('') }} style={{
-                padding: isSmall ? '15px 8px' : '12px 8px', borderRadius: 10,
-                border: `2px solid ${method === m.value ? GOLD : 'rgba(255,255,255,0.08)'}`,
-                backgroundColor: method === m.value ? `${GOLD}16` : 'rgba(255,255,255,0.03)',
-                color: method === m.value ? GOLD : 'rgba(255,255,255,0.45)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                cursor: 'pointer', transition: 'all .15s',
-              }}>
-                <span style={{ fontSize: 26 }}>{m.icon}</span>
-                <span style={{ fontSize: 13, fontWeight: method === m.value ? 700 : 500 }}>{m.label}</span>
-              </button>
-            ))}
-          </div>
-          {/* Split bill — secondary option below main grid */}
-          <button onClick={() => { setMethod('split'); setErrMsg('') }} style={{
-            width: '100%', padding: '9px 14px', borderRadius: 8,
-            border: `1px solid ${method === 'split' ? GOLD : 'rgba(255,255,255,0.07)'}`,
-            backgroundColor: method === 'split' ? `${GOLD}16` : 'rgba(255,255,255,0.02)',
-            color: method === 'split' ? GOLD : 'rgba(255,255,255,0.3)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .15s',
+          {/* ── LEFT: method + inputs ── */}
+          <div style={{
+            padding: 20, display: 'flex', flexDirection: 'column', gap: 14,
+            borderRight: isSmall ? 'none' : `1px solid ${BORDER_SUBTLE}`,
+            borderBottom: isSmall ? `1px solid ${BORDER_SUBTLE}` : 'none',
           }}>
-            <span>✂️</span><span>แยกบิล</span>
-          </button>
 
-          {/* ── CASH ── */}
-          {method === 'cash' && (<>
-            {/* Received display */}
-            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(255,255,255,0.07)' }}>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>รับมา</span>
-              <span style={{ fontSize: 30, fontWeight: 800, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px', color: received ? '#fff' : 'rgba(255,255,255,0.15)' }}>
-                {received ? parseInt(received, 10).toLocaleString('en-US') + ' ₭' : '— ₭'}
-              </span>
-            </div>
+            {/* Selected customer banner */}
+            {selectedCustomer && (() => {
+              const { color, icon, label } = TIER_META[selectedCustomer.vip_tier]
+              const birthday = isBirthdayToday(selectedCustomer.birthday)
+              const vipPct   = selectedCustomer.vip_tier === 'platinum' ? 10 : selectedCustomer.vip_tier === 'gold' ? 5 : 0
+              return (
+                <div style={{ padding: '10px 14px', borderRadius: RADIUS.xl, border: `1px solid ${color}44`, backgroundColor: `${color}0e` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: TEXT_1 }}>
+                      {birthday ? '🎂 ' : ''}
+                      {selectedCustomer.name ?? selectedCustomer.phone}
+                    </div>
+                    {selectedCustomer.vip_tier !== 'regular' && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color, padding: '1px 7px', borderRadius: RADIUS.pill, border: `1px solid ${color}44`, backgroundColor: `${color}14` }}>
+                        {icon} {label}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: TEXT_4, marginTop: 3, display: 'flex', gap: 12 }}>
+                    <span>{selectedCustomer.loyalty_points.toLocaleString()} pts</span>
+                    {vipPct > 0 && <span style={{ color: '#4cba7f' }}>ส่วนลด VIP {vipPct}% ถูกใช้แล้ว</span>}
+                    {birthday && <span style={{ color: GOLD }}>วันเกิดวันนี้!</span>}
+                  </div>
+                </div>
+              )
+            })()}
 
-            {/* Quick presets */}
-            <div style={{ display: 'flex', gap: 6 }}>
-              {QUICK_AMTS.map(amt => (
-                <button key={amt} onClick={() => setReceived(String(amt))} style={{
-                  flex: 1, height: 52, borderRadius: 8,
-                  border: `1px solid ${received === String(amt) ? GOLD : 'rgba(255,255,255,0.1)'}`,
-                  backgroundColor: received === String(amt) ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
-                  color: received === String(amt) ? GOLD : 'rgba(255,255,255,0.5)',
-                  fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+            {/* Method selector — 2x2 grid, all 4 real methods */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {PAY_METHODS.map((m, i) => (
+                <button key={m.value} onClick={() => { setMethod(m.value); setErrMsg('') }} style={{
+                  padding: '14px', borderRadius: RADIUS.lg, cursor: 'pointer', textAlign: 'left',
+                  border: `1px solid ${method === m.value ? STATE_SELECTED_BORDER : BORDER_DEFAULT}`,
+                  backgroundColor: method === m.value ? STATE_SELECTED_BG : BG_CARD_ALT,
+                  color: method === m.value ? GOLD : TEXT_2,
+                  display: 'flex', flexDirection: 'column', gap: 3, transition: 'all .15s',
                 }}>
-                  {amt / 1000}K
+                  <span style={{ fontSize: 14, fontWeight: method === m.value ? 600 : 500 }}>{m.icon} {m.label}</span>
+                  <span style={{ fontSize: 12, color: method === m.value ? 'rgba(201,168,76,0.7)' : TEXT_4 }}>
+                    F{i + 1}{method === m.value ? ' · เลือกอยู่' : ''}
+                  </span>
                 </button>
               ))}
-              <button onClick={() => setReceived(String(Math.ceil(finalTotal)))} style={{
-                flex: 1, height: 52, borderRadius: 8,
-                border: `1px solid ${received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.1)'}`,
-                backgroundColor: received === String(Math.ceil(finalTotal)) && received !== '' ? `${GOLD}18` : 'rgba(255,255,255,0.04)',
-                color: received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : 'rgba(255,255,255,0.5)',
-                fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>พอดี</button>
             </div>
 
-            {/* Numpad */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-              {NUMPAD_KEYS.map(key => (
-                <button key={key} onClick={() => pressKey(key)} style={{
-                  height: isSmall ? 68 : 60, borderRadius: 9, border: 'none',
-                  backgroundColor: key === '⌫' ? 'rgba(220,80,80,0.14)' : 'rgba(255,255,255,0.07)',
-                  color: key === '⌫' ? '#e07070' : '#fff',
-                  fontSize: '1.5rem', fontWeight: 700, cursor: 'pointer',
-                  transition: 'background .1s', userSelect: 'none' as const,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>{key}</button>
-              ))}
-            </div>
-
-            {/* Change display */}
-            {received !== '' && (
-              <div style={{
-                padding: '12px 16px', borderRadius: 10,
-                backgroundColor: changeAmt >= 0 ? `${GREEN}15` : `${RED}15`,
-                border: `1px solid ${changeAmt >= 0 ? GREEN : RED}33`,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}>
-                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>เงินทอน</span>
-                <span style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: changeAmt >= 0 ? GREEN : RED }}>
-                  {changeAmt >= 0 ? changeAmt.toLocaleString('en-US') + ' ₭' : '⚠ ไม่พอ'}
+            {/* ── CASH ── */}
+            {method === 'cash' && (<>
+              <div style={{ backgroundColor: BG_CARD_ALT, borderRadius: RADIUS.lg, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: `1px solid ${BORDER_DEFAULT}` }}>
+                <span style={overlineV2}>รับมา</span>
+                <span style={{ fontSize: 28, fontWeight: 600, fontFamily: FONT_MONO, fontVariantNumeric: 'tabular-nums', color: received ? TEXT_1 : TEXT_5 }}>
+                  {received ? parseInt(received, 10).toLocaleString('en-US') + ' ₭' : '— ₭'}
                 </span>
               </div>
-            )}
-          </>)}
 
-          {/* ── QR ── */}
-          {method === 'qr' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '16px 0' }}>
-              {!banksLoaded ? (
-                <div style={{ padding: 28, color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>กำลังโหลด...</div>
-              ) : qrNumber ? (
-                <>
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrNumber)}&bgcolor=181818&color=c9a84c&margin=8`}
-                    alt="QR Code"
-                    width={220} height={220}
-                    style={{ borderRadius: 12, border: `1px solid rgba(201,168,76,0.25)` }}
-                  />
-                  {qrName && <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>{qrName}</div>}
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>{qrNumber}</div>
-                  <div style={{ fontSize: 26, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</div>
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>กดยืนยันเมื่อรับเงินแล้ว</div>
-                </>
-              ) : (
-                <div style={{ padding: '24px 16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                  <div style={{ fontSize: 36 }}>📱</div>
-                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>ยังไม่ได้ตั้งค่า QR Payment</div>
-                  <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปตั้งค่า →</a>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── TRANSFER ── */}
-          {method === 'transfer' && (
-            !banksLoaded ? (
-              <div style={{ padding: '28px', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>กำลังโหลด...</div>
-            ) : banks.length === 0 ? (
-              <div style={{ padding: '28px 16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 40 }}>🏦</div>
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>กรุณาเพิ่มธนาคารในตั้งค่า</div>
-                <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปหน้าตั้งค่า →</a>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {QUICK_AMTS.map(amt => (
+                  <button key={amt} onClick={() => setReceived(String(amt))} style={{
+                    flex: 1, height: 48, borderRadius: RADIUS.md,
+                    border: `1px solid ${received === String(amt) ? STATE_SELECTED_BORDER : BORDER_DEFAULT}`,
+                    backgroundColor: received === String(amt) ? STATE_SELECTED_BG : BG_CARD_ALT,
+                    color: received === String(amt) ? GOLD : TEXT_2,
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{amt / 1000}K</button>
+                ))}
+                <button onClick={() => setReceived(String(Math.ceil(finalTotal)))} style={{
+                  flex: 1, height: 48, borderRadius: RADIUS.md,
+                  border: `1px solid ${received === String(Math.ceil(finalTotal)) && received !== '' ? STATE_SELECTED_BORDER : BORDER_DEFAULT}`,
+                  backgroundColor: received === String(Math.ceil(finalTotal)) && received !== '' ? STATE_SELECTED_BG : BG_CARD_ALT,
+                  color: received === String(Math.ceil(finalTotal)) && received !== '' ? GOLD : TEXT_2,
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>พอดี</button>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {banks.map(bank => (
-                  <button key={bank.id} onClick={() => setSelectedBank(selectedBank === bank.id ? null : bank.id)} style={{
-                    padding: '12px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                    border: `2px solid ${selectedBank === bank.id ? (bank.color || GOLD) : 'rgba(255,255,255,0.08)'}`,
-                    backgroundColor: selectedBank === bank.id ? (bank.color || GOLD) + '18' : 'rgba(255,255,255,0.03)',
-                    display: 'flex', alignItems: 'center', gap: 12, transition: 'all .15s',
-                  }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: bank.color || GOLD, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🏦</div>
-                    <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{bank.name}</div>
-                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-                        {bank.account_number}{bank.account_name ? ' · ' + bank.account_name : ''}
-                      </div>
-                    </div>
-                    {selectedBank === bank.id && (
-                      <span style={{ fontSize: 18, color: bank.color || GOLD }}>✓</span>
-                    )}
-                  </button>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {NUMPAD_KEYS.map(key => (
+                  <button key={key} onClick={() => pressKey(key)} style={{
+                    height: isSmall ? 64 : 54, borderRadius: RADIUS.md, border: `1px solid ${BORDER_SUBTLE}`,
+                    backgroundColor: key === '⌫' ? `${RED}18` : BG_CARD_ALT,
+                    color: key === '⌫' ? RED : TEXT_1,
+                    fontSize: '1.4rem', fontWeight: 600, cursor: 'pointer',
+                    userSelect: 'none' as const,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{key}</button>
                 ))}
               </div>
-            )
-          )}
 
-          {/* ── SPLIT ── */}
-          {method === 'split' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
-                ยอดรวม <span style={{ color: GOLD, fontWeight: 700 }}>{fmtLak(finalTotal)}</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>💵 เงินสด</div>
-                  <input
-                    type="number" inputMode="numeric" value={splitCash}
-                    onChange={e => setSplitCash(e.target.value.replace(/\D/g, ''))}
-                    placeholder="0"
-                    style={{ ...popupInput, fontSize: 20, fontWeight: 700, textAlign: 'right', padding: '10px 12px' }}
-                  />
-                </div>
-                <div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>🏦 โอนเงิน</div>
-                  <input
-                    type="number" inputMode="numeric" value={splitTransfer}
-                    onChange={e => setSplitTransfer(e.target.value.replace(/\D/g, ''))}
-                    placeholder="0"
-                    style={{ ...popupInput, fontSize: 20, fontWeight: 700, textAlign: 'right', padding: '10px 12px' }}
-                  />
-                </div>
-              </div>
-              {(splitCash !== '' || splitTransfer !== '') && (
+              {received !== '' && (
                 <div style={{
-                  padding: '10px 14px', borderRadius: 10,
-                  backgroundColor: splitTotal >= finalTotal ? `${GREEN}15` : `${RED}15`,
-                  border: `1px solid ${splitTotal >= finalTotal ? GREEN : RED}33`,
+                  padding: '12px 16px', borderRadius: RADIUS.lg,
+                  backgroundColor: changeAmt >= 0 ? `${GREEN}15` : `${RED}15`,
+                  border: `1px solid ${changeAmt >= 0 ? GREEN : RED}33`,
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
-                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
-                    {splitTotal >= finalTotal ? 'รับรวม' : 'ขาดอีก'}
-                  </span>
-                  <span style={{ fontSize: 22, fontWeight: 800, color: splitTotal >= finalTotal ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
-                    {splitTotal >= finalTotal ? splitTotal.toLocaleString('en-US') + ' ₭' : `${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`}
+                  <span style={{ fontSize: 13, color: TEXT_2 }}>เงินทอน</span>
+                  <span style={{ fontSize: 24, fontWeight: 600, fontFamily: FONT_MONO, fontVariantNumeric: 'tabular-nums', color: changeAmt >= 0 ? GREEN : RED }}>
+                    {changeAmt >= 0 ? changeAmt.toLocaleString('en-US') + ' ₭' : '⚠ ไม่พอ'}
                   </span>
                 </div>
               )}
-              <button onClick={() => { setSplitCash(String(Math.round(finalTotal / 2))); setSplitTransfer(String(Math.round(finalTotal / 2))) }} style={{
-                padding: '8px 0', borderRadius: 8, border: `1px solid ${GOLD}44`,
-                backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              }}>แบ่งครึ่ง</button>
-            </div>
-          )}
+            </>)}
 
-          {/* ── Optional extra fields ── */}
-          <div>
-            <button onClick={() => setShowExtra(x => !x)} style={{
-              background: 'none', border: '1px dashed rgba(255,255,255,0.12)', borderRadius: 7,
-              padding: '7px 14px', color: 'rgba(255,255,255,0.35)', fontSize: 12,
-              cursor: 'pointer', width: '100%', textAlign: 'left',
-            }}>
-              {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · เบอร์โทร · โต๊ะ · หมายเหตุ
-            </button>
-            {showExtra && (
-              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            {/* ── TRANSFER: pick a bank account ── */}
+            {method === 'transfer' && (
+              !banksLoaded ? (
+                <div style={{ padding: 28, textAlign: 'center', color: TEXT_4, fontSize: 13 }}>กำลังโหลด...</div>
+              ) : banks.length === 0 ? (
+                <div style={{ padding: '28px 16px', textAlign: 'center', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.lg, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontSize: 40 }}>🏦</div>
+                  <div style={{ fontSize: 13, color: TEXT_4 }}>กรุณาเพิ่มธนาคารในตั้งค่า</div>
+                  <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปหน้าตั้งค่า →</a>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {banks.map(bank => (
+                    <button key={bank.id} onClick={() => setSelectedBank(selectedBank === bank.id ? null : bank.id)} style={{
+                      padding: '12px 16px', borderRadius: RADIUS.lg, cursor: 'pointer', textAlign: 'left',
+                      border: `1px solid ${selectedBank === bank.id ? (bank.color || GOLD) : BORDER_DEFAULT}`,
+                      backgroundColor: selectedBank === bank.id ? (bank.color || GOLD) + '18' : BG_CARD_ALT,
+                      display: 'flex', alignItems: 'center', gap: 12, transition: 'all .15s',
+                    }}>
+                      <div style={{ width: 36, height: 36, borderRadius: RADIUS.md, backgroundColor: bank.color || GOLD, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🏦</div>
+                      <div style={{ flex: 1, textAlign: 'left' }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: TEXT_1 }}>{bank.name}</div>
+                        <div style={{ fontSize: 12, color: TEXT_3, marginTop: 2, fontFamily: FONT_MONO }}>
+                          {bank.account_number}{bank.account_name ? ' · ' + bank.account_name : ''}
+                        </div>
+                      </div>
+                      {selectedBank === bank.id && <span style={{ fontSize: 16, color: bank.color || GOLD }}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* ── SPLIT ── */}
+            {method === 'split' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, color: TEXT_3, textAlign: 'center' }}>
+                  ยอดรวม <span style={{ color: GOLD, fontWeight: 700, fontFamily: FONT_MONO }}>{fmtLak(finalTotal)}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>ชื่อลูกค้า</div>
-                    <input value={customer} onChange={e => setCustomer(e.target.value)} style={popupInput} placeholder="(ไม่บังคับ)" />
+                    <div style={{ ...overlineV2, marginBottom: 6 }}>💵 เงินสด</div>
+                    <input type="number" inputMode="numeric" value={splitCash}
+                      onChange={e => setSplitCash(e.target.value.replace(/\D/g, ''))} placeholder="0"
+                      style={{ ...inputStyleV2, fontSize: 18, fontWeight: 600, textAlign: 'right', fontFamily: FONT_MONO }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>เบอร์โทร</div>
-                    <input value={phone} onChange={e => setPhone(e.target.value)} style={popupInput} placeholder="020xxxxxxx" />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>โต๊ะ</div>
-                    <input value={table} onChange={e => setTable(e.target.value)} style={popupInput} placeholder="A1" />
+                    <div style={{ ...overlineV2, marginBottom: 6 }}>🏦 โอนเงิน</div>
+                    <input type="number" inputMode="numeric" value={splitTransfer}
+                      onChange={e => setSplitTransfer(e.target.value.replace(/\D/g, ''))} placeholder="0"
+                      style={{ ...inputStyleV2, fontSize: 18, fontWeight: 600, textAlign: 'right', fontFamily: FONT_MONO }} />
                   </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>Staff Note</div>
-                  <input value={staffNote} onChange={e => setStaffNote(e.target.value)} style={popupInput} placeholder="หมายเหตุสำหรับร้าน..." />
-                </div>
+                {(splitCash !== '' || splitTransfer !== '') && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: RADIUS.lg,
+                    backgroundColor: splitTotal >= finalTotal ? `${GREEN}15` : `${RED}15`,
+                    border: `1px solid ${splitTotal >= finalTotal ? GREEN : RED}33`,
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <span style={{ fontSize: 12, color: TEXT_3 }}>{splitTotal >= finalTotal ? 'รับรวม' : 'ขาดอีก'}</span>
+                    <span style={{ fontSize: 20, fontWeight: 600, fontFamily: FONT_MONO, color: splitTotal >= finalTotal ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
+                      {splitTotal >= finalTotal ? splitTotal.toLocaleString('en-US') + ' ₭' : `${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`}
+                    </span>
+                  </div>
+                )}
+                <button onClick={() => { setSplitCash(String(Math.round(finalTotal / 2))); setSplitTransfer(String(Math.round(finalTotal / 2))) }} style={{
+                  padding: '8px 0', borderRadius: RADIUS.md, border: `1px solid ${GOLD}44`,
+                  backgroundColor: 'rgba(201,168,76,0.10)', color: GOLD, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}>แบ่งครึ่ง</button>
               </div>
             )}
-          </div>
 
-          {/* Receipt language selector */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)' }}>
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', letterSpacing: '1px', textTransform: 'uppercase' }}>ภาษาใบเสร็จ / Receipt</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {(['en', 'th', 'lo'] as Lang[]).map(l => (
-                <button key={l} onClick={() => setReceiptLang(l)} style={{
-                  padding: '4px 12px', borderRadius: 6, border: 'none',
-                  backgroundColor: receiptLang === l ? `${GOLD}22` : 'transparent',
-                  color: receiptLang === l ? GOLD : 'rgba(255,255,255,0.3)',
-                  fontSize: 11, fontWeight: receiptLang === l ? 800 : 500, cursor: 'pointer',
-                }}>
-                  {l === 'en' ? 'EN' : l === 'th' ? 'ไทย' : 'ລາວ'}
-                </button>
-              ))}
+            {/* ── QR: nothing extra on the left, code itself lives on the right ── */}
+            {method === 'qr' && (
+              <div style={{ fontSize: 12, color: TEXT_4, textAlign: 'center', padding: '8px 0' }}>
+                คิว QR อยู่ทางขวา — ลูกค้าหันจอมาสแกนได้เลย
+              </div>
+            )}
+
+            {/* ── Optional extra fields ── */}
+            <div>
+              <button onClick={() => setShowExtra(x => !x)} style={{
+                background: 'none', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.sm,
+                padding: '7px 14px', color: TEXT_3, fontSize: 12,
+                cursor: 'pointer', width: '100%', textAlign: 'left',
+              }}>
+                {showExtra ? '▲ ซ่อน' : '⋯ เพิ่มเติม'} · ชื่อลูกค้า · เบอร์โทร · โต๊ะ · หมายเหตุ
+              </button>
+              {showExtra && (
+                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    <div>
+                      <div style={{ ...overlineV2, marginBottom: 5 }}>ชื่อลูกค้า</div>
+                      <input value={customer} onChange={e => setCustomer(e.target.value)} style={inputStyleV2} placeholder="(ไม่บังคับ)" />
+                    </div>
+                    <div>
+                      <div style={{ ...overlineV2, marginBottom: 5 }}>เบอร์โทร</div>
+                      <input value={phone} onChange={e => setPhone(e.target.value)} style={inputStyleV2} placeholder="020xxxxxxx" />
+                    </div>
+                    <div>
+                      <div style={{ ...overlineV2, marginBottom: 5 }}>โต๊ะ</div>
+                      <input value={table} onChange={e => setTable(e.target.value)} style={inputStyleV2} placeholder="A1" />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ ...overlineV2, marginBottom: 5 }}>Staff Note</div>
+                    <input value={staffNote} onChange={e => setStaffNote(e.target.value)} style={inputStyleV2} placeholder="หมายเหตุสำหรับร้าน..." />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Receipt language selector */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', backgroundColor: BG_CARD_ALT, borderRadius: RADIUS.lg, border: `1px solid ${BORDER_DEFAULT}` }}>
+              <span style={overlineV2}>ภาษาใบเสร็จ / Receipt</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['en', 'th', 'lo'] as Lang[]).map(l => (
+                  <button key={l} onClick={() => setReceiptLang(l)} style={{
+                    padding: '4px 12px', borderRadius: RADIUS.sm, border: 'none',
+                    backgroundColor: receiptLang === l ? 'rgba(201,168,76,0.15)' : 'transparent',
+                    color: receiptLang === l ? GOLD : TEXT_4,
+                    fontSize: 11, fontWeight: receiptLang === l ? 700 : 500, cursor: 'pointer',
+                  }}>{l === 'en' ? 'EN' : l === 'th' ? 'ไทย' : 'ລາວ'}</button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {errMsg && (
-            <div style={{ padding: '8px 12px', backgroundColor: `${RED}18`, border: `1px solid ${RED}33`, borderRadius: 6, fontSize: 13, color: '#ff8080' }}>
-              {errMsg}
-            </div>
-          )}
-        </div>
+          {/* ── RIGHT: review + confirm ── */}
+          <div style={{
+            padding: 20, display: 'flex', flexDirection: 'column', gap: 14,
+            background: method === 'qr' ? 'radial-gradient(90% 70% at 50% 0%, rgba(201,168,76,0.07), transparent 70%)' : undefined,
+          }}>
 
-        {/* ── Footer ── */}
-        <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-          <button onClick={confirm}
-            disabled={loading || !cashOk}
-            style={{
-              width: '100%', height: 64, borderRadius: 10, border: 'none',
-              backgroundColor: btnBg, color: btnColor,
-              fontWeight: 800, fontSize: 16, letterSpacing: '1.5px', textTransform: 'uppercase',
+            {method === 'qr' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+                {!banksLoaded ? (
+                  <div style={{ padding: 28, color: TEXT_4, fontSize: 13 }}>กำลังโหลด...</div>
+                ) : qrNumber ? (
+                  <>
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrNumber)}&bgcolor=181818&color=c9a84c&margin=8`}
+                      alt="QR Code" width={220} height={220}
+                      style={{ borderRadius: RADIUS.xl, border: `1px solid ${'rgba(201,168,76,0.25)'}` }}
+                    />
+                    {qrName && <div style={{ fontSize: 13, color: TEXT_2, fontWeight: 600 }}>{qrName}</div>}
+                    <div style={{ fontSize: 11, color: TEXT_4, fontFamily: FONT_MONO }}>{qrNumber}</div>
+                    <div style={{ fontSize: 24, fontWeight: 600, color: GOLD, fontFamily: FONT_MONO, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</div>
+                  </>
+                ) : (
+                  <div style={{ padding: '24px 16px', textAlign: 'center', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.lg, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 36 }}>📱</div>
+                    <div style={{ fontSize: 13, color: TEXT_4 }}>ยังไม่ได้ตั้งค่า QR Payment</div>
+                    <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปตั้งค่า →</a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {method === 'cash' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <div style={overlineV2}>สรุปยอด</div>
+                <div style={{ fontSize: 32, fontWeight: 600, color: GOLD, fontFamily: FONT_MONO }}>{fmtLak(finalTotal)}</div>
+                {received !== '' && (
+                  <div style={{ fontSize: 13, color: changeAmt >= 0 ? GREEN : RED, fontFamily: FONT_MONO }}>
+                    {changeAmt >= 0 ? `ทอน ${changeAmt.toLocaleString('en-US')} ₭` : 'รับเงินยังไม่พอ'}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {method === 'transfer' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <div style={overlineV2}>สรุปยอด</div>
+                <div style={{ fontSize: 32, fontWeight: 600, color: GOLD, fontFamily: FONT_MONO }}>{fmtLak(finalTotal)}</div>
+                {selectedBank && (
+                  <div style={{ fontSize: 13, color: TEXT_2 }}>{banks.find(b => b.id === selectedBank)?.name}</div>
+                )}
+              </div>
+            )}
+
+            {method === 'split' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <div style={overlineV2}>สรุปยอด</div>
+                <div style={{ fontSize: 32, fontWeight: 600, color: GOLD, fontFamily: FONT_MONO }}>{fmtLak(finalTotal)}</div>
+                <div style={{ fontSize: 13, color: TEXT_2 }}>เงินสด {splitCashNum.toLocaleString('en-US')} · โอน {splitXferNum.toLocaleString('en-US')}</div>
+              </div>
+            )}
+
+            {showSlipRef && (
+              <div>
+                <div style={{ ...overlineV2, marginBottom: 7 }}>เลขอ้างอิงสลิป (ไม่บังคับ)</div>
+                <input value={slipRef} onChange={e => setSlipRef(e.target.value)} placeholder="เช่น 4 ตัวท้ายของเลขอ้างอิง"
+                  style={{ ...inputStyleV2, fontFamily: FONT_MONO }} />
+              </div>
+            )}
+
+            {errMsg && (
+              <div style={{ padding: '8px 12px', backgroundColor: `${RED}18`, border: `1px solid ${RED}33`, borderRadius: RADIUS.sm, fontSize: 13, color: '#ff8080' }}>
+                {errMsg}
+              </div>
+            )}
+
+            <button onClick={confirm} disabled={loading || !cashOk} style={{
+              width: '100%', height: 58, borderRadius: RADIUS.lg,
+              border: `1px solid ${btnBorder}`, backgroundColor: btnBg, color: btnColor,
+              fontWeight: 600, fontSize: 15, letterSpacing: '0.3px',
               cursor: loading ? 'wait' : !cashOk ? 'not-allowed' : 'pointer',
-              fontFamily: 'var(--font-heading)', transition: 'all .2s',
-            }}>
-            {loading ? 'กำลังบันทึก...'
-              : method === 'cash' && received === '' ? 'กรอกจำนวนเงิน'
-              : method === 'transfer' && !selectedBank ? 'เลือกธนาคารก่อน'
-              : method === 'split' && splitTotal < finalTotal ? `ขาดอีก ${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`
-              : `ยืนยันชำระ ${fmtLak(finalTotal)}`}
-          </button>
+              fontFamily: 'inherit', transition: 'all .2s',
+              boxShadow: !loading && cashOk ? '0 0 24px rgba(201,168,76,0.12)' : 'none',
+            }}>{confirmLabel}</button>
+          </div>
         </div>
       </div>
     </div>
