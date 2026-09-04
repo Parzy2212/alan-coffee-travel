@@ -1,7 +1,7 @@
 # Alan Coffee & Travel — CLAUDE.md
 
 > One repo, two products: **Alan Coffee & Travel** (travel website) and **Alan Cafe OS** (POS system).
-> Last updated: 2026-08-27
+> Last updated: 2026-09-04
 
 ---
 
@@ -51,6 +51,90 @@
   - Partial mitigation was already live before the patch and remains as defense-in-depth: Cloudflare's free "Cloudflare managed ruleset" (Security → Settings → Web application exploits) has **Block** rules tagged `cve-2025-55182` (the upstream RCE CVE) and `cve-2025-55183`. No rule for `cve-2025-55184` or `cve-2026-23864` as of this writing.
   - **Known small gap, low priority cleanup**: `eslint-config-next` is still pinned at `15.3.4` (only `next` itself was bumped, on purpose, to keep the PR minimal). No practical impact right now because the build's lint step (`ESLint: nextVitals is not iterable`) was already broken before this bump on 15.3.4 too — pre-existing, unrelated. Bump `eslint-config-next` to match `next` next time someone's in this area.
   - If a newer patch than 15.3.9 comes out for the 15.3.x line later, re-run the same process: check `npm view next versions` / the official advisory pages, don't assume 15.3.9 stays current forever.
+
+---
+
+## CRITICAL: `shop_users` multi-tenancy incident chain (2026-09-03/04)
+
+Four separate, connected problems surfaced in one night while setting up a Claude test
+account for visual QA. Read this before touching `shop_users`, onboarding, or Team/Employees
+pages again — the failure modes are non-obvious and each one masked the next.
+
+**1. Onboarding slug-collision vulnerability — fixed, commit `527959b`.**
+`app/onboarding/page.tsx`'s `saveAndFinish()` looked up a shop by a slug derived from the
+entered shop name, and if *any* existing shop already had that slug, silently upserted the
+signer-upper as `role: 'owner'` on that shop — no check that they had any prior relationship
+to it. Since the default onboarding shop name is "Alan Coffee & Travel" (slug
+`alan-coffee-travel`), any new signup that kept the default name got owner access to the real
+shop. Fix: check the *current user's own* `shop_users` rows for that slug first (preserves
+idempotent re-runs); on a genuine collision, append a random suffix and create a new shop
+instead of attaching to someone else's. **Confirmed via live testing that no one had actually
+exploited this**: writes to `shop_users` were separately broken the whole time (see #2), so
+the vulnerable code path could never have completed successfully in practice.
+
+**2. `shop_users` RLS infinite recursion — fixed via manual SQL in Supabase dashboard
+(`docs/fix-shop-users-rls-recursion.sql`, not a code commit).**
+4 of the table's 7 policies (`shop_users_insert_owner`, `shop_users_manager_update`,
+`shop_users_owner_delete`, `shop_users_update_owner`) checked "is this user an owner/manager"
+by subquerying `shop_users` from *within* a `shop_users` policy — Postgres has to apply the
+table's own RLS to evaluate that inner query, which re-triggers the same policy, forever
+(`42P17: infinite recursion detected in policy for relation "shop_users"`). Every INSERT/
+UPDATE/DELETE against `shop_users` failed with a 500 — including the onboarding wizard's own
+`shop_users` upsert, which is why **no test account's shop link ever actually got created all
+night**, no matter which signup path was tried. The 3 SELECT/self-scoped policies
+(`shop_users_self_read`, `shop_users_self_insert`, `shop_users_same_shop_read`, the last of
+which already called a `SECURITY DEFINER` function `user_shop_ids()`) were never affected —
+this is why reads always looked fine while writes silently died. Fix: new `SECURITY DEFINER`
+helper `user_shop_ids_by_role(roles text[])`, and the 4 broken policies rewritten to call it
+instead of the raw self-subquery. Verified live: `shop_users` INSERT went from 500 → 201.
+
+**3. Team/Employees pages hang forever on the loading skeleton if `useShop()` resolves
+`shopId: null` — fixed, commit `904e407`.**
+Pre-existing frontend bug, unrelated to #1/#2 except that #2 is what finally surfaced it.
+`app/shop/team/page.tsx` and `app/shop/team/employees/page.tsx` each gate their *own*
+`load()` behind `if (shopId) load()` inside a `useEffect`, and only ever set their own
+`loading` state to `false` at the end of `load()`. `useShop()` itself correctly resolves
+`loading: false` even when no owner row is found — but since `load()` never runs in that
+case, the page's own `loading` flag never flips, so the skeleton renders forever with zero
+error, no matter how long you wait. Fixed by watching `shopLoading` explicitly and showing a
+clear "ไม่พบร้านที่คุณเป็นเจ้าของ" error state when `shopId` is genuinely null after loading, instead
+of hanging silently.
+
+**4. The real owner's (`sulutxai@gmail.com`, `user_id`
+`e103ceaf-ced6-4bba-a54f-887f6e2c15e7`) own `shop_users` row was missing entirely — recovered
+via manual SQL (`docs/restore-real-owner-shop-users.sql`, not a code commit) —
+**root cause NOT conclusively identified**.
+Discovered because #3's new error state finally surfaced it, on the real account, right after
+#2's fix went live — which raised an obvious and reasonable suspicion that a prior "remove the
+test account's owner access" step (done earlier the same night per user instruction) had
+deleted the wrong row. That specific hypothesis was checked and ruled out: reviewing the
+actual action log for that step showed no DELETE was ever issued — the test account already
+had zero `shop_users` rows before that step was reached, so there was nothing to remove and
+nothing was removed. Beyond ruling that out, the true root cause is unknown. One consistent-
+but-unconfirmed theory: `/pos` and `/cafe` render correctly for accounts with **zero**
+`shop_users` rows (proven during this session's test-account work), meaning core POS/menu
+data isn't actually gated by this table — `shop_users` may be newer than the real shop's
+original setup (both created 2026-05-05) and could plausibly have never been backfilled for
+this account. Recovered by inserting `(shop_id: 9afdd9eb-728d-4e36-8077-492c92dbef30, user_id:
+e103ceaf-ced6-4bba-a54f-887f6e2c15e7, email: sulutxai@gmail.com, role: 'owner', active: true)`
+directly. **Follow-up still needed**: confirm `/shop/team`'s member list is now clean (no
+unfamiliar accounts) — this was the original reason RLS needed fixing at all, and hadn't been
+confirmed as of this writing.
+
+**Lessons for next time:**
+- Never test account/shop creation flows against the real production Supabase project without
+  first confirming the flow can't attach to or affect existing real data by name/slug
+  collision — a throwaway "test" shop name is not automatically an isolated shop.
+- A `500` from PostgREST on a table you didn't expect to be touched is worth investigating
+  immediately, not working around — it blocked write paths across totally unrelated features
+  (onboarding, Team invites) that all happened to share one table.
+- `.maybeSingle()` / any "resolves to null on no-match" pattern needs an explicit UI state for
+  the null case wherever it gates a whole page — silent infinite loading is worse than an
+  error message, because it looks like "still working" instead of "broken."
+- No Supabase MCP tool was available this session despite being expected to be installed —
+  all diagnosis this incident required manual back-and-forth (user reading Dashboard policy
+  screens/running SQL, Claude reading screenshots and drafting SQL). Confirm MCP connectivity
+  status early in future sessions that touch RLS/schema.
 
 ---
 
