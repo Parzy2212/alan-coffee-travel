@@ -48,7 +48,11 @@ export default function TeamPage() {
     setLoading(false)
   }, [shopId, user])
 
-  useEffect(() => { if (shopId && user) load() }, [shopId, user, load])
+  useEffect(() => {
+    if (shopLoading) return
+    if (shopId && user) load()
+    else setLoading(false)
+  }, [shopLoading, shopId, user, load])
 
   const doAction = async () => {
     if (!confirm || !shopId) return
@@ -99,6 +103,25 @@ export default function TeamPage() {
         </div>
         <div style={{ height: 260, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)', marginBottom: 20 }} />
         <div style={{ height: 140, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)' }} />
+      </ShopLayout>
+    )
+  }
+
+  if (!shopId) {
+    return (
+      <ShopLayout>
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          minHeight: 300, textAlign: 'center', backgroundColor: 'rgba(255,77,77,0.04)',
+          border: '1px dashed rgba(255,77,77,0.2)', borderRadius: 16, padding: 32,
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 14 }}>⚠️</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'white', marginBottom: 8 }}>ไม่พบร้านที่คุณเป็นเจ้าของ</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', maxWidth: 360, lineHeight: 1.7 }}>
+            บัญชีนี้ไม่มีบทบาท owner ผูกกับร้านใดเลยในระบบ ({user?.email}) — ลองออกจากระบบแล้วเข้าใหม่
+            ถ้ายังเจอปัญหานี้อยู่ ติดต่อทีมพัฒนา
+          </div>
+        </div>
       </ShopLayout>
     )
   }

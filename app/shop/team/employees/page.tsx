@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ShopLayout } from '@/components/ShopLayout'
 import { useShop } from '@/lib/use-shop'
+import { useAuth } from '@/contexts/AuthContext'
 import { EmployeeCard } from '@/components/shop/EmployeeCard'
 import { AddEmployeeModal } from '@/components/shop/AddEmployeeModal'
 import { EditEmployeeModal, type EmployeeRow } from '@/components/shop/EditEmployeeModal'
@@ -20,6 +21,7 @@ type ModalState =
   | null
 
 export default function EmployeesPage() {
+  const { user } = useAuth()
   const { shopId, loading: shopLoading } = useShop()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [activeShifts, setActiveShifts] = useState<ActiveShift[]>([])
@@ -40,7 +42,11 @@ export default function EmployeesPage() {
     setLoading(false)
   }, [shopId])
 
-  useEffect(() => { if (shopId) load() }, [shopId, load])
+  useEffect(() => {
+    if (shopLoading) return
+    if (shopId) load()
+    else setLoading(false)
+  }, [shopLoading, shopId, load])
 
   const activeShiftMap = new Map(activeShifts.map(s => [s.employee_id, s]))
 
@@ -81,6 +87,25 @@ export default function EmployeesPage() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 140, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)' }} />)}
+        </div>
+      </ShopLayout>
+    )
+  }
+
+  if (!shopId) {
+    return (
+      <ShopLayout>
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          minHeight: 300, textAlign: 'center', backgroundColor: 'rgba(255,77,77,0.04)',
+          border: '1px dashed rgba(255,77,77,0.2)', borderRadius: 16, padding: 32,
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 14 }}>⚠️</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'white', marginBottom: 8 }}>ไม่พบร้านที่คุณเป็นเจ้าของ</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', maxWidth: 360, lineHeight: 1.7 }}>
+            บัญชีนี้ไม่มีบทบาท owner ผูกกับร้านใดเลยในระบบ ({user?.email}) — ลองออกจากระบบแล้วเข้าใหม่
+            ถ้ายังเจอปัญหานี้อยู่ ติดต่อทีมพัฒนา
+          </div>
         </div>
       </ShopLayout>
     )
