@@ -71,10 +71,13 @@ export default function HomeClient() {
   const [destError, setDestError] = useState(false)
   const [guidesError, setGuidesError] = useState(false)
   const [expError, setExpError] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [loadAttempt, setLoadAttempt] = useState(0)
 
   useEffect(() => {
     const supabase = getSupabase()
+    let ignore = false
+    setLoading(true)
     Promise.all([
       supabase
         .from('destinations')
@@ -102,6 +105,7 @@ export default function HomeClient() {
         .eq('key', 'hero_image_url')
         .maybeSingle(),
     ]).then(([destRes, guideRes, expRes, heroRes]) => {
+      if (ignore) return
       if (destRes.error) {
         console.error('HomeClient: failed to load destinations', destRes.error)
         setDestError(true)
@@ -129,11 +133,15 @@ export default function HomeClient() {
         setHeroImageUrl(heroRes.data.value)
       }
     }).catch(err => {
+      if (ignore) return
       console.error('HomeClient: failed to load homepage data', err)
       setDestError(true)
       setGuidesError(true)
       setExpError(true)
+    }).finally(() => {
+      if (!ignore) setLoading(false)
     })
+    return () => { ignore = true }
   }, [loadAttempt])
 
   // Scroll-triggered fade-up animation.
@@ -159,7 +167,12 @@ export default function HomeClient() {
   const stats = [
     { value: '18',                          label: tr('stat_provinces',    lang) },
     { value: '148',                         label: tr('stat_districts',    lang) },
-    { value: destinations.length ? `${destinations.length}+` : '—', label: tr('stat_destinations', lang) },
+    {
+      value: loading
+        ? <span className="skeleton" aria-hidden="true" style={{ display: 'inline-block', width: '1.4em', height: '0.85em', verticalAlign: 'middle' }} />
+        : destinations.length ? `${destinations.length}+` : '—',
+      label: tr('stat_destinations', lang),
+    },
     { value: 'Attapeu',                     label: tr('stat_homebase',     lang) },
   ]
 
@@ -369,7 +382,20 @@ export default function HomeClient() {
           </div>
 
           {/* Cards */}
-          {destError ? (
+          {loading ? (
+            <div className="grid-3" aria-hidden="true">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} style={{ backgroundColor: 'var(--color-white)', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-cream-border)' }}>
+                  <div className="skeleton skeleton-light" style={{ height: '240px', borderRadius: 0 }} />
+                  <div style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div className="skeleton skeleton-light" style={{ height: '22px', width: '70%' }} />
+                    <div className="skeleton skeleton-light" style={{ height: '14px', width: '100%' }} />
+                    <div className="skeleton skeleton-light" style={{ height: '14px', width: '60%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : destError ? (
             <div style={{ textAlign: 'center' as const, padding: '80px 0' }}>
               <p style={{ color: 'var(--color-gray-400)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
               <button
@@ -748,7 +774,19 @@ export default function HomeClient() {
             </a>
           </div>
 
-          {expError ? (
+          {loading ? (
+            <div className="grid-3" aria-hidden="true">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} style={{ backgroundColor: '#111', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div className="skeleton" style={{ height: '200px', borderRadius: 0 }} />
+                  <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div className="skeleton" style={{ height: '22px', width: '75%' }} />
+                    <div className="skeleton" style={{ height: '14px', width: '45%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : expError ? (
             <div style={{ textAlign: 'center' as const, padding: '60px 0' }}>
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
               <button
