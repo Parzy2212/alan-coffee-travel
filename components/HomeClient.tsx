@@ -2,9 +2,56 @@
 import { useEffect, useState } from 'react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import { getSupabase } from '@/lib/supabase'
 import { useLang } from '@/contexts/LanguageContext'
 import { tr } from '@/lib/translations'
-import { fetchHomeData, type Destination, type HomeData } from '@/lib/home-data'
+
+type Destination = {
+  id: string
+  slug: string
+  title_en: string
+  excerpt_en: string | null
+  region: string | null
+  image_urls: string[] | null
+  assessment_status: string | null
+  rating_experience: number | null
+  rating_accessibility: number | null
+  rating_authenticity: number | null
+  rating_tranquility: number | null
+  rating_traveler_value: number | null
+  featured: boolean | null
+}
+
+type Guide = {
+  id: string
+  slug: string | null
+  name: string
+  photo_url: string | null
+  profile_photo_url: string | null
+  province: string | null
+  languages: string[] | null
+  languages_spoken: string[] | null
+  specialties: string[] | null
+  is_verified: boolean | null
+  verified: boolean | null
+  experience_years: number | null
+  years_experience: number | null
+  rating_avg: number | null
+  review_count: number | null
+}
+
+type FeaturedExp = {
+  id: string
+  slug: string | null
+  title_en: string | null
+  cover_image_url: string | null
+  category: string | null
+  duration_hours: number | null
+  duration_days: number | null
+  price_per_person_lak: number | null
+  region: string | null
+  guides: { name: string } | null
+}
 
 function avgRating(d: Destination): number | null {
   const vals = [
@@ -15,44 +62,87 @@ function avgRating(d: Destination): number | null {
   return vals.reduce((a, b) => a + b, 0) / vals.length
 }
 
-const STALE_MS = 5 * 60 * 1000
-
-export default function HomeClient({ initial }: { initial: HomeData | null }) {
+export default function HomeClient() {
   const { lang } = useLang()
-  const [data, setData] = useState<HomeData | null>(initial)
-  const [loading, setLoading] = useState(initial === null)
+  const [destinations, setDestinations] = useState<Destination[]>([])
+  const [guides, setGuides] = useState<Guide[]>([])
+  const [featuredExps, setFeaturedExps] = useState<FeaturedExp[]>([])
+  const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
+  const [destError, setDestError] = useState(false)
+  const [guidesError, setGuidesError] = useState(false)
+  const [expError, setExpError] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [loadAttempt, setLoadAttempt] = useState(0)
 
-  // Server already fetched on first render; fetch client-side only when it
-  // couldn't (initial === null), on Try Again, or when the HTML is old (the
-  // service worker serves cached pages) -- the last one silently, no skeleton.
   useEffect(() => {
-    const background = loadAttempt === 0 && initial !== null
-    if (background && Date.now() - initial.fetchedAt < STALE_MS) return
+    const supabase = getSupabase()
     let ignore = false
-    if (!background) setLoading(true)
-    fetchHomeData().then(d => {
+    setLoading(true)
+    Promise.all([
+      supabase
+        .from('destinations')
+        .select('id,slug,title_en,excerpt_en,region,image_urls,assessment_status,rating_experience,rating_accessibility,rating_authenticity,rating_tranquility,rating_traveler_value,featured')
+        .eq('status', 'active')
+        .order('featured', { ascending: false })
+        .limit(6),
+      supabase
+        .from('guides')
+        .select('id,slug,name,photo_url,profile_photo_url,province,languages,languages_spoken,specialties,is_verified,verified,experience_years,years_experience,rating_avg,review_count')
+        .or('status.eq.active,active.eq.true')
+        .or('is_verified.eq.true,verified.eq.true')
+        .order('featured', { ascending: false })
+        .limit(3),
+      supabase
+        .from('experiences')
+        .select('id,slug,title_en,cover_image_url,category,duration_hours,duration_days,price_per_person_lak,region,guides(name)')
+        .eq('status', 'active')
+        .eq('featured', true)
+        .order('created_at', { ascending: false })
+        .limit(3),
+      supabase
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'hero_image_url')
+        .maybeSingle(),
+    ]).then(([destRes, guideRes, expRes, heroRes]) => {
       if (ignore) return
-      // A failed section keeps whatever it already had (null = error state).
-      setData(prev => ({
-        destinations: d.destinations ?? prev?.destinations ?? null,
-        guides: d.guides ?? prev?.guides ?? null,
-        featuredExps: d.featuredExps ?? prev?.featuredExps ?? null,
-        heroImageUrl: d.heroImageUrl ?? prev?.heroImageUrl ?? null,
-        fetchedAt: d.fetchedAt,
-      }))
-      setLoading(false)
+      if (destRes.error) {
+        console.error('HomeClient: failed to load destinations', destRes.error)
+        setDestError(true)
+      } else {
+        setDestError(false)
+        if (destRes.data) setDestinations(destRes.data)
+      }
+      if (guideRes.error) {
+        console.error('HomeClient: failed to load guides', guideRes.error)
+        setGuidesError(true)
+      } else {
+        setGuidesError(false)
+        if (guideRes.data) setGuides(guideRes.data as Guide[])
+      }
+      if (expRes.error) {
+        console.error('HomeClient: failed to load experiences', expRes.error)
+        setExpError(true)
+      } else {
+        setExpError(false)
+        if (expRes.data) setFeaturedExps(expRes.data as unknown as FeaturedExp[])
+      }
+      if (heroRes.error) {
+        console.error('HomeClient: failed to load hero image setting', heroRes.error)
+      } else if (heroRes.data?.value) {
+        setHeroImageUrl(heroRes.data.value)
+      }
+    }).catch(err => {
+      if (ignore) return
+      console.error('HomeClient: failed to load homepage data', err)
+      setDestError(true)
+      setGuidesError(true)
+      setExpError(true)
+    }).finally(() => {
+      if (!ignore) setLoading(false)
     })
     return () => { ignore = true }
-  }, [loadAttempt, initial])
-
-  const destinations = data?.destinations ?? []
-  const guides = data?.guides ?? []
-  const featuredExps = data?.featuredExps ?? []
-  const heroImageUrl = data?.heroImageUrl ?? null
-  const destError = data !== null && data.destinations === null
-  const guidesError = data !== null && data.guides === null
-  const expError = data !== null && data.featuredExps === null
+  }, [loadAttempt])
 
   // Scroll-triggered fade-up animation.
   // Re-runs when async-loaded sections (destinations/guides/experiences) render,
@@ -63,7 +153,6 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
       entries => {
         entries.forEach(e => {
           if (e.isIntersecting) {
-            e.target.classList.remove('fade-pending')
             e.target.classList.add('in-view')
             obs.unobserve(e.target)
           }
@@ -71,18 +160,9 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
       },
       { threshold: 0.08 }
     )
-    els.forEach(el => {
-      if (el.classList.contains('in-view')) return
-      if (el.getBoundingClientRect().top > window.innerHeight) {
-        el.classList.add('fade-pending')
-        obs.observe(el)
-      } else {
-        el.classList.remove('fade-pending')
-        el.classList.add('in-view')
-      }
-    })
+    els.forEach(el => obs.observe(el))
     return () => obs.disconnect()
-  }, [data])
+  }, [destinations, guides, featuredExps])
 
   const stats = [
     { value: '18',                          label: tr('stat_provinces',    lang) },
@@ -782,7 +862,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                           <div>
                             <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px' }}>{tr('exp_from', lang)} </span>
                             <span style={{ color: 'var(--color-gold)', fontWeight: 800, fontSize: '17px', fontFamily: 'var(--font-heading)' }}>
-                              {Number(exp.price_per_person_lak).toLocaleString('en-US')} ₭
+                              {Number(exp.price_per_person_lak).toLocaleString()} ₭
                             </span>
                           </div>
                         )}
