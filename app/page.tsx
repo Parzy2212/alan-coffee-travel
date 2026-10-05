@@ -1,5 +1,8 @@
 import type { Metadata } from 'next'
 import HomeClient from '@/components/HomeClient'
+import { fetchHomeData } from '@/lib/home-data'
+
+export const runtime = 'edge'
 
 export const metadata: Metadata = {
   title: 'Alan Coffee & Travel — Discover Laos | ທ່ອງທ່ຽວລາວ | ท่องเที่ยวลาว',
@@ -22,6 +25,10 @@ export const metadata: Metadata = {
   },
 }
 
-export default function Home() {
-  return <HomeClient />
+// Fetched per request so new destinations show without a redeploy. If any
+// section fails or times out on the server, HomeClient refetches client-side.
+export default async function Home() {
+  const data = await fetchHomeData(AbortSignal.timeout(2500))
+  const anyFailed = data.destinations === null || data.guides === null || data.featuredExps === null
+  return <HomeClient initial={anyFailed ? null : data} />
 }
