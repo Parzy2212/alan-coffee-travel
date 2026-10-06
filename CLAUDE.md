@@ -1,7 +1,7 @@
 # Alan Coffee & Travel — CLAUDE.md
 
 > One repo, two products: **Alan Coffee & Travel** (travel website) and **Alan Cafe OS** (POS system).
-> Last updated: 2026-09-04
+> Last updated: 2026-10-06
 
 ---
 
@@ -32,8 +32,8 @@
 ## Stack
 
 - **Next.js 15.3.9** — App Router, TypeScript, Tailwind CSS v4 (`@import "tailwindcss"`)
-- **Supabase** — anon key only in `.env.local`; cannot run DDL from this client
-- **Deployment (travel site)** — Vercel: https://alan-coffee-travel.vercel.app
+- **Supabase** — project `fmsdfcsqdpdlppucuptn`; cannot run DDL from this client. `.env.local` holds the anon key **and** `SUPABASE_SERVICE_ROLE_KEY` — see "Open decision: service role key" below
+- **Deployment (travel site, production)** — Cloudflare Pages project `alan-pages`, deployed by `.github/workflows/deploy.yml` on every push to `main`, served at **https://alancoffeetravel.com** (verified 2026-10-05: `server: cloudflare`, `/cdn-cgi/rum`). Vercel (https://alan-coffee-travel.vercel.app) also builds every push via its GitHub integration, but is not what the real domain serves. There has never been a Netlify deploy of anything in this repo (no config, no webhook, no deployments — checked 2026-10-05)
 - **Deployment (POS)** — Netlify (planned, not yet deployed)
 - **Dev environment** — Windows 11; use Unix shell syntax in Bash tool
 
@@ -43,7 +43,7 @@
 
 - Still uses `@cloudflare/next-on-pages@1.13.16` (deprecated)
 - **Must migrate to `@opennextjs/cloudflare` BEFORE a *major* Next.js upgrade** — two PRs attempting that were closed (#2, #3). A minor/patch bump within 15.x does NOT require this migration first — confirmed twice (15.3.8, then 15.3.9), both times building successfully with `@cloudflare/next-on-pages@1.13.16` in a `node:20` container matching CI, and confirmed for real on the actual production deploy (see CVE line below).
-- `export const runtime = 'edge'` is present in ~11-14 files (all `/api/*` routes, plus `destinations/[slug]`, `guides/[slug]`, `experiences/[slug]`). **This is fine — the rule banning it here was based on a mistaken premise, corrected 2026-08-27.** Per `nextjs.org/blog/CVE-2025-66478`: *"Next.js 13.x, Next.js 14.x stable, Pages Router applications, and the Edge Runtime are not affected."* The real risk is the Next.js version + App Router/RSC, not the runtime — no action needed on these files for this CVE family.
+- `export const runtime = 'edge'` is present in 12 files (all `/api/*` routes, plus `/` (`app/page.tsx`, since 2026-10-05), `destinations/[slug]`, `guides/[slug]`, `experiences/[slug]`). With next-on-pages, any dynamic (per-request) page **must** be edge or the build fails. **This is fine — the rule banning it here was based on a mistaken premise, corrected 2026-08-27.** Per `nextjs.org/blog/CVE-2025-66478`: *"Next.js 13.x, Next.js 14.x stable, Pages Router applications, and the Edge Runtime are not affected."* The real risk is the Next.js version + App Router/RSC, not the runtime — no action needed on these files for this CVE family.
 - **PATCHED 2026-08-27**: `main` is on Next.js **15.3.9** (via PR #17, squash-merged), closing out:
   - **CVE-2025-66478** (RCE, CVSS 10.0), **CVE-2025-55183** (source code exposure), **CVE-2025-55184** (DoS, High) — all fixed at 15.3.8 (`nextjs.org/blog/security-update-2025-12-11`; 15.3.6 alone only fixed the RCE, not the two later ones)
   - **CVE-2026-23864** (DoS in `react-server-dom-*`, CVSS 7.5, affects React 19.0.x-19.2.x — this app runs React 19.2.8) — fixed at 15.3.9 (`vercel.com/changelog/summary-of-cve-2026-23864`)
@@ -51,6 +51,64 @@
   - Partial mitigation was already live before the patch and remains as defense-in-depth: Cloudflare's free "Cloudflare managed ruleset" (Security → Settings → Web application exploits) has **Block** rules tagged `cve-2025-55182` (the upstream RCE CVE) and `cve-2025-55183`. No rule for `cve-2025-55184` or `cve-2026-23864` as of this writing.
   - **Known small gap, low priority cleanup**: `eslint-config-next` is still pinned at `15.3.4` (only `next` itself was bumped, on purpose, to keep the PR minimal). No practical impact right now because the build's lint step (`ESLint: nextVitals is not iterable`) was already broken before this bump on 15.3.4 too — pre-existing, unrelated. Bump `eslint-config-next` to match `next` next time someone's in this area.
   - If a newer patch than 15.3.9 comes out for the 15.3.x line later, re-run the same process: check `npm view next versions` / the official advisory pages, don't assume 15.3.9 stays current forever.
+- **OpenNext is NOT in use on `main`.** An `@opennextjs/cloudflare` migration exists only on the unmerged branch `vercel/react-server-components-cve-vu-3c4kd2` (no `open-next.config.ts` on `main`; `pages:build` = `next build && npx --yes @cloudflare/next-on-pages`). Notes elsewhere saying the migration was done refer to that branch.
+
+---
+
+## CRITICAL: Test routing/edge changes on a real next-on-pages build before pushing
+
+**Incident 2026-10-05.** Making `/` (`app/page.tsx`) a dynamic `runtime = 'edge'` page (server-side fetch for the
+homepage) passed `tsc`, `next build` and `next start` locally, but on Cloudflare production **`GET /` returned the bytes
+of `app/favicon.ico` with `content-type: image/x-icon`** — the homepage was unusable for ~3 minutes until reverted
+(`46d369c`). Every other route was fine. Cause: `@cloudflare/next-on-pages@1.13.16` maps the `app/favicon.ico`
+metadata route onto `/` when `/` is an edge function. Fix (`3e76f83`): favicon moved to `public/favicon.ico` (plain
+static file). **Do not move it back into `app/`.** `app/sitemap.ts` was checked on the same build and is unaffected.
+The service worker (`public/sw.js`, stale-while-revalidate for HTML, caches any `response.ok`) may have replayed the
+broken response once to visitors who loaded `/` during that window.
+
+**Mandatory before pushing to `main` any change that touches routing** — making a page dynamic/static/edge, adding or
+moving files under `app/` that become routes (incl. metadata files: `favicon.ico`, `icon.*`, `sitemap.ts`,
+`robots.ts`, `opengraph-image.*`), `middleware.ts`, or `next.config.ts` — because `main` auto-deploys to production
+and a local `next build` does **not** exercise the next-on-pages output:
+
+```bash
+# from a clean export of the commit you want to test
+git archive HEAD | tar -x -C <scratch>/build-test
+docker run -d --name nop-test --env-file <file with NEXT_PUBLIC_SUPABASE_URL/ANON_KEY> \
+  -e NEXT_TELEMETRY_DISABLED=1 -p 8788:8788 -v "<scratch>/build-test:/src:ro" node:20 sleep infinity
+docker exec nop-test bash -c 'cp -r /src /app && cd /app && npm ci && npm run pages:build'
+docker exec -d nop-test bash -c 'cd /app && npx --yes wrangler@3 pages dev .vercel/output/static \
+  --ip 0.0.0.0 --port 8788 --compatibility-flag=nodejs_compat --compatibility-date=2024-09-23'
+curl -si http://localhost:8788/            # check status AND content-type, not just 200
+curl -si http://localhost:8788/<each route you touched>
+docker rm -f nop-test
+```
+
+- Use `MSYS_NO_PATHCONV=1` before `docker run` in Git Bash on Windows, or the `-v` path gets mangled.
+- `next/font/google` fetches inside the container fail intermittently (`Cannot read properties of null (reading '1')`
+  in the font loader) — that's network flakiness, just re-run `pages:build`.
+- Check `content-type` and body, not only the status code — the favicon incident was a `200`.
+- Then open `http://localhost:8788` in Chrome DevTools MCP (desktop 1440 + mobile 390) as per the `web-qa` skill.
+- If the bug can't be reproduced/cleared locally, don't push to `main` — there is no preview deploy for Cloudflare.
+
+---
+
+## Open decision: `SUPABASE_SERVICE_ROLE_KEY` (not decided yet — do not remove on your own)
+
+The "anon key only, never expose service key" rule below does not match reality. As of 2026-10-06:
+- `.env.local` contains `SUPABASE_SERVICE_ROLE_KEY` (git-ignored, not committed).
+- It is **used by code** on the server: `app/api/admin/db/route.ts` (throws if missing) and
+  `app/api/pos/reset-pins/route.ts`. Deleting it from `.env.local` breaks those routes locally.
+- It is **not** a GitHub Actions secret (only `NEXT_PUBLIC_SUPABASE_URL/ANON_KEY`, `CLOUDFLARE_API_TOKEN`,
+  `NEXT_PUBLIC_GEMINI_API_KEY`, `ANTHROPIC_API_KEY`). Whether it's set as a runtime env var in the Cloudflare Pages
+  dashboard is unknown — unverified, so whether those 2 routes work in production is unverified too.
+- The service role key bypasses all RLS. Any Claude session can read it from `.env.local`.
+
+Options for the owner to choose: (a) keep it and update the rule to "server-only use in those 2 routes", plus confirm
+it's set in Cloudflare and that both routes check admin/master-PIN auth before using it; (b) replace those routes with
+RLS-safe anon-key logic or a Supabase Edge Function, then remove the key from `.env.local`; (c) keep it out of
+`.env.local` on dev machines and only set it in Cloudflare. Until decided: don't delete it, don't use it for ad-hoc
+queries when the anon key suffices, never log or print it.
 
 ---
 
@@ -195,6 +253,7 @@ confirmed as of this writing.
 | 3 | **i18n (EN/LO/TH) rolled back** — caused by `localStorage` throwing `SecurityError` on iOS Safari Private mode, AND Supabase client calling `localStorage` during init. Fix when ready: wrap all `localStorage` calls in `try/catch`; init Supabase with `{auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}}` | Rolled back, needs redo |
 | 4 | **CVE-2025-66478 / CVE-2025-55183 / CVE-2025-55184 / CVE-2026-23864** (Next.js/RSC RCE + DoS + source-exposure CVEs) — see "CRITICAL: Cloudflare / Next.js Constraint" above | **Patched 2026-08-27** — `main` on Next.js 15.3.9 |
 | 5 | **Map basemap tiles** — both `components/DestinationMap.tsx` (destination detail pages) and `app/map/page.tsx` (main Interactive Map) use Esri's free no-signup `World_Dark_Gray_Base` REST endpoint (`server.arcgisonline.com`) after CARTO retired their anonymous tier (same failure mode: every tile silently became an "API KEY REQUIRED" watermark that looked like a broken map, not a missing key — this actually recurred once already: `app/map/page.tsx` was missed in the original DestinationMap.tsx migration and was still on the broken CARTO URL until it was caught and fixed). Esri's endpoint is also a free/no-key tier oriented at light/eval use, not a guaranteed indefinite commercial SLA — if it ever gets rate-limited or retired the same way, watch for the map looking "blank/broken" again on *both* components. | Working, same class of risk as before |
+| 6 | **Homepage Lighthouse a11y "100" is hollow — real score with all content visible is 96 (color-contrast).** `.fade-up` sections below the fold are `opacity: 0` until scrolled into view (before 2026-10-05 *every* `.fade-up` was), and Lighthouse/axe skip invisible elements, so a normal navigation-mode audit never checks the stats bar, cards, or lower sections. Measured 2026-10-06 on production after scrolling everything into view (`.fade-pending` = 0) then running a *snapshot* audit: 25 contrast failures, all pre-existing inline colors in `components/HomeClient.tsx` (none from the 2026-10-05 changes): stat labels `rgba(255,255,255,0.3)` on `#111` (2.65:1); gold `#c9a84c` small text on cream/white (2.1–2.3:1); `--color-gray-400` `#9e9e9e` on white (2.67:1); step numerals (1.22:1, may be decorative); `rgba(255,255,255,0.38)`/`0.2`/`0.4` text on `#0a0a0a` (3.5 / 1.76 / 3.77:1). `/destinations` is a genuine 100 (verified with cards loaded, nothing hidden). **When auditing the homepage, always scroll everything into view and use snapshot mode.** | Not fixed — needs a design decision on the palette |
 
 ---
 
@@ -247,19 +306,20 @@ confirmed as of this writing.
 - **Minimal solutions** — don't over-engineer; no abstractions beyond what the task requires
 - **No comments** unless the WHY is non-obvious
 - **Premium aesthetic**: black (`#0f0f0f`) + gold (`#c9a84c`) throughout
-- **Supabase anon key only** — never run DDL, never expose service key
+- **Supabase: prefer the anon key** — never run DDL, never expose/log the service role key (its current use is an open decision — see "Open decision: `SUPABASE_SERVICE_ROLE_KEY`")
 
 ---
 
 ## Env Files
 
-- `.env.local` — Supabase URL + anon key (not committed to git)
+- `.env.local` — `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, `MASTER_PIN` (git-ignored, not committed)
 - Copy manually to new machine or SSD
 
 ---
 
 ## Important File Locations (for machine migration)
 
-- Env: `C:\Users\Parzy\Desktop\alan-coffee-travel\.env.local`
-- Claude auto-memory: `C:\Users\Parzy\.claude\projects\C--Users-Parzy-Desktop-alan-coffee-travel\memory\`
-- Claude global memory index: `C:\Users\Parzy\.claude\projects\C--Users-Parzy-Desktop-alan-coffee-travel\memory\MEMORY.md`
+Current machine since 2026-08-15 (see `MIGRATION_LOG.md`; Windows user `Pacy`, repo on `D:`):
+- Env: `D:\alan-coffee-travel\.env.local`
+- Claude auto-memory: `C:\Users\Pacy\.claude\projects\D--alan-coffee-travel\memory\`
+- Claude memory index: `C:\Users\Pacy\.claude\projects\D--alan-coffee-travel\memory\MEMORY.md`
