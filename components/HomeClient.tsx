@@ -213,7 +213,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
           </div>
 
           {/* Trust line */}
-          <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: '12px', marginTop: '52px', letterSpacing: '0.5px' }}>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginTop: '52px', letterSpacing: '0.5px' }}>
             {tr('hero_trust', lang)}
           </p>
         </div>
@@ -224,7 +224,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
           display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '8px',
           animation: 'scrollBounce 2.4s ease-in-out infinite',
         }}>
-          <span style={{ color: 'rgba(255,255,255,0.14)', fontSize: '9px', letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('scroll', lang)}</span>
+          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '9px', letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('scroll', lang)}</span>
           <div style={{ width: '1px', height: '44px', background: 'linear-gradient(to bottom, rgba(201,168,76,0.45), transparent)' }} />
         </div>
       </section>
@@ -262,7 +262,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                 }}>
                   {s.value}
                 </div>
-                <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', letterSpacing: '2.5px', textTransform: 'uppercase' as const }}>
+                <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '10px', letterSpacing: '2.5px', textTransform: 'uppercase' as const }}>
                   {s.label}
                 </div>
               </div>
@@ -281,7 +281,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
                 <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
-                <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('section_curated', lang)}</span>
+                <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('section_curated', lang)}</span>
               </div>
               <h2 style={{
                 fontFamily: 'var(--font-heading)',
@@ -317,7 +317,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
             </div>
           ) : destError ? (
             <div style={{ textAlign: 'center' as const, padding: '80px 0' }}>
-              <p style={{ color: 'var(--color-gray-400)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
+              <p style={{ color: 'var(--color-gray-600)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
               <button
                 onClick={() => setLoadAttempt(n => n + 1)}
                 style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}
@@ -327,7 +327,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
             </div>
           ) : destinations.length === 0 ? (
             <div style={{ textAlign: 'center' as const, padding: '80px 0' }}>
-              <p style={{ color: 'var(--color-gray-400)', fontSize: '15px' }}>{tr('dest_coming_soon', lang)}</p>
+              <p style={{ color: 'var(--color-gray-600)', fontSize: '15px' }}>{tr('dest_coming_soon', lang)}</p>
             </div>
           ) : (
             <div className="grid-3">
@@ -415,9 +415,9 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                             ))}
                           </div>
                         ) : (
-                          <span style={{ fontSize: '11px', color: 'var(--color-gray-400)', letterSpacing: '0.5px' }}>{tr('not_assessed', lang)}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--color-gray-600)', letterSpacing: '0.5px' }}>{tr('not_assessed', lang)}</span>
                         )}
-                        <span style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' as const }}>
+                        <span style={{ color: 'var(--color-gold-dark)', fontSize: '12px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' as const }}>
                           {tr('discover_arrow', lang)}
                         </span>
                       </div>
@@ -471,7 +471,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                 fontFamily: 'var(--font-heading)',
                 fontSize: 'clamp(44px, 6vw, 72px)',
                 fontWeight: 800,
-                color: 'rgba(201,168,76,0.14)',
+                color: 'rgba(201,168,76,0.55)',
                 letterSpacing: '-2px',
                 lineHeight: 1,
               }}>
@@ -486,7 +486,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                 }}>
                   {step.title}
                 </h3>
-                <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '15px', lineHeight: 1.78, maxWidth: '560px', margin: 0 }}>
+                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '15px', lineHeight: 1.78, maxWidth: '560px', margin: 0 }}>
                   {step.desc}
                 </p>
               </div>
@@ -506,7 +506,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
             }}>
               {tr('standard_cta', lang)}
             </a>
-            <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>
+            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>
               {tr('standard_note', lang)}
             </span>
           </div>
@@ -524,7 +524,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
                   <div style={{ height: '1px', width: '32px', backgroundColor: 'var(--color-gold)' }} />
-                  <span style={{ color: 'var(--color-gold)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('section_local', lang)}</span>
+                  <span style={{ color: 'var(--color-gold-dark)', fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' as const }}>{tr('section_local', lang)}</span>
                 </div>
                 <h2 style={{
                   fontFamily: 'var(--font-heading)',
@@ -546,7 +546,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
 
             {guidesError ? (
               <div style={{ textAlign: 'center' as const, padding: '60px 0' }}>
-                <p style={{ color: 'var(--color-gray-400)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
+                <p style={{ color: 'var(--color-gray-600)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
                 <button
                   onClick={() => setLoadAttempt(n => n + 1)}
                   style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}
@@ -605,12 +605,12 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                             {g.name}
                           </h3>
                           {isVerif && (
-                            <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: 'var(--color-gold)', padding: '2px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '1px', border: '1px solid rgba(201,168,76,0.22)' }}>
+                            <span style={{ backgroundColor: 'rgba(201,168,76,0.1)', color: 'var(--color-gold-dark)', padding: '2px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '1px', border: '1px solid rgba(201,168,76,0.22)' }}>
                               ✓ VERIFIED
                             </span>
                           )}
                         </div>
-                        <p style={{ color: 'var(--color-gray-400)', fontSize: '12px', margin: 0 }}>
+                        <p style={{ color: 'var(--color-gray-600)', fontSize: '12px', margin: 0 }}>
                           {g.province}{expYrs ? ` · ${expYrs} yrs exp` : ''}
                           {(g.rating_avg ?? 0) > 0 ? ` · ★ ${g.rating_avg!.toFixed(1)}` : ''}
                         </p>
@@ -622,10 +622,10 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                     {/* Languages */}
                     {langs.length > 0 && (
                       <div style={{ marginBottom: '14px' }}>
-                        <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_languages', lang)}</p>
+                        <p style={{ color: 'var(--color-gray-600)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_languages', lang)}</p>
                         <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
                           {langs.map((l: string) => (
-                            <span key={l} style={{ backgroundColor: 'rgba(201,168,76,0.08)', color: 'var(--color-gold)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(201,168,76,0.18)' }}>
+                            <span key={l} style={{ backgroundColor: 'rgba(201,168,76,0.08)', color: 'var(--color-gold-dark)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, border: '1px solid rgba(201,168,76,0.18)' }}>
                               {l}
                             </span>
                           ))}
@@ -636,7 +636,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                     {/* Specialties */}
                     {(g.specialties ?? []).slice(0, 3).length > 0 && (
                       <div style={{ marginBottom: '18px' }}>
-                        <p style={{ color: 'var(--color-gray-400)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_specialties', lang)}</p>
+                        <p style={{ color: 'var(--color-gray-600)', fontSize: '9px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, marginBottom: '8px' }}>{tr('label_specialties', lang)}</p>
                         <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px' }}>
                           {(g.specialties ?? []).slice(0, 3).map((s: string) => (
                             <span key={s} style={{ backgroundColor: 'var(--color-cream-dark)', color: 'var(--color-gray-600)', padding: '3px 10px', borderRadius: '999px', fontSize: '11px' }}>
@@ -647,7 +647,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                       </div>
                     )}
 
-                    <div style={{ color: 'var(--color-gold)', fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                    <div style={{ color: 'var(--color-gold-dark)', fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>
                       {tr('guides_view_profile', lang)} →
                     </div>
                   </a>
@@ -689,7 +689,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                 {tr('home_exp_h2', lang)}
               </h2>
             </div>
-            <a href="/experiences" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '2px', alignSelf: 'flex-end', whiteSpace: 'nowrap' as const }}>
+            <a href="/experiences" style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '2px', alignSelf: 'flex-end', whiteSpace: 'nowrap' as const }}>
               {tr('view_all_exp', lang)}
             </a>
           </div>
@@ -708,7 +708,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
             </div>
           ) : expError ? (
             <div style={{ textAlign: 'center' as const, padding: '60px 0' }}>
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '15px', marginBottom: '20px' }}>{tr('fetch_error_msg', lang)}</p>
               <button
                 onClick={() => setLoadAttempt(n => n + 1)}
                 style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-black)', padding: '12px 28px', borderRadius: '4px', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', letterSpacing: '1px' }}
@@ -772,15 +772,15 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                         {exp.title_en}
                       </h3>
                       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' as const, alignItems: 'center' }}>
-                        {exp.region && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}>📍 {exp.region}</span>}
-                        {exp.duration_days && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{exp.duration_days}d</span>}
-                        {exp.duration_hours && !exp.duration_days && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>{exp.duration_hours}h</span>}
-                        {exp.guides && <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: '12px' }}>by {(exp.guides as any).name}</span>}
+                        {exp.region && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>📍 {exp.region}</span>}
+                        {exp.duration_days && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{exp.duration_days}d</span>}
+                        {exp.duration_hours && !exp.duration_days && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{exp.duration_hours}h</span>}
+                        {exp.guides && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>by {(exp.guides as any).name}</span>}
                       </div>
                       <div style={{ marginTop: 'auto', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         {exp.price_per_person_lak && (
                           <div>
-                            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px' }}>{tr('exp_from', lang)} </span>
+                            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>{tr('exp_from', lang)} </span>
                             <span style={{ color: 'var(--color-gold)', fontWeight: 800, fontSize: '17px', fontFamily: 'var(--font-heading)' }}>
                               {Number(exp.price_per_person_lak).toLocaleString('en-US')} ₭
                             </span>
@@ -796,7 +796,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
                 <a href="/experiences" style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'rgba(201,168,76,0.1)', color: 'var(--color-gold)', padding: '14px 36px', borderRadius: '4px', border: '1px solid rgba(201,168,76,0.25)', fontWeight: 700, fontSize: '13px', letterSpacing: '1.5px', textTransform: 'uppercase' as const, textDecoration: 'none' }}>
                   {tr('home_exp_cta', lang)}
                 </a>
-                <a href="/guides" style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.45)', padding: '14px 28px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', fontSize: '13px', textDecoration: 'none' }}>
+                <a href="/guides" style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.6)', padding: '14px 28px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', fontSize: '13px', textDecoration: 'none' }}>
                   {tr('home_guide_cta', lang)} →
                 </a>
               </div>
@@ -836,7 +836,7 @@ export default function HomeClient({ initial }: { initial: HomeData | null }) {
               <span style={{ color: 'var(--color-gold)' }}>{tr('map_h2_line2', lang)}</span>
             </h2>
 
-            <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '16px', lineHeight: 1.78, marginBottom: '44px', maxWidth: '580px', margin: '0 auto 44px' }}>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '16px', lineHeight: 1.78, marginBottom: '44px', maxWidth: '580px', margin: '0 auto 44px' }}>
               {tr('map_desc', lang)}
             </p>
 

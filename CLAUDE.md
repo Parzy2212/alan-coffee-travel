@@ -32,7 +32,7 @@
 ## Stack
 
 - **Next.js 15.3.9** — App Router, TypeScript, Tailwind CSS v4 (`@import "tailwindcss"`)
-- **Supabase** — project `fmsdfcsqdpdlppucuptn`; cannot run DDL from this client. `.env.local` holds the anon key **and** `SUPABASE_SERVICE_ROLE_KEY` — see "Open decision: service role key" below
+- **Supabase** — project `fmsdfcsqdpdlppucuptn`; cannot run DDL from this client. `.env.local` holds the anon key **and** `SUPABASE_SERVICE_ROLE_KEY` (server routes only — Claude Code must not use it; see below)
 - **Deployment (travel site, production)** — Cloudflare Pages project `alan-pages`, deployed by `.github/workflows/deploy.yml` on every push to `main`, served at **https://alancoffeetravel.com** (verified 2026-10-05: `server: cloudflare`, `/cdn-cgi/rum`). Vercel (https://alan-coffee-travel.vercel.app) also builds every push via its GitHub integration, but is not what the real domain serves. There has never been a Netlify deploy of anything in this repo (no config, no webhook, no deployments — checked 2026-10-05)
 - **Deployment (POS)** — Netlify (planned, not yet deployed)
 - **Dev environment** — Windows 11; use Unix shell syntax in Bash tool
@@ -93,24 +93,48 @@ docker rm -f nop-test
 
 ---
 
-## Open decision: `SUPABASE_SERVICE_ROLE_KEY` (not decided yet — do not remove on your own)
+## `SUPABASE_SERVICE_ROLE_KEY`: server routes use it by design; Claude Code must never use it
 
-The "anon key only, never expose service key" rule below does not match reality. As of 2026-10-06:
-- `.env.local` contains `SUPABASE_SERVICE_ROLE_KEY` (git-ignored, not committed).
-- It is **used by code** on the server: `app/api/admin/db/route.ts` (throws if missing) and
-  `app/api/pos/reset-pins/route.ts`. Deleting it from `.env.local` breaks those routes locally.
-- It is **not** a GitHub Actions secret (only `NEXT_PUBLIC_SUPABASE_URL/ANON_KEY`, `CLOUDFLARE_API_TOKEN`,
-  `NEXT_PUBLIC_GEMINI_API_KEY`, `ANTHROPIC_API_KEY`). Whether it's set as a runtime env var in the Cloudflare Pages
-  dashboard is unknown — unverified, so whether those 2 routes work in production is unverified too.
-- The service role key bypasses all RLS. Any Claude session can read it from `.env.local`.
+**Rule (decided 2026-10-06):**
+- Two server routes use the service role key **at runtime, by design**: `app/api/admin/db/route.ts` (every *table* write from
+  `/admin`: destinations, guides, guide_destinations, site_settings — image uploads to Storage still use the anon client) and `app/api/pos/reset-pins/route.ts` (looks up the
+  caller's `shop_users` row and calls `reset_employee_pins`). Don't remove the key or rewrite these routes to avoid it
+  without the owner deciding so.
+- **Claude Code must never use this key itself** — no ad-hoc REST/SQL queries with it, even read-only, even "just to
+  check". Use the anon key (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) for any query you run; if the anon key can't see something
+  because of RLS, ask the owner to run it in the Supabase dashboard. Never print, log, or paste the key anywhere.
+- `.env.local` keeps the key (git-ignored) so the 2 routes work under `npm run dev`.
 
-Options for the owner to choose: (a) keep it and update the rule to "server-only use in those 2 routes", plus confirm
-it's set in Cloudflare and that both routes check admin/master-PIN auth before using it; (b) replace those routes with
-RLS-safe anon-key logic or a Supabase Edge Function, then remove the key from `.env.local`; (c) keep it out of
-`.env.local` on dev machines and only set it in Cloudflare. Until decided: don't delete it, don't use it for ad-hoc
-queries when the anon key suffices, never log or print it.
+**Production status (unverified as of 2026-10-06):** the key is not a GitHub Actions secret, so it can only come from
+Cloudflare runtime variables. `ADMIN_PASSWORD` *is* set there (an unauthenticated POST to `/api/admin/db` returns 401,
+not 500 "Server misconfigured"), but whether `SUPABASE_SERVICE_ROLE_KEY` is set could not be checked without logging
+in. Check: Cloudflare dashboard → Workers & Pages → `alan-pages` → Settings → Variables and Secrets (Production). If it's
+missing, every save on production `/admin` fails with "SUPABASE_SERVICE_ROLE_KEY is not configured on the server." and
+POS PIN reset fails after the password check.
 
----
+**Security issues found 2026-10-06 (not fixed — owner to prioritise):**
+1. **Admin session cookie is a constant hash.** `admin_session` = SHA-256(`ADMIN_PASSWORD` + `":alan-admin"`), computed
+   identically in `middleware.ts`, `app/api/admin/login/route.ts` and `app/api/admin/db/route.ts`. Every login gets the
+   same value, and the server never expires it — the 24h `maxAge` is only a browser hint. A leaked/stolen cookie grants
+   full admin write access (via the service key) until `ADMIN_PASSWORD` itself is changed. `app/api/admin/logout/route.ts`
+   exists but only clears the browser's copy (`maxAge: 0`) — it can't revoke a copied cookie.
+2. **Admin login has no rate limiting.** `app/api/admin/login/route.ts` only waits 400 ms on a wrong password; nothing
+   limits attempts per IP/time, and it's a single shared password (no per-user accounts or audit trail).
+3. **`/api/pos/reset-pins` sets every active employee's PIN in the shop to `1234`.** Gated by a real Supabase
+   owner/manager email+password (`signInWithPassword`), but the result is a shop-wide, well-known PIN until each employee
+   changes theirs. The response also returns `newPin: '1234'`. Also uses `.single()`, so an owner/manager with rows in
+   more than one shop gets a 403.
+4. **Most serious — the DB function behind reset-pins can likely be called directly, bypassing the route's password
+   check.** Per `supabase/migrations/036_pin_recovery.sql`, `reset_employee_pins(p_shop_id, p_new_pin)` is
+   `SECURITY DEFINER`, does no caller check, and is `GRANT EXECUTE ... TO service_role, authenticated` (and Supabase's
+   default privileges may also give `anon` EXECUTE on public functions unless revoked). If the live DB matches the
+   migration, **any signed-in user — possibly anyone with the public anon key — can call
+   `supabase.rpc('reset_employee_pins', { p_shop_id: <any shop>, p_new_pin: <anything> })` from a browser** and set every
+   PIN in any shop. **Live grants unverified** — do NOT test it by calling the function (it's a write on production, and
+   checking grants needs the service key, which Claude Code must not use). Owner to check in the Supabase dashboard
+   (SQL editor: `select grantee, privilege_type from information_schema.routine_privileges where routine_name =
+   'reset_employee_pins';`). The usual fix: `REVOKE EXECUTE ... FROM authenticated, anon, public` so only
+   `service_role` (the route) can call it.
 
 ## CRITICAL: `shop_users` multi-tenancy incident chain (2026-09-03/04)
 
@@ -253,7 +277,7 @@ confirmed as of this writing.
 | 3 | **i18n (EN/LO/TH) rolled back** — caused by `localStorage` throwing `SecurityError` on iOS Safari Private mode, AND Supabase client calling `localStorage` during init. Fix when ready: wrap all `localStorage` calls in `try/catch`; init Supabase with `{auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}}` | Rolled back, needs redo |
 | 4 | **CVE-2025-66478 / CVE-2025-55183 / CVE-2025-55184 / CVE-2026-23864** (Next.js/RSC RCE + DoS + source-exposure CVEs) — see "CRITICAL: Cloudflare / Next.js Constraint" above | **Patched 2026-08-27** — `main` on Next.js 15.3.9 |
 | 5 | **Map basemap tiles** — both `components/DestinationMap.tsx` (destination detail pages) and `app/map/page.tsx` (main Interactive Map) use Esri's free no-signup `World_Dark_Gray_Base` REST endpoint (`server.arcgisonline.com`) after CARTO retired their anonymous tier (same failure mode: every tile silently became an "API KEY REQUIRED" watermark that looked like a broken map, not a missing key — this actually recurred once already: `app/map/page.tsx` was missed in the original DestinationMap.tsx migration and was still on the broken CARTO URL until it was caught and fixed). Esri's endpoint is also a free/no-key tier oriented at light/eval use, not a guaranteed indefinite commercial SLA — if it ever gets rate-limited or retired the same way, watch for the map looking "blank/broken" again on *both* components. | Working, same class of risk as before |
-| 6 | **Homepage Lighthouse a11y "100" is hollow — real score with all content visible is 96 (color-contrast).** `.fade-up` sections below the fold are `opacity: 0` until scrolled into view (before 2026-10-05 *every* `.fade-up` was), and Lighthouse/axe skip invisible elements, so a normal navigation-mode audit never checks the stats bar, cards, or lower sections. Measured 2026-10-06 on production after scrolling everything into view (`.fade-pending` = 0) then running a *snapshot* audit: 25 contrast failures, all pre-existing inline colors in `components/HomeClient.tsx` (none from the 2026-10-05 changes): stat labels `rgba(255,255,255,0.3)` on `#111` (2.65:1); gold `#c9a84c` small text on cream/white (2.1–2.3:1); `--color-gray-400` `#9e9e9e` on white (2.67:1); step numerals (1.22:1, may be decorative); `rgba(255,255,255,0.38)`/`0.2`/`0.4` text on `#0a0a0a` (3.5 / 1.76 / 3.77:1). `/destinations` is a genuine 100 (verified with cards loaded, nothing hidden). **When auditing the homepage, always scroll everything into view and use snapshot mode.** | Not fixed — needs a design decision on the palette |
+| 6 | **Homepage Lighthouse a11y "100" is hollow — real score with all content visible is 96 (color-contrast).** `.fade-up` sections below the fold are `opacity: 0` until scrolled into view (before 2026-10-05 *every* `.fade-up` was), and Lighthouse/axe skip invisible elements, so a normal navigation-mode audit never checks the stats bar, cards, or lower sections. Measured 2026-10-06 on production after scrolling everything into view (`.fade-pending` = 0) then running a *snapshot* audit: 25 contrast failures, all pre-existing inline colors in `components/HomeClient.tsx` (none from the 2026-10-05 changes): stat labels `rgba(255,255,255,0.3)` on `#111` (2.65:1); gold `#c9a84c` small text on cream/white (2.1–2.3:1); `--color-gray-400` `#9e9e9e` on white (2.67:1); step numerals (1.22:1, may be decorative); `rgba(255,255,255,0.38)`/`0.2`/`0.4` text on `#0a0a0a` (3.5 / 1.76 / 3.77:1). `/destinations` is a genuine 100 (verified with cards loaded, nothing hidden). **When auditing the homepage, always scroll everything into view and use snapshot mode.** | **Fixed 2026-10-06** for all 25 flagged spots + 3 "needs review" spots on gradients (hero trust line, "SCROLL", map teaser) + latent error/empty/experience-card colors, using the site rules (gold on light → `--color-gold-dark`, gray on light → `--color-gray-600`, faint white on dark ≥ `rgba(255,255,255,0.6)`). Step numerals 01/02/03: `aria-hidden` did NOT stop axe flagging them, so raised to `rgba(201,168,76,0.55)` (3.28:1; 0.52 is the minimum for 3:1 — 0.45 is only 2.55:1). Snapshot audit after full scroll on a **local** `next build` + `next start`: 100 desktop + mobile (production re-check: see the deploy that ships this commit). Still below the rules, untouched pending owner: hero subheadline `rgba(255,255,255,0.46)` (4.68:1 on #0a0a0a but sits on the hero photo); destination-card rating stars (line ~414: filled `--color-gold` ~2.2:1 / empty `--color-cream-border` ~1.3:1 on white, colour-only meaning, not rendered yet because no destination has ratings). |
 
 ---
 
@@ -306,7 +330,7 @@ confirmed as of this writing.
 - **Minimal solutions** — don't over-engineer; no abstractions beyond what the task requires
 - **No comments** unless the WHY is non-obvious
 - **Premium aesthetic**: black (`#0f0f0f`) + gold (`#c9a84c`) throughout
-- **Supabase: prefer the anon key** — never run DDL, never expose/log the service role key (its current use is an open decision — see "Open decision: `SUPABASE_SERVICE_ROLE_KEY`")
+- **Supabase: Claude Code uses the anon key only** — never run DDL; never use, print or log the service role key (the 2 server routes that use it do so by design — see "`SUPABASE_SERVICE_ROLE_KEY`: server routes use it by design")
 
 ---
 
