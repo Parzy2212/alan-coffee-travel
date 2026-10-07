@@ -202,6 +202,12 @@ const DEFAULT_SETTINGS: FullSettings = {
   target_cups_month: '500',
 }
 
+// This page runs as the anon role, so secrets must never be loaded into or saved from the browser.
+const SECRET_SETTING_KEYS: readonly string[] = ['telegram_bot_token', 'low_stock_alert_line_token', 'daily_report_line_token']
+const SAVABLE_SETTING_KEYS = (Object.keys(DEFAULT_SETTINGS) as (keyof FullSettings)[])
+  .filter(k => !SECRET_SETTING_KEYS.includes(k))
+const isSavableKey = (k: string): k is keyof FullSettings => (SAVABLE_SETTING_KEYS as string[]).includes(k)
+
 const DAYS_OF_WEEK = [
   { key: 'mon', label: 'จ' }, { key: 'tue', label: 'อ' }, { key: 'wed', label: 'พ' },
   { key: 'thu', label: 'พฤ' }, { key: 'fri', label: 'ศ' }, { key: 'sat', label: 'ส' },
@@ -1973,61 +1979,60 @@ function CostManagementSection({ settings, onChange }: { settings: FullSettings;
 function SettingsTab() {
   const [settings,       setSettings]       = useState<FullSettings>({ ...DEFAULT_SETTINGS })
   const [loading,        setLoading]        = useState(true)
+  const [loadError,      setLoadError]      = useState(false)
   const [saving,         setSaving]         = useState(false)
   const [saved,          setSaved]          = useState(false)
+  const [saveError,      setSaveError]      = useState<string | null>(null)
   const [importPreview,  setImportPreview]  = useState<Record<string, string> | null>(null)
   const [importError,    setImportError]    = useState<string | null>(null)
   const [importing,      setImporting]      = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const [testingTg,  setTestingTg]  = useState(false)
-  const [tgTestMsg,  setTgTestMsg]  = useState('')
 
-  async function testTelegram() {
-    setTgTestMsg(''); setTestingTg(true)
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/telegram-send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({
-          message: '✅ <b>Alan Cafe OS</b>\nทดสอบการแจ้งเตือน Telegram สำเร็จ! 🎉',
-          type: 'test',
-          _token:   settings.telegram_bot_token,
-          _chat_id: settings.telegram_chat_id,
-        }),
-      })
-      const data = await res.json() as { ok: boolean; error?: string; reason?: string }
-      setTgTestMsg(data.ok ? '✓ ส่งสำเร็จ!' : `ผิดพลาด: ${data.error ?? data.reason ?? 'unknown'}`)
-    } catch (e) { setTgTestMsg(`Error: ${String(e)}`) }
-    setTestingTg(false)
-  }
-
-  useEffect(() => {
-    supabase.rpc('get_site_settings').then(({ data }) => {
-      if (data) {
-        // Filter out null/undefined so they don't overwrite string defaults
+  // On a failed load the form would hold defaults, and saving would overwrite the real settings with them.
+  function loadSettings() {
+    setLoading(true); setLoadError(false)
+    supabase.rpc('get_site_settings').then(({ data, error }) => {
+      if (error || !data || typeof data !== 'object') {
+        setLoadError(true)
+      } else {
+        // Drop null/undefined (so they don't overwrite string defaults), secrets, and unknown keys
         const cleaned = Object.fromEntries(
-          Object.entries(data as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined)
+          Object.entries(data as Record<string, unknown>).filter(([k, v]) => v !== null && v !== undefined && isSavableKey(k))
         )
         setSettings(s => ({ ...s, ...cleaned }))
       }
       setLoading(false)
-    })
-  }, [])
+    }, () => { setLoadError(true); setLoading(false) })
+  }
+
+  useEffect(() => { loadSettings() }, [])
+
+  // Writes the given keys; returns the keys that failed (an RPC error doesn't throw).
+  async function writeSettings(entries: [string, string][]): Promise<string[]> {
+    const results = await Promise.all(
+      entries.map(([k, v]) => supabase.rpc('update_site_setting', { p_key: k, p_value: v }))
+    )
+    return entries.filter((_, i) => results[i].error).map(([k]) => k)
+  }
 
   async function saveAll() {
-    setSaving(true); setSaved(false)
-    await Promise.all(
-      Object.entries(settings).map(([k, v]) =>
-        supabase.rpc('update_site_setting', { p_key: k, p_value: String(v ?? '') })
-      )
-    )
-    setSaving(false); setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    setSaving(true); setSaved(false); setSaveError(null); setImportError(null)
+    try {
+      const failed = await writeSettings(SAVABLE_SETTING_KEYS.map(k => [k, String(settings[k] ?? '')]))
+      if (failed.length) { setSaveError(`บันทึกไม่สำเร็จ ${failed.length} รายการ: ${failed.join(', ')}`); return }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      setSaveError('บันทึกไม่สำเร็จ — เชื่อมต่อไม่ได้')
+    } finally {
+      setSaving(false)
+    }
   }
 
   function exportSettings() {
     const date = new Date().toISOString().slice(0, 10)
-    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' })
+    const exportable = Object.fromEntries(SAVABLE_SETTING_KEYS.map(k => [k, settings[k]]))
+    const blob = new Blob([JSON.stringify(exportable, null, 2)], { type: 'application/json' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href = url; a.download = `alan-cafe-settings-${date}.json`; a.click()
@@ -2040,14 +2045,27 @@ function SettingsTab() {
     reader.onload = ev => {
       try {
         const parsed = JSON.parse(ev.target?.result as string)
-        if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-          setImportError('ไฟล์ไม่ถูกต้อง — ต้องเป็น JSON object'); return
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          setImportPreview(null); setImportError('ไฟล์ไม่ถูกต้อง — ต้องเป็น JSON object'); return
         }
         const preview: Record<string, string> = {}
-        for (const [k, v] of Object.entries(parsed)) preview[k] = String(v ?? '')
-        setImportPreview(preview); setImportError(null)
+        const skipped: string[] = []
+        for (const [k, v] of Object.entries(parsed)) {
+          if (isSavableKey(k)) preview[k] = String(v ?? '')
+          else skipped.push(k)
+        }
+        const skippedMsg = skipped.length
+          ? `ข้าม ${skipped.length} รายการที่นำเข้าจากหน้านี้ไม่ได้ (token/ความลับ หรือไม่รู้จัก): ${skipped.join(', ')}`
+          : null
+        if (Object.keys(preview).length === 0) {
+          setImportPreview(null)
+          setImportError(`ไม่มีรายการที่นำเข้าได้${skippedMsg ? ` — ${skippedMsg}` : ''}`)
+          return
+        }
+        setImportPreview(preview)
+        setImportError(skippedMsg)
       } catch {
-        setImportError('JSON ไม่ถูกต้อง — ไม่สามารถอ่านไฟล์ได้')
+        setImportPreview(null); setImportError('JSON ไม่ถูกต้อง — ไม่สามารถอ่านไฟล์ได้')
       }
     }
     reader.readAsText(file)
@@ -2055,19 +2073,30 @@ function SettingsTab() {
 
   async function confirmImport() {
     if (!importPreview) return
-    setImporting(true)
-    await Promise.all(
-      Object.entries(importPreview).map(([k, v]) =>
-        supabase.rpc('update_site_setting', { p_key: k, p_value: v })
-      )
-    )
-    setSettings(s => ({ ...s, ...(importPreview as Partial<FullSettings>) }))
-    setImportPreview(null); setImporting(false); setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    setImporting(true); setSaved(false); setSaveError(null); setImportError(null)
+    try {
+      const failed = await writeSettings(Object.entries(importPreview))
+      const applied = Object.fromEntries(Object.entries(importPreview).filter(([k]) => !failed.includes(k)))
+      setSettings(s => ({ ...s, ...(applied as Partial<FullSettings>) }))
+      setImportPreview(null)
+      if (failed.length) { setImportError(`นำเข้าไม่สำเร็จ ${failed.length} รายการ: ${failed.join(', ')}`); return }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      setImportError('นำเข้าไม่สำเร็จ — เชื่อมต่อไม่ได้')
+    } finally {
+      setImporting(false)
+    }
   }
 
   const set = (k: keyof FullSettings) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setSettings(s => ({ ...s, [k]: e.target.value }))
+
+  const secretElsewhere = (
+    <div style={{ ...inputStyle, color: 'rgba(255,255,255,0.6)', fontSize: 12, lineHeight: 1.5 }}>
+      ตั้งค่าที่อื่น — token เป็นข้อมูลลับ จึงไม่แสดงและแก้ไขในหน้านี้
+    </div>
+  )
 
   const toggle = (k: keyof FullSettings) => (v: boolean) =>
     setSettings(s => ({ ...s, [k]: v ? 'true' : 'false' }))
@@ -2090,6 +2119,13 @@ function SettingsTab() {
 
   if (loading) return <LoadingSpinner />
 
+  if (loadError) return (
+    <div role="alert" style={{ maxWidth: 700, padding: '20px 16px', backgroundColor: CARD, border: `1px solid ${RED}33`, borderRadius: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+      <div style={{ flex: '1 1 120px', color: RED, fontSize: 14, fontWeight: 600 }}>โหลดการตั้งค่าไม่สำเร็จ</div>
+      <button onClick={loadSettings} style={btnStyleSm(GOLD + '22', GOLD)}>ลองใหม่</button>
+    </div>
+  )
+
   return (
     <div style={{ maxWidth: 700 }}>
 
@@ -2100,7 +2136,7 @@ function SettingsTab() {
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>Export/Import การตั้งค่าทั้งหมดเป็น JSON</div>
         </div>
         <button onClick={exportSettings} style={btnStyleSm(GOLD + '22', GOLD)}>⬇ Export JSON</button>
-        <button onClick={() => fileRef.current?.click()} style={btnStyleSm('rgba(255,255,255,0.08)', 'rgba(255,255,255,0.65)')}>⬆ Import JSON</button>
+        <button onClick={() => fileRef.current?.click()} disabled={importing || saving} style={btnStyleSm('rgba(255,255,255,0.08)', 'rgba(255,255,255,0.65)')}>⬆ Import JSON</button>
         <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
       </div>
 
@@ -2124,7 +2160,7 @@ function SettingsTab() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={confirmImport} disabled={importing} style={{ ...btnStyleSm(GOLD, BLACK), fontWeight: 700 }}>
+              <button onClick={confirmImport} disabled={importing || saving} style={{ ...btnStyleSm(GOLD, BLACK), fontWeight: 700 }}>
                 {importing ? 'กำลังบันทึก...' : '✓ ยืนยันนำเข้า'}
               </button>
               <button onClick={() => setImportPreview(null)} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.4)')}>ยกเลิก</button>
@@ -2257,10 +2293,7 @@ function SettingsTab() {
               sub="ส่ง Line เมื่อวัตถุดิบต่ำกว่า reorder point"
             />
             <div style={{ marginTop: 10 }}>
-              <Field label="Line Token — สต็อก">
-                <input value={settings.low_stock_alert_line_token} onChange={set('low_stock_alert_line_token')}
-                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="xxxxxxxxxxxxxxxxxxxx" type="password" />
-              </Field>
+              <Field label="Line Token — สต็อก">{secretElsewhere}</Field>
             </div>
           </div>
           <div>
@@ -2271,10 +2304,7 @@ function SettingsTab() {
               sub="ส่งสรุปยอดขายทุกคืน 22:00"
             />
             <div style={{ marginTop: 10 }}>
-              <Field label="Line Token — รายงาน">
-                <input value={settings.daily_report_line_token} onChange={set('daily_report_line_token')}
-                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="xxxxxxxxxxxxxxxxxxxx" type="password" />
-              </Field>
+              <Field label="Line Token — รายงาน">{secretElsewhere}</Field>
             </div>
           </div>
         </div>
@@ -2295,26 +2325,11 @@ function SettingsTab() {
           />
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="Bot Token">
-              <input type="password" value={settings.telegram_bot_token} onChange={set('telegram_bot_token')}
-                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="1234567890:AAFxxx..." />
-            </Field>
+            <Field label="Bot Token">{secretElsewhere}</Field>
             <Field label="Chat ID">
               <input value={settings.telegram_chat_id} onChange={set('telegram_chat_id')}
                 style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} placeholder="-1001234567890" />
             </Field>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              onClick={() => void testTelegram()}
-              disabled={testingTg || !settings.telegram_bot_token || !settings.telegram_chat_id}
-              style={{ padding: '9px 20px', borderRadius: 8, border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}15`, color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: (testingTg || !settings.telegram_bot_token || !settings.telegram_chat_id) ? 0.45 : 1 }}>
-              {testingTg ? 'กำลังส่ง...' : 'ส่งข้อความทดสอบ'}
-            </button>
-            {tgTestMsg && (
-              <span style={{ fontSize: 13, color: tgTestMsg.startsWith('✓') ? GREEN : RED, fontWeight: 600 }}>{tgTestMsg}</span>
-            )}
           </div>
 
           <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 14 }}>
@@ -2450,7 +2465,7 @@ function SettingsTab() {
 
       {/* ── Save button ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, marginBottom: 24 }}>
-        <button onClick={saveAll} disabled={saving} style={{
+        <button onClick={saveAll} disabled={saving || importing} style={{
           ...btnStyle(GOLD), fontSize: 14, padding: '12px 32px',
           boxShadow: `0 0 20px ${GOLD}22`,
         }}>
@@ -2460,6 +2475,9 @@ function SettingsTab() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: GREEN, fontSize: 13, fontWeight: 600, animation: 'fadeIn .3s' }}>
             <span style={{ fontSize: 16 }}>✓</span> บันทึกแล้ว
           </div>
+        )}
+        {saveError && (
+          <div role="alert" style={{ color: RED, fontSize: 13, fontWeight: 600 }}>{saveError}</div>
         )}
       </div>
 
