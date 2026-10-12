@@ -8,7 +8,7 @@ function LoginForm() {
   const configError = searchParams.get('error') === 'config'
 
   const [password, setPassword] = useState('')
-  const [error, setError] = useState(configError ? 'Server configuration error — ADMIN_PASSWORD not set.' : '')
+  const [error, setError] = useState(configError ? 'Server configuration error — admin login is not configured.' : '')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: FormEvent) {
@@ -173,7 +173,7 @@ function LoginForm() {
 
       {/* Session note */}
       <p style={{ color: 'rgba(255,255,255,0.15)', fontSize: '11px', marginTop: '24px', textAlign: 'center' as const }}>
-        Session expires after 24 hours
+        Session expires after 12 hours
       </p>
 
     </main>

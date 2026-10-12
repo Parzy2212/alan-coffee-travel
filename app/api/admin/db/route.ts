@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isAdminAuthConfigured, readAdminCookies, verifyAdminSession } from '@/lib/admin-session'
 
 export const runtime = 'edge'
 
@@ -26,27 +27,6 @@ type AllowedAction = (typeof ALLOWED_ACTIONS)[number]
 // delete_match only allowed on specific columns (prevent arbitrary column injection)
 const ALLOWED_MATCH_COLUMNS = ['guide_id', 'id', 'key'] as const
 
-// ─── Cookie parser (edge-compatible — no next/headers required) ───────────────
-
-function getSessionCookie(request: Request): string | undefined {
-  const header = request.headers.get('cookie') ?? ''
-  for (const part of header.split(';')) {
-    const [k, ...v] = part.trim().split('=')
-    if (k === 'admin_session') return v.join('=')
-  }
-  return undefined
-}
-
-// ─── SHA-256 token derivation (same as middleware + login route) ──────────────
-
-async function computeExpectedToken(password: string): Promise<string> {
-  const data = new TextEncoder().encode(`${password}:alan-admin`)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
 // ─── Service-role Supabase client (server-side only, bypasses RLS) ───────────
 
 function getServiceClient() {
@@ -64,17 +44,15 @@ function getServiceClient() {
 
 export async function POST(request: Request) {
   try {
-    // 1. Verify admin session cookie (same logic as middleware.ts)
-    const adminPassword = process.env.ADMIN_PASSWORD
-    if (!adminPassword) {
+    // 1. Verify admin session cookie (middleware does not cover /api)
+    if (!isAdminAuthConfigured()) {
       return NextResponse.json({ error: 'Server misconfigured.' }, { status: 500 })
     }
-    const sessionCookie = getSessionCookie(request)
-    if (!sessionCookie) {
+    const cookieHeader = request.headers.get('cookie')
+    if (readAdminCookies(cookieHeader).length === 0) {
       return NextResponse.json({ error: 'Unauthorized — no session.' }, { status: 401 })
     }
-    const expectedToken = await computeExpectedToken(adminPassword)
-    if (sessionCookie !== expectedToken) {
+    if (!(await verifyAdminSession(cookieHeader))) {
       return NextResponse.json({ error: 'Unauthorized — invalid session.' }, { status: 401 })
     }
 

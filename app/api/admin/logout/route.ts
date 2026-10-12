@@ -1,15 +1,10 @@
 import { NextResponse } from 'next/server'
+import { clearCookieHeaders } from '@/lib/admin-session'
 
 export const runtime = 'edge'
 
 export async function POST() {
   const response = NextResponse.json({ success: true })
-  response.cookies.set('admin_session', '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 0, // Immediately expire
-    path: '/',
-  })
+  for (const c of clearCookieHeaders()) response.headers.append('Set-Cookie', c)
   return response
 }
