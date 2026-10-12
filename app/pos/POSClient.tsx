@@ -2192,7 +2192,7 @@ function ShiftClosePopup({ todayTotal, todayCount, onClose }: { todayTotal: numb
   const overlayRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    supabase.from('staff').select('id, name').eq('status', 'active').order('name')
+    supabase.from('staff').select('id, name').eq('is_active', true).order('name')
       .then(({ data }) => setStaffList((data ?? []) as StaffBasic[]))
   }, [])
 
