@@ -30,7 +30,7 @@ export async function runHealthCheck(): Promise<HealthReport> {
   ] = await Promise.all([
     supabase.from('recipes').select('id, price_lak, requires_customization', { count: 'exact' }).eq('is_active', true),
     supabase.from('inventory').select('id, current_qty', { count: 'exact' }).eq('is_active', true),
-    supabase.from('employees').select('id, pin_hash', { count: 'exact' }),
+    supabase.from('employees').select('id', { count: 'exact' }),
     supabase.from('loyalty_settings').select('enabled').maybeSingle(),
     supabase.rpc('get_site_settings'),
     supabase.from('recipes').select('id').eq('is_active', true).eq('price_lak', 0),
@@ -43,7 +43,9 @@ export async function runHealthCheck(): Promise<HealthReport> {
   const settings        = (settingsRes.data ?? {}) as Record<string, string>
   const missingPriceCount = (recipesMissingPriceRes.data ?? []).length
 
-  const employeesWithPin = (employeesRes.data ?? []).filter((e: {pin_hash: string | null}) => e.pin_hash).length
+  // employees.pin_hash is NOT NULL (005), so every employee has a PIN
+  const employeesFailed  = !!employeesRes.error
+  const employeesWithPin = employeeCount
 
   // POS localStorage checks (only works client-side — called from client component)
   let printerName = ''
@@ -100,15 +102,15 @@ export async function runHealthCheck(): Promise<HealthReport> {
     {
       id: 'staff_count', section: 'พนักงาน',
       label: 'มีพนักงาน POS',
-      detail: employeeCount >= 1 ? `มี ${employeeCount} คน` : 'ยังไม่มีพนักงาน',
-      status: employeeCount >= 1 ? 'ok' : 'error',
+      detail: employeesFailed ? 'ตรวจไม่ได้ (โหลดข้อมูลพนักงานไม่สำเร็จ)' : employeeCount >= 1 ? `มี ${employeeCount} คน` : 'ยังไม่มีพนักงาน',
+      status: employeesFailed ? 'warn' : employeeCount >= 1 ? 'ok' : 'error',
       href: '/shop/team/employees', actionLabel: 'เพิ่มพนักงาน',
     },
     {
       id: 'staff_pin', section: 'พนักงาน',
       label: 'พนักงานมี PIN ครบ',
-      detail: employeeCount === 0 ? 'ยังไม่มีพนักงาน' : employeesWithPin === employeeCount ? `${employeeCount} คนมี PIN` : `${employeeCount - employeesWithPin} คนยังไม่มี PIN`,
-      status: employeeCount === 0 ? 'warn' : employeesWithPin === employeeCount ? 'ok' : 'warn',
+      detail: employeesFailed ? 'ตรวจไม่ได้ (โหลดข้อมูลพนักงานไม่สำเร็จ)' : employeeCount === 0 ? 'ยังไม่มีพนักงาน' : employeesWithPin === employeeCount ? `${employeeCount} คนมี PIN` : `${employeeCount - employeesWithPin} คนยังไม่มี PIN`,
+      status: employeesFailed ? 'warn' : employeeCount === 0 ? 'warn' : employeesWithPin === employeeCount ? 'ok' : 'warn',
       href: '/shop/team/employees', actionLabel: 'ตั้ง PIN',
     },
 
