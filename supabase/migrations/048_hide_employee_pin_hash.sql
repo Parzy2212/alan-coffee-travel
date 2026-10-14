@@ -29,10 +29,12 @@
 --    8 columns kept for now, cut with POS auth session
 --  - authenticated gets SELECT on every column except
 --    pin_hash
---  - assertions: each column of employees is selectable
---    by anon / authenticated exactly as listed above
---    (a column added later fails this until listed);
---    authenticated still has INSERT/UPDATE/DELETE
+--  - assertions: a column not listed above but still
+--    readable (e.g. granted by another role), or a
+--    listed column not readable, stops the run;
+--    authenticated still has INSERT/UPDATE/DELETE.
+--    A column added later is in neither list, so it is
+--    hidden (42501), not an assertion failure.
 --
 --  A column added to employees later is NOT readable by
 --  anon/authenticated until granted explicitly; app code
