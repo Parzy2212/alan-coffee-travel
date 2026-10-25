@@ -9,6 +9,7 @@
 --  The emergency revoke was FROM PUBLIC, anon, authenticated.
 --
 --  Tested 2026-10-25 in BEGIN/ROLLBACK: T1-T9 pass (T3 skipped, no manager)
+--  Applied live 2026-10-25, verified
 --
 --  After this:
 --  - update_payment_setting(key, value): authenticated only; accepts only
