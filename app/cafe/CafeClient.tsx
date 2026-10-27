@@ -207,6 +207,8 @@ const SECRET_SETTING_KEYS: readonly string[] = ['telegram_bot_token', 'low_stock
 const SAVABLE_SETTING_KEYS = (Object.keys(DEFAULT_SETTINGS) as (keyof FullSettings)[])
   .filter(k => !SECRET_SETTING_KEYS.includes(k))
 const isSavableKey = (k: string): k is keyof FullSettings => (SAVABLE_SETTING_KEYS as string[]).includes(k)
+// update_site_setting rejects these (migration 051); they go through update_payment_setting
+const PAYMENT_SETTING_KEYS: readonly string[] = ['payment_banks', 'qr_payment_number', 'qr_payment_name']
 
 const DAYS_OF_WEEK = [
   { key: 'mon', label: 'จ' }, { key: 'tue', label: 'อ' }, { key: 'wed', label: 'พ' },
@@ -2007,19 +2009,27 @@ function SettingsTab() {
 
   useEffect(() => { loadSettings() }, [])
 
-  // Writes the given keys; returns the keys that failed (an RPC error doesn't throw).
-  async function writeSettings(entries: [string, string][]): Promise<string[]> {
+  // Writes the given keys as the signed-in user (both RPCs are owner-only); returns the keys that failed
+  // and the first error message (an RPC error doesn't throw).
+  async function writeSettings(entries: [string, string][]): Promise<{ failed: string[]; reason: string }> {
+    const { authClient } = await import('@/lib/supabase-auth')
     const results = await Promise.all(
-      entries.map(([k, v]) => supabase.rpc('update_site_setting', { p_key: k, p_value: v }))
+      entries.map(([k, v]) => authClient.rpc(
+        PAYMENT_SETTING_KEYS.includes(k) ? 'update_payment_setting' : 'update_site_setting',
+        { p_key: k, p_value: v },
+      ))
     )
-    return entries.filter((_, i) => results[i].error).map(([k]) => k)
+    return {
+      failed: entries.filter((_, i) => results[i].error).map(([k]) => k),
+      reason: results.find(r => r.error)?.error?.message ?? '',
+    }
   }
 
   async function saveAll() {
     setSaving(true); setSaved(false); setSaveError(null); setImportError(null)
     try {
-      const failed = await writeSettings(SAVABLE_SETTING_KEYS.map(k => [k, String(settings[k] ?? '')]))
-      if (failed.length) { setSaveError(`บันทึกไม่สำเร็จ ${failed.length} รายการ: ${failed.join(', ')}`); return }
+      const { failed, reason } = await writeSettings(SAVABLE_SETTING_KEYS.map(k => [k, String(settings[k] ?? '')]))
+      if (failed.length) { setSaveError(`บันทึกไม่สำเร็จ ${failed.length} รายการ (${reason}): ${failed.join(', ')}`); return }
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch {
@@ -2075,11 +2085,11 @@ function SettingsTab() {
     if (!importPreview) return
     setImporting(true); setSaved(false); setSaveError(null); setImportError(null)
     try {
-      const failed = await writeSettings(Object.entries(importPreview))
+      const { failed, reason } = await writeSettings(Object.entries(importPreview))
       const applied = Object.fromEntries(Object.entries(importPreview).filter(([k]) => !failed.includes(k)))
       setSettings(s => ({ ...s, ...(applied as Partial<FullSettings>) }))
       setImportPreview(null)
-      if (failed.length) { setImportError(`นำเข้าไม่สำเร็จ ${failed.length} รายการ: ${failed.join(', ')}`); return }
+      if (failed.length) { setImportError(`นำเข้าไม่สำเร็จ ${failed.length} รายการ (${reason}): ${failed.join(', ')}`); return }
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch {
@@ -3289,16 +3299,29 @@ function AISettingsSection() {
   const [genInsight,    setGenInsight]    = useState(false)
   const [genQuest,      setGenQuest]      = useState(false)
   const [genMsg,        setGenMsg]        = useState('')
+  const [toggleError,   setToggleError]   = useState('')
 
+  // The anon table policy doesn't expose this key, so read it through get_site_settings
   useEffect(() => {
-    supabase.from('site_settings').select('value').eq('key', 'alan_insights_enabled').single()
-      .then(({ data }) => setEnabled((data as { value: string } | null)?.value === 'true'))
+    supabase.rpc('get_site_settings').then(({ data, error }) => {
+      if (error || !data) { setToggleError(`โหลดค่าไม่สำเร็จ${error ? ` (${error.message})` : ''}`); return }
+      setEnabled((data as Record<string, string | null>).alan_insights_enabled === 'true')
+    }, () => setToggleError('โหลดค่าไม่สำเร็จ — เชื่อมต่อไม่ได้'))
   }, [])
 
   async function toggleEnabled(v: boolean) {
-    setSaving(true)
-    await supabase.rpc('update_site_setting', { p_key: 'alan_insights_enabled', p_value: v ? 'true' : 'false' })
-    setEnabled(v); setSaving(false)
+    if (saving) return
+    setSaving(true); setToggleError('')
+    try {
+      const { authClient } = await import('@/lib/supabase-auth')
+      const { error } = await authClient.rpc('update_site_setting', { p_key: 'alan_insights_enabled', p_value: v ? 'true' : 'false' })
+      if (error) setToggleError(`บันทึกไม่สำเร็จ (${error.message})`)
+      else setEnabled(v)
+    } catch {
+      setToggleError('บันทึกไม่สำเร็จ — เชื่อมต่อไม่ได้')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function generateInsights() {
@@ -3341,6 +3364,7 @@ function AISettingsSection() {
             sub="ทุกวัน 02:00 Asia/Vientiane — ต้องการ pg_cron + alan-insights deployed"
           />
         )}
+        {toggleError && <div style={{ marginTop: 8, fontSize: 12, color: RED }}>{toggleError}</div>}
         <div style={{ marginTop: 20, padding: '12px 16px', backgroundColor: '#1a1a1a', borderRadius: 10, fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.8 }}>
           Alan AI วิเคราะห์โดยคำนึงถึง:<br />
           • เงินสดในมือ (real-time)<br />
