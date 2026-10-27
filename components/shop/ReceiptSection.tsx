@@ -35,35 +35,47 @@ export function ReceiptSection() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [loadFailed, setLoadFailed] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // On a failed load the form holds defaults; saving them would wipe the real settings, so saving is blocked.
   useEffect(() => {
+    const fail = (msg: string) => { setLoadFailed(true); setError(msg); setLoading(false) }
     import('@/lib/supabase-auth').then(({ authClient }) => {
-      authClient.rpc('get_site_settings').then(({ data }) => {
-        if (data) {
-          const d = data as Record<string, string>
-          setSettings(s => ({
-            ...s,
-            ...Object.fromEntries(RECEIPT_KEYS.filter(k => d[k] != null).map(k => [k, d[k]])),
-          }))
+      authClient.rpc('get_site_settings').then(({ data, error }) => {
+        if (error || !data || typeof data !== 'object') {
+          fail(`โหลดการตั้งค่าไม่สำเร็จ${error ? ` (${error.message})` : ''} — รีเฟรชหน้าแล้วลองใหม่`)
+          return
         }
+        const d = data as Record<string, string>
+        setSettings(s => ({
+          ...s,
+          ...Object.fromEntries(RECEIPT_KEYS.filter(k => d[k] != null).map(k => [k, d[k]])),
+        }))
         setLoading(false)
-      })
-    })
+      }, () => fail('โหลดการตั้งค่าไม่สำเร็จ — เชื่อมต่อไม่ได้'))
+    }, () => fail('โหลดการตั้งค่าไม่สำเร็จ — เชื่อมต่อไม่ได้'))
   }, [])
 
   const set = (k: ReceiptKey) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setSettings(s => ({ ...s, [k]: e.target.value }))
 
   const handleSave = async () => {
-    setSaving(true); setError('')
+    if (loadFailed) return
+    setSaving(true); setSaved(false); setError('')
     if (timer.current) clearTimeout(timer.current)
     try {
       const { authClient } = await import('@/lib/supabase-auth')
       const { logAccountEvent } = await import('@/lib/account-events')
-      await Promise.all(
+      const results = await Promise.all(
         RECEIPT_KEYS.map(k => authClient.rpc('update_site_setting', { p_key: k, p_value: settings[k] }))
       )
+      const failed = RECEIPT_KEYS.filter((_, i) => results[i].error)
+      if (failed.length) {
+        const reason = results.find(r => r.error)?.error?.message ?? ''
+        setError(`บันทึกไม่สำเร็จ ${failed.length}/${RECEIPT_KEYS.length} รายการ (${reason}): ${failed.join(', ')}`)
+        return
+      }
       await logAccountEvent('shop_settings_updated' as never, 'Receipt settings updated')
       setSaved(true)
       timer.current = setTimeout(() => setSaved(false), 2500)
@@ -148,7 +160,7 @@ export function ReceiptSection() {
       </div>
 
       {error && <div style={{ backgroundColor: `${DANGER}14`, border: `1px solid ${DANGER}33`, borderRadius: RADIUS.md, padding: '10px 14px', color: DANGER, fontSize: 13, marginBottom: 16 }}>{error}</div>}
-      <SaveButton saving={saving} saved={saved} onClick={handleSave} />
+      <SaveButton saving={saving} saved={saved} disabled={loadFailed} onClick={handleSave} />
     </div>
   )
 }
