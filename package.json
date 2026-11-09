@@ -28,7 +28,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vladmandic/face-api": "^1.7.15",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "15.3.4",
     "tailwindcss": "^4",
     "typescript": "^5"
