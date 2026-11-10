@@ -56,6 +56,11 @@
 --  - the loyalty reversal lowers points but does not recompute
 --    vip_tier. It never runs today: trg_award_loyalty needs
 --    orders.shop_id, which nothing sets yet. Fix when A sets shop_id.
+--  - cash flow: trg_order_to_cashflow records income when a bill
+--    becomes 'paid' (before finalize_order_payment, so always cash
+--    and before discount), and a void does not take it back. Left
+--    for package A, which writes payment + discount in the same
+--    transaction and reverses the cash flow entry on void.
 --  - orders with shop_id NULL always count as the real shop, so any
 --    other onboarded shop selling through /pos cannot void (same
 --    pinning as 051/052). Fix when A sets orders.shop_id.
@@ -64,11 +69,11 @@
 --    pad under 047 option A. Unlock by hand:
 --    DELETE FROM public.pin_attempts WHERE scope = 'void:<shop_id>';
 --
---  Before running the test: the test makes a real sale inside the
---  rolled-back transaction, so check no trigger on orders calls out
---  synchronously (expect only trg_award_loyalty):
---    SELECT tgname, tgfoid::regproc FROM pg_trigger
---    WHERE tgrelid = 'public.orders'::regclass AND NOT tgisinternal;
+--  The test makes a real 50,000 LAK sale inside the rolled-back
+--  transaction. Live triggers on orders (owner, 2026-11-10):
+--  trg_award_loyalty, trg_large_order_telegram, trg_order_to_cashflow.
+--  The test disables trg_large_order_telegram inside its transaction
+--  (re-enabled by the rollback) so no Telegram message can go out.
 --
 --  Client: app/pos/POSClient.tsx VoidRow calls the new function.
 --  Deploy it right after running this: from the REVOKE on, the old

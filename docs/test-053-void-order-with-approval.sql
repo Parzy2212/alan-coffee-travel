@@ -20,6 +20,11 @@
 
 BEGIN;
 
+-- The test sale is 50,000 LAK (under the 500,000 threshold), but the trigger code was not
+-- reviewed, so it is switched off for this transaction only (the final rollback restores it).
+-- This locks orders until the transaction ends: run ROLLBACK; right after the report.
+ALTER TABLE public.orders DISABLE TRIGGER trg_large_order_telegram;
+
 -- ---- 053 body (copy) ----
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS voided_at timestamptz;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS voided_by_employee_id uuid REFERENCES public.employees(id);
@@ -273,9 +278,9 @@ BEGIN
   v_order_id := (res->>'order_id')::uuid;
   queue_no := (res->>'queue_number')::int;
   after_sale := pg_temp.stock_of(recipe);
-  SELECT status, shop_id INTO ord FROM public.orders WHERE id = v_order_id;
-  INSERT INTO t053 VALUES (2, 'setup: test sale created as paid (shop_id NULL or real shop), stock deducted',
-    CASE WHEN ord.status = 'paid' AND after_sale <> before_sale
+  SELECT status, shop_id, total_lak INTO ord FROM public.orders WHERE id = v_order_id;
+  INSERT INTO t053 VALUES (2, 'setup: test sale 50,000 LAK created as paid (shop_id NULL or real shop), stock deducted',
+    CASE WHEN ord.status = 'paid' AND ord.total_lak = 50000 AND after_sale <> before_sale
           AND (ord.shop_id IS NULL OR ord.shop_id = real_shop) THEN 'PASS'
          ELSE 'FAIL: status=' || COALESCE(ord.status, 'NULL') || ' stock changed=' || (after_sale <> before_sale)::text END);
 
