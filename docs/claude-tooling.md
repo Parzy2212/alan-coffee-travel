@@ -12,5 +12,17 @@ Everything Claude Code added to help with POS work: what, version, where it came
 profile every time), `--usage-statistics=false` and `--performance-crux=false` (both default to on and send data to Google).
 The profile holds a live login to the POS: don't copy it anywhere, and delete the folder to log out.
 
+2026-11-11:
+- `chrome-devtools` MCP (user scope, all projects): pinned `@latest` → `chrome-devtools-mcp@1.12.0`, added
+  `--usage-statistics=false --performance-crux=false` (owner approved). Undo: `claude mcp remove chrome-devtools -s user`
+  and re-add with the old args.
+- Supabase MCP (`.mcp.json`, already configured `read_only=true`, `project_ref` = this shop only): OAuth login by the
+  owner (approved). OAuth scopes requested by Supabase include `secrets:read`; Claude does not call secret/key tools
+  (CLAUDE.md service-role rule). Undo: `/mcp` → supabase → clear authentication, or revoke the app in Supabase account
+  settings.
+- Printer tests on this PC (Xprinter XP-T80A, USB `0483:5743`, Windows built-in USB printing class only, no vendor driver):
+  temporary Chrome policy `WebUsbAllowDevicesForUrls` in `HKCU\Software\Policies\{Google\Chrome,Chromium}` for
+  `http://localhost:8099` → **removed** the same day (keys deleted). No driver or program installed.
+
 Already present before 2026-11-10 (not changed): Playwright MCP `@playwright/mcp@0.0.79` (`.mcp.json`), `typescript-lsp`,
 `claude-code-setup`, `security-guidance` (installed, disabled), project skills in `.claude/skills/`.
