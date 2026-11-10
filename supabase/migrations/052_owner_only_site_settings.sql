@@ -1,8 +1,14 @@
 -- ============================================================
 --  Alan Cafe OS -- Migration 052: owner-only update_site_setting
 --
---  NOT RUN YET. Test first with docs/test-052-owner-only-site-settings.sql
---  (BEGIN ... ROLLBACK, changes nothing).
+--  RAN on production 2026-11-10 via Supabase SQL Editor.
+--  Tested first on production with docs/test-052-owner-only-site-settings.sql
+--  (BEGIN ... ROLLBACK, changes nothing): T1-T5 PASS, T6 SKIP (no such
+--  user: no active non-owner member of the real shop), T7-T13 PASS.
+--  SQL post-run check passed: update_site_setting and
+--  update_payment_setting both anon=false, authenticated=true,
+--  SECURITY DEFINER, search_path=public, pg_temp.
+--  App not checked yet (client code not deployed at the time of the run).
 --
 --  Before this: update_site_setting has been revoked from anon and
 --  authenticated since 2026-10-25 (recorded in 051), so /cafe Settings,
