@@ -1,6 +1,12 @@
 -- ============================================================
 --  Test for migration 053 (void a bill only with a manager PIN)
 --
+--  DO NOT RE-RUN. Run on production 2026-11-10, the Supabase SQL Editor
+--  did not keep this BEGIN open: the top-level statements (Telegram
+--  trigger off, 053 body) and the whole test DO block committed; only the
+--  report block failed. The claim below is wrong for that editor.
+--  Cleanup check: docs/check-053-leftovers.sql.
+--
 --  CHANGES NOTHING. Everything runs in one transaction that always ends
 --  in an error ("053 TEST RESULTS ...") so Postgres rolls it all back:
 --  the 053 changes, a test sale made through the live

@@ -1,8 +1,12 @@
 -- ============================================================
 --  Alan Cafe OS -- Migration 053: void a bill only with a manager PIN
 --
---  NOT RUN YET. Test first with docs/test-053-void-order-with-approval.sql
---  (BEGIN ... always ends in an error -> everything rolled back).
+--  RAN on production 2026-11-10 (owner; grants checked: new fn anon/auth
+--  EXECUTE, void_order revoked). The test run before it left the Telegram
+--  trigger disabled: the SQL Editor did not keep the test's BEGIN open,
+--  so its top-level statements committed one by one. Leftover check:
+--  docs/check-053-leftovers.sql. Rollback tests must not rely on BEGIN
+--  alone: keep every write inside one DO block that ends in RAISE.
 --
 --  Live void_order before this (pg_get_functiondef, owner 2026-11-10):
 --  - anyone with the anon key could void any order id
