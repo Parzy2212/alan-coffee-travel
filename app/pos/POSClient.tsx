@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
 import { PinPad } from '@/components/pos/PinPad'
@@ -2336,41 +2337,103 @@ function ShiftClosePopup({ todayTotal, todayCount, onClose }: { todayTotal: numb
 
 // ─── VoidRow ─────────────────────────────────────────────────────────────────
 
-function VoidRow({ order, onVoided }: { order: TodayOrder; onVoided: () => void }) {
+// Error text for void_order_with_approval (migration 053)
+function voidErrorText(e: { message?: string; details?: string; code?: string }): string {
+  const msg = e.message ?? ''
+  if (msg.includes('PIN_LOCKED')) return `ใส่ PIN ผิดหลายครั้ง — ลองใหม่ใน ${e.details ?? 'สักครู่'} วินาที`
+  if (msg.includes('order not found')) return 'ไม่พบบิลนี้'
+  if (msg.includes('another shop')) return 'บิลนี้เป็นของร้านอื่น'
+  if (msg.includes('reason')) return 'กรุณาใส่เหตุผล'
+  return `ยกเลิกบิลไม่สำเร็จ (${msg || 'เชื่อมต่อไม่ได้'})`
+}
+
+function VoidRow({ order, shopId, onVoided }: { order: TodayOrder; shopId: string | null; onVoided: () => void }) {
   const [open,    setOpen]    = useState(false)
   const [reason,  setReason]  = useState('')
+  const [pin,     setPin]     = useState('')
   const [loading, setLoading] = useState(false)
+  const [errMsg,  setErrMsg]  = useState('')
+  const busy = useRef(false)
 
-  async function doVoid() {
-    setLoading(true)
-    await supabase.rpc('void_order', { p_order_id: order.id, p_reason: reason || 'ยกเลิก' })
-    setLoading(false); setOpen(false)
-    onVoided()
+  function close() {
+    if (busy.current) return
+    setOpen(false); setReason(''); setPin(''); setErrMsg('')
   }
 
-  if (!open) return (
-    <button onClick={() => setOpen(true)} style={{
-      padding: '3px 8px', borderRadius: 4, border: '1px solid rgba(220,80,80,0.3)',
-      backgroundColor: 'rgba(220,80,80,0.08)', color: '#e07070', fontSize: 11, cursor: 'pointer',
-    }}>Void</button>
-  )
+  async function doVoid() {
+    if (busy.current) return
+    if (!shopId) { setErrMsg('ยังโหลดข้อมูลร้านไม่เสร็จ ลองใหม่อีกครั้ง'); return }
+    if (!reason.trim()) { setErrMsg('กรุณาใส่เหตุผล'); return }
+    if (pin.length !== 4) { setErrMsg('ใส่ PIN ผู้จัดการ 4 หลัก'); return }
+    busy.current = true; setLoading(true); setErrMsg('')
+    try {
+      const { data, error } = await supabase.rpc('void_order_with_approval', {
+        p_order_id: order.id, p_shop_id: shopId, p_manager_pin: pin, p_reason: reason.trim(),
+      })
+      if (error) {
+        // Not paid any more (e.g. voided on another device): refresh; a voided row unmounts this dialog
+        if (error.message?.includes('ORDER_NOT_PAID')) { setErrMsg('บิลนี้ไม่ได้อยู่ในสถานะชำระแล้ว'); setPin(''); onVoided(); return }
+        setErrMsg(voidErrorText(error)); setPin(''); return
+      }
+      const result = data as { ok: boolean; error?: string }
+      if (!result?.ok) { setErrMsg('PIN ผู้จัดการไม่ถูกต้อง'); setPin(''); return }
+      busy.current = false
+      close()
+      onVoided()
+    } catch {
+      setErrMsg('ยกเลิกบิลไม่สำเร็จ — เชื่อมต่อไม่ได้')
+    } finally {
+      busy.current = false
+      setLoading(false)
+    }
+  }
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผล..."
-        style={{ ...popupInput, padding: '3px 8px', fontSize: 11, width: 100 }} />
-      <button onClick={doVoid} disabled={loading} style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: RED, color: '#fff', fontSize: 11, cursor: 'pointer' }}>
-        {loading ? '...' : 'ยืนยัน'}
-      </button>
-      <button onClick={() => setOpen(false)} style={{ padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}>✕</button>
-    </div>
+    <>
+      <button onClick={() => setOpen(true)} style={{
+        padding: '3px 8px', borderRadius: 4, border: '1px solid rgba(220,80,80,0.3)',
+        backgroundColor: 'rgba(220,80,80,0.08)', color: '#e07070', fontSize: 11, cursor: 'pointer',
+      }}>Void</button>
+      {open && createPortal(
+        // Portal: the drawer is transformed, which would trap a fixed overlay inside it
+        <div onClick={e => { if (e.target === e.currentTarget) close() }}
+          onKeyDown={e => { if (e.key === 'Escape') { e.nativeEvent.stopImmediatePropagation(); close() } }}
+          style={{ position: 'fixed', inset: 0, zIndex: 300, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <form onSubmit={e => { e.preventDefault(); void doVoid() }}
+            style={{ backgroundColor: '#111', border: `1px solid ${RED}55`, borderRadius: 14, width: '100%', maxWidth: 360, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: '#fff' }}>ยกเลิกบิล {fmtQueue(order.queue_number)}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{fmtLak(order.total_lak)} · ต้องใช้ PIN ผู้จัดการ</div>
+            </div>
+            <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผล (จำเป็น)" maxLength={200}
+              autoFocus disabled={loading} style={popupInput} />
+            <input value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="PIN ผู้จัดการ" type="password" inputMode="numeric" autoComplete="off" disabled={loading}
+              style={{ ...popupInput, letterSpacing: pin ? '0.4em' : undefined }} />
+            {errMsg && <div role="alert" style={{ color: RED, fontSize: 13 }}>{errMsg}</div>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={close} disabled={loading}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.7)', fontSize: 14, cursor: 'pointer' }}>
+                ไม่ยกเลิก
+              </button>
+              <button type="submit" disabled={loading}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', backgroundColor: RED, color: '#fff', fontSize: 14, fontWeight: 700, cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+                {loading ? 'กำลังยกเลิก...' : 'ยืนยันยกเลิกบิล'}
+              </button>
+            </div>
+          </form>
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
 
 // ─── OrdersDrawer ─────────────────────────────────────────────────────────────
 
-function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, todayCount, onUpdateQueue, onVoided }: {
+function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, todayCount, shopId, onUpdateQueue, onVoided }: {
   open: boolean
+  shopId: string | null
   onClose: () => void
   queueEntries: QueueEntry[]
   todayOrders: TodayOrder[]
@@ -2459,7 +2522,7 @@ function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, to
                       {isVoid ? (
                         <span style={{ fontSize: 10, color: RED, fontWeight: 700 }}>VOID</span>
                       ) : (
-                        <VoidRow order={order} onVoided={onVoided} />
+                        <VoidRow order={order} shopId={shopId} onVoided={onVoided} />
                       )}
                     </div>
                     {isVoid && order.void_reason && (
@@ -3288,6 +3351,7 @@ export default function POSClient() {
         todayOrders={todayOrders}
         todayTotal={todayTotal}
         todayCount={todayCount}
+        shopId={shopId}
         onUpdateQueue={updateQueueStatus}
         onVoided={() => { fetchTodayQueue(); loadTodayOrders() }}
       />
