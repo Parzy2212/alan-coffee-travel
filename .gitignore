@@ -50,3 +50,6 @@ supabase/.temp/
 next-env.d.ts
 
 graphify-out/
+
+# Claude Code per-machine permissions (never commit)
+.claude/settings.local.json
