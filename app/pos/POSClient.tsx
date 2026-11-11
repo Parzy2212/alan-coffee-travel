@@ -12,7 +12,6 @@ import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner } from '@/components/pos/TestModeBanner'
-import { HttpBanner } from '@/components/pos/HttpBanner'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
@@ -26,12 +25,11 @@ import { AppNav } from '@/components/AppNav'
 import { getMenuName } from '@/lib/menu-i18n'
 import { formatSecondary } from '@/lib/currency'
 import {
-  connectPrinter, disconnectPrinter, getStatus as getPrinterStatus,
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
-  isSupported as printerIsSupported, debugDevices, setPrinterName as saveServerPrinterName, getPrinterName as getSavedPrinterName,
+  setPrinterName as saveServerPrinterName, getPrinterName as getSavedPrinterName, getPrinterIp, setPrinterIp,
   buildReceiptText, type ReceiptDesign,
   effectivePrintLang, hasDismissedFallbackWarning, dismissFallbackWarning,
-  checkPrintServer, saveForReprint, getSavedReceipt,
+  saveForReprint, getSavedReceipt,
 } from '@/lib/thermal-printer'
 import {
   BG_BASE, BG_SURFACE, BG_CARD_ALT,
@@ -811,11 +809,10 @@ function DigitalReceiptPopup({
   async function handleThermalPrint() {
     setPrintState('printing')
     try {
-      const lsGet = (k: string) => { try { return localStorage.getItem(k) || '' } catch { return '' } }
-      const footerText = settings.receipt_footer || lsGet('receipt_footer_text') || 'Thank you for visiting'
-      const phone      = settings.shop_phone || lsGet('receipt_phone')
-      const address    = settings.shop_address || lsGet('receipt_address')
-      const shopName   = settings.shop_name || lsGet('receipt_shop_name') || 'ALAN COFFEE & TRAVEL'
+      const footerText = settings.receipt_footer || 'Thank you for visiting'
+      const phone      = settings.shop_phone
+      const address    = settings.shop_address
+      const shopName   = settings.shop_name || 'ALAN COFFEE & TRAVEL'
       await thermalPrint({
         shopName,
         queue:          data.queue,
@@ -1623,19 +1620,25 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 
 // ─── SettingsPopup ────────────────────────────────────────────────────────────
 
-function SettingsPopup({ onClose }: { onClose: () => void }) {
-  const ls = (k: string, fallback = '') => typeof window !== 'undefined' ? localStorage.getItem(k) ?? fallback : fallback
+// Per-device settings only. Shop name, address, phone, receipt footer, VAT and payment details
+// come from ตั้งค่าร้าน (site_settings), one source for every device.
+const RETIRED_DEVICE_KEYS = [
+  'receipt_shop_name', 'receipt_footer_text', 'receipt_phone', 'receipt_address',
+  'receipt_show_qr', 'receipt_show_vat', 'pos_currency',
+  'pos_https_banner_dismissed', 'pos_always_use_http',
+]
 
-  const [currency,    setCurrency]    = useState(() => ls('pos_currency', 'LAK'))
-  const [paperWidth,  setPaperWidth]  = useState<'58' | '80'>(() => ls('pos_paper_width', '80') === '80' ? '80' : '58')
-  const [shopName,   setShopName]   = useState(() => ls('receipt_shop_name'))
-  const [footerText, setFooterText] = useState(() => ls('receipt_footer_text', 'Thank you for visiting'))
-  const [phone,      setPhone]      = useState(() => ls('receipt_phone'))
-  const [address,    setAddress]    = useState(() => ls('receipt_address'))
-  const [showQr,     setShowQr]     = useState(() => ls('receipt_show_qr',  'true') === 'true')
-  const [showVat,    setShowVat]    = useState(() => ls('receipt_show_vat', 'true') === 'true')
+function SettingsPopup({ onClose, shop }: {
+  onClose: () => void
+  shop: { shopName: string; footerText: string; phone: string; address: string }
+}) {
+  const ls = (k: string, fallback = '') => { try { return localStorage.getItem(k) ?? fallback } catch { return fallback } }
+  const { shopName, footerText, phone, address } = shop
 
-  // Receipt designer
+  const [paperWidth, setPaperWidth] = useState<'58' | '80'>(() => ls('pos_paper_width', '80') === '80' ? '80' : '58')
+  const [autoPrint,  setAutoPrint]  = useState(() => ls('pos_auto_print', 'true') !== 'false')
+
+  // Receipt layout (this device)
   const [showLogo,       setShowLogo]       = useState(() => ls('receipt_show_logo',       'true')  === 'true')
   const [showReceiptNum, setShowReceiptNum] = useState(() => ls('receipt_show_receipt_num','true')  === 'true')
   const [showStaff,      setShowStaff]      = useState(() => ls('receipt_show_staff',      'false') === 'true')
@@ -1645,110 +1648,28 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
   const [extraLine1,     setExtraLine1]     = useState(() => ls('receipt_extra_line_1'))
   const [extraLine2,     setExtraLine2]     = useState(() => ls('receipt_extra_line_2'))
   const [blankLines,     setBlankLines]     = useState(() => parseInt(ls('receipt_blank_lines', '4'), 10) || 4)
-  const [showPreview,       setShowPreview]       = useState(false)
-  const [autoPrint,         setAutoPrint]         = useState(() => ls('pos_auto_print', 'true') !== 'false')
+  const [showPreview,    setShowPreview]    = useState(false)
 
-  const [serverPrinterName, setServerPrinterName] = useState(() => ls('pos_printer_name'))
-  const [serverPrinters,    setServerPrinters]    = useState<string[]>([])
-  const [printersLoading,   setPrintersLoading]   = useState(false)
+  // The retired print-server / network-printer method; saving switches this device to the Windows driver
+  const [legacyPrinter] = useState(() => !!(getSavedPrinterName() || getPrinterIp()))
 
-  const [printerName,      setPrinterName]      = useState<string | null>(null)
-  const [printerConnected, setPrinterConnected] = useState(false)
-  const [printerBusy,      setPrinterBusy]      = useState(false)
-  const [webUsbSupported,  setWebUsbSupported]  = useState(true)
-  const [serverOk,         setServerOk]         = useState<boolean | null>(null)
-  const [testPrintMsg,     setTestPrintMsg]     = useState<{ text: string; ok: boolean } | null>(null)
-  const [lastPrintInfo,    setLastPrintInfo]    = useState<{ time: string; result: 'success' | 'error'; error?: string } | null>(() => {
+  const [printerBusy,  setPrinterBusy]  = useState(false)
+  const [testPrintMsg, setTestPrintMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [lastPrintInfo] = useState<{ time: string; result: 'success' | 'error'; error?: string } | null>(() => {
     try { const s = ls('pos_last_print_info'); return s ? JSON.parse(s) : null } catch { return null }
   })
-  const [isHttpsCtx,       setIsHttpsCtx]       = useState(false)
   const overlayRef = useRef<HTMLDivElement>(null)
 
-  async function checkServer(): Promise<boolean> {
-    const ok = await checkPrintServer()  // 30s module-level cache, 2s timeout
-    setServerOk(ok)
-    return ok
-  }
-
-  async function fetchPrinters() {
-    setPrintersLoading(true)
-    try {
-      const res = await fetch('http://127.0.0.1:12345/printers', { signal: AbortSignal.timeout(3000) })
-      const json = await res.json()
-      if (json.ok && Array.isArray(json.printers)) setServerPrinters(json.printers)
-    } catch { /* server not running */ }
-    finally { setPrintersLoading(false) }
-  }
-
-  // Empty IP + printer name = print through the Windows driver (lib/receipt-print.ts)
-  const browserMode = !serverPrinterName.trim()
-
-  useEffect(() => {
-    setIsHttpsCtx(window.location.protocol === 'https:')
-    // Only probe the old local print server when it is configured: from HTTPS,
-    // Chrome asks the user for local network access on every probe.
-    if (ls('pos_printer_name')) checkServer().then(ok => { if (ok) fetchPrinters() })
-    if (!printerIsSupported()) { setWebUsbSupported(false); return }
-    getPrinterStatus().then(s => {
-      setPrinterConnected(s.connected)
-      setPrinterName(s.deviceName)
-    })
-  }, [])
-
-  function detectPaperWidth(name: string | null): 58 | 80 | null {
-    if (!name) return null
-    const n = name.toLowerCase()
-    if (/58/.test(n)) return 58
-    if (/80/.test(n)) return 80
-    return null
-  }
-
-  async function handleConnect() {
-    setPrinterBusy(true)
-    try {
-      const name = await connectPrinter()
-      setPrinterConnected(true)
-      setPrinterName(name)
-      const detected = detectPaperWidth(name)
-      if (detected) setPaperWidth(String(detected) as '58' | '80')
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      if (!msg.includes('No device selected') && !msg.includes('cancelled')) setPrinterConnected(false)
-    } finally { setPrinterBusy(false) }
-  }
-
-  async function handleDisconnect() {
-    await disconnectPrinter()
-    setPrinterConnected(false)
-    setPrinterName(null)
-  }
-
   async function handleTestPrint() {
+    if (legacyPrinter) {
+      setTestPrintMsg({ text: 'กด บันทึก ก่อน (เปลี่ยนเป็นพิมพ์ผ่าน Windows) แล้วทดสอบพิมพ์อีกครั้ง', ok: false })
+      return
+    }
     setPrinterBusy(true)
     setTestPrintMsg(null)
-    const name = serverPrinterName.trim()
     try {
-      if (name) {
-        if (!(await checkServer())) {
-          setTestPrintMsg({ text: 'Print Server ไม่ได้รัน — เปิด AlanPOS-PrintServer.exe ก่อน', ok: false })
-        } else {
-          const res = await fetch(
-            `http://127.0.0.1:12345/test-ascii?printer=${encodeURIComponent(name)}&width=${paperWidth}`,
-            { signal: AbortSignal.timeout(10000) }
-          )
-          const json = await res.json().catch(() => ({}))
-          if (res.ok) {
-            setTestPrintMsg({ text: 'ส่งงานพิมพ์สำเร็จ ✓', ok: true })
-          } else {
-            setTestPrintMsg({ text: `ล้มเหลว: ${(json as { error?: string }).error ?? `HTTP ${res.status}`}`, ok: false })
-          }
-        }
-      } else if (getSavedPrinterName()) {
-        setTestPrintMsg({ text: 'กด บันทึก ก่อน แล้วทดสอบพิมพ์อีกครั้ง', ok: false })
-      } else {
-        await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL')
-        setTestPrintMsg({ text: 'ส่งงานพิมพ์สำเร็จ ✓', ok: true })
-      }
+      await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL')
+      setTestPrintMsg({ text: 'ส่งงานพิมพ์แล้ว ✓', ok: true })
     } catch (e) {
       console.error('[POS] Test print failed:', e)
       setTestPrintMsg({ text: `ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`, ok: false })
@@ -1757,23 +1678,12 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
     setTimeout(() => setTestPrintMsg(null), 6000)
   }
 
-  async function handleDebugUsb() {
-    const info = await debugDevices()
-    setTestPrintMsg({ text: `USB: ${info}`, ok: true })
-    setTimeout(() => setTestPrintMsg(null), 8000)
-  }
-
   function save() {
     try {
-      localStorage.setItem('pos_currency',        currency)
-      localStorage.setItem('pos_paper_width',     paperWidth)
-      saveServerPrinterName(serverPrinterName)
-      localStorage.setItem('receipt_shop_name',   shopName)
-      localStorage.setItem('receipt_footer_text', footerText)
-      localStorage.setItem('receipt_phone',       phone)
-      localStorage.setItem('receipt_address',     address)
-      localStorage.setItem('receipt_show_qr',          String(showQr))
-      localStorage.setItem('receipt_show_vat',         String(showVat))
+      localStorage.setItem('pos_paper_width', paperWidth)
+      localStorage.setItem('pos_auto_print',  String(autoPrint))
+      saveServerPrinterName('')
+      setPrinterIp('')
       localStorage.setItem('receipt_show_logo',        String(showLogo))
       localStorage.setItem('receipt_show_receipt_num', String(showReceiptNum))
       localStorage.setItem('receipt_show_staff',       String(showStaff))
@@ -1783,7 +1693,7 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
       localStorage.setItem('receipt_extra_line_1',     extraLine1)
       localStorage.setItem('receipt_extra_line_2',     extraLine2)
       localStorage.setItem('receipt_blank_lines',      String(blankLines))
-      localStorage.setItem('pos_auto_print', String(autoPrint))
+      RETIRED_DEVICE_KEYS.forEach(k => localStorage.removeItem(k))
     } catch { /* ignore */ }
     onClose()
   }
@@ -1801,130 +1711,71 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
     }}>
       <div style={{
         backgroundColor: '#181818', border: `1px solid ${GOLD}44`,
-        borderRadius: 14, width: 420, maxHeight: '85dvh', display: 'flex', flexDirection: 'column',
+        borderRadius: 14, width: 420, maxWidth: '100%', maxHeight: '85dvh', display: 'flex', flexDirection: 'column',
       }}>
         {/* Header */}
         <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>⚙️ POS Settings</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 20, cursor: 'pointer' }}>×</button>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>⚙️ ตั้งค่าเครื่องนี้</div>
+          <button onClick={onClose} aria-label="ปิด" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 20, cursor: 'pointer' }}>×</button>
         </div>
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 22 }}>
 
+          {/* Shop info lives in ตั้งค่าร้าน */}
+          <div style={{ padding: '10px 12px', borderRadius: 8, border: `1px solid ${GOLD}33`, backgroundColor: `${GOLD}0d`, fontSize: 12, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
+            ชื่อร้าน ที่อยู่ เบอร์โทร ข้อความท้ายใบเสร็จ VAT และการรับเงิน ตั้งที่เดียวในหน้า ตั้งค่าร้าน (ใช้กับทุกเครื่อง)
+            <div style={{ marginTop: 6 }}>
+              <a href="/cafe?tab=settings" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontWeight: 700, textDecoration: 'none' }}>⚙️ ไปหน้าตั้งค่าร้าน →</a>
+            </div>
+          </div>
+
           {/* Printer */}
           <div>
-            <div style={sectionLabel}>เครื่องพิมพ์ใบเสร็จ</div>
+            <div style={sectionLabel}>เครื่องพิมพ์ใบเสร็จ (เครื่องนี้)</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.55)', marginBottom: 12 }}>
+              🖨 พิมพ์ผ่านไดร์เวอร์ Windows — เปิด POS จากไอคอน Alan POS เพื่อพิมพ์ทันที
+            </div>
+            {legacyPrinter && (
+              <div role="alert" style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 7, border: '1px solid rgba(245,158,11,0.35)', backgroundColor: 'rgba(245,158,11,0.08)', fontSize: 12, color: '#f59e0b', lineHeight: 1.5 }}>
+                เครื่องนี้ยังตั้งวิธีพิมพ์แบบเก่า (Print Server / IP) ไว้ — กด บันทึก เพื่อเปลี่ยนเป็นพิมพ์ผ่านไดร์เวอร์ Windows
+              </div>
+            )}
+
             {/* Auto print */}
             <div style={{ marginBottom: 14 }}>
-            <button role="switch" aria-checked={autoPrint} onClick={() => setAutoPrint(v => !v)} style={{
-              width: '100%', padding: '10px 14px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-              border: `1px solid ${autoPrint ? GOLD : 'rgba(255,255,255,0.1)'}`,
-              backgroundColor: autoPrint ? `${GOLD}14` : 'transparent',
-              color: autoPrint ? GOLD : 'rgba(255,255,255,0.45)',
-              fontSize: 13, fontWeight: autoPrint ? 700 : 400, display: 'flex', justifyContent: 'space-between',
-            }}>
-              <span>{autoPrint ? '✓ ' : '○ '}พิมพ์ใบเสร็จทันทีหลังรับเงิน</span>
-              <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 400 }}>
-                {autoPrint ? 'เปิดอยู่' : 'ปิดอยู่'}
-              </span>
-            </button>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
-              ตั้งแยกแต่ละเครื่อง (กดบันทึก) · ปิดอยู่ก็พิมพ์ได้จาก "คิว &amp; ออเดอร์" → 🖨
-            </div>
-            </div>
-
-            {/* Windows printer name selector */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>ชื่อเครื่องพิมพ์ (Print Server แบบเก่า — ปกติว่างไว้)</div>
-              {serverOk && serverPrinters.length > 0 ? (
-                <select
-                  value={serverPrinterName}
-                  onChange={e => setServerPrinterName(e.target.value)}
-                  style={{ ...popupInput, cursor: 'pointer' }}
-                >
-                  <option value="">— ไม่ระบุ (ใช้ USB auto) —</option>
-                  {serverPrinters.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  value={serverPrinterName}
-                  onChange={e => setServerPrinterName(e.target.value)}
-                  style={popupInput}
-                  placeholder={
-                    serverOk === null ? 'ว่างไว้'
-                    : printersLoading ? 'กำลังโหลดรายการ...'
-                    : serverOk === false ? 'Print Server ไม่พร้อม — พิมพ์ชื่อเองได้'
-                    : 'ชื่อเครื่องพิมพ์ Windows'
-                  }
-                />
-              )}
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
-                {browserMode
-                  ? 'ว่างไว้ = พิมพ์ผ่านไดร์เวอร์ Windows (ลาว/ไทย/อังกฤษ) — เปิด POS จากไอคอน Alan POS เพื่อพิมพ์ทันที'
-                  : 'ใส่ชื่อเครื่องพิมพ์ = วิธีเก่า (Print Server, ESC/POS) พิมพ์ได้แค่ภาษาอังกฤษ — ลบออกแล้วกดบันทึกเพื่อใช้ไดร์เวอร์ Windows'}
+              <button role="switch" aria-checked={autoPrint} onClick={() => setAutoPrint(v => !v)} style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                border: `1px solid ${autoPrint ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                backgroundColor: autoPrint ? `${GOLD}14` : 'transparent',
+                color: autoPrint ? GOLD : 'rgba(255,255,255,0.45)',
+                fontSize: 13, fontWeight: autoPrint ? 700 : 400, display: 'flex', justifyContent: 'space-between',
+              }}>
+                <span>{autoPrint ? '✓ ' : '○ '}พิมพ์ใบเสร็จทันทีหลังรับเงิน</span>
+                <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 400 }}>{autoPrint ? 'เปิดอยู่' : 'ปิดอยู่'}</span>
+              </button>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
+                ปิดอยู่ก็พิมพ์ได้จาก &quot;คิว &amp; ออเดอร์&quot; → 🖨
               </div>
             </div>
 
             {/* Paper size */}
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 6 }}>ขนาดกระดาษ</div>
-              {(() => {
-                const detected = detectPaperWidth(printerName)
-                if (detected) {
-                  return (
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
-                      📄 {detected}mm (ตรวจพบอัตโนมัติ)
-                    </div>
-                  )
-                }
-                return (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {(['58', '80'] as const).map(w => (
-                      <button key={w} onClick={() => setPaperWidth(w)} style={{
-                        flex: 1, padding: '7px 0', borderRadius: 7, cursor: 'pointer',
-                        fontSize: 12, fontWeight: paperWidth === w ? 700 : 400,
-                        border: `1px solid ${paperWidth === w ? GOLD : 'rgba(255,255,255,0.1)'}`,
-                        backgroundColor: paperWidth === w ? `${GOLD}18` : 'transparent',
-                        color: paperWidth === w ? GOLD : 'rgba(255,255,255,0.45)',
-                      }}>
-                        📄 {w}mm
-                      </button>
-                    ))}
-                  </div>
-                )
-              })()}
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['58', '80'] as const).map(w => (
+                  <button key={w} onClick={() => setPaperWidth(w)} style={{
+                    flex: 1, padding: '7px 0', borderRadius: 7, cursor: 'pointer',
+                    fontSize: 12, fontWeight: paperWidth === w ? 700 : 400,
+                    border: `1px solid ${paperWidth === w ? GOLD : 'rgba(255,255,255,0.1)'}`,
+                    backgroundColor: paperWidth === w ? `${GOLD}18` : 'transparent',
+                    color: paperWidth === w ? GOLD : 'rgba(255,255,255,0.45)',
+                  }}>📄 {w}mm</button>
+                ))}
+              </div>
             </div>
 
-            {/* Status indicator */}
-            <div style={{ marginBottom: 10 }}>
-              {(() => {
-                // Graceful degradation: if /status times out but last print succeeded
-                // recently, the server is probably running — just responding slowly.
-                const recentSuccess = (() => {
-                  if (!lastPrintInfo || lastPrintInfo.result !== 'success') return false
-                  try { return Date.now() - new Date(lastPrintInfo.time).getTime() < 5 * 60_000 } catch { return false }
-                })()
-                const color = (serverOk || printerConnected) ? GREEN
-                  : recentSuccess ? '#f59e0b'
-                  : 'rgba(255,255,255,0.35)'
-                if (browserMode) return <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.55)' }}>🖨 พิมพ์ผ่านไดร์เวอร์ Windows</div>
-                const label = serverOk === null
-                  ? '⚪ ยังไม่ได้ตรวจสอบ — กดทดสอบพิมพ์'
-                  : serverOk
-                  ? '🟢 Print Server พร้อม'
-                  : printerConnected
-                  ? `🟢 WebUSB เชื่อมต่อแล้ว${printerName ? ` — ${printerName}` : ''}`
-                  : recentSuccess
-                  ? '🟡 ตอบช้า — พิมพ์ล่าสุดสำเร็จ'
-                  : '🔴 ยังไม่เชื่อมต่อ'
-                return <div style={{ fontSize: 12, fontWeight: 600, color }}>{label}</div>
-              })()}
-            </div>
-
-            {/* Test print — always enabled */}
+            {/* Test print */}
             <button onClick={handleTestPrint} disabled={printerBusy} style={{
               width: '100%', padding: '8px 0', borderRadius: 7, marginBottom: 8,
               border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD,
@@ -1933,30 +1784,24 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
               {printerBusy ? 'กำลังพิมพ์...' : '📄 ทดสอบพิมพ์'}
             </button>
 
-            {/* Test print result */}
             {testPrintMsg && (
               <div style={{
                 marginBottom: 8, padding: '7px 10px', borderRadius: 7,
                 backgroundColor: testPrintMsg.ok ? 'rgba(76,186,127,0.1)' : 'rgba(255,107,107,0.1)',
                 border: `1px solid ${testPrintMsg.ok ? 'rgba(76,186,127,0.3)' : 'rgba(255,107,107,0.3)'}`,
-                fontSize: 12, fontWeight: 600,
-                color: testPrintMsg.ok ? GREEN : '#ff6b6b',
-                lineHeight: 1.4,
+                fontSize: 12, fontWeight: 600, color: testPrintMsg.ok ? GREEN : '#ff6b6b', lineHeight: 1.4,
               }}>
-                {testPrintMsg.ok ? '✓ ' : '✗ '}{testPrintMsg.text}
+                {testPrintMsg.ok ? '' : '✗ '}{testPrintMsg.text}
               </div>
             )}
 
-            {/* Last print attempt */}
             {lastPrintInfo && (
               <div style={{
-                marginBottom: 8, padding: '6px 10px', borderRadius: 7,
-                backgroundColor: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.07)',
-                fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5,
+                padding: '6px 10px', borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.07)', fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5,
               }}>
                 <span style={{ marginRight: 6 }}>
-                  ครั้งล่าสุด:{' '}
+                  พิมพ์ครั้งล่าสุด:{' '}
                   {(() => { try { return new Date(lastPrintInfo.time).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) } catch { return lastPrintInfo.time } })()}
                 </span>
                 <span style={{ fontWeight: 700, color: lastPrintInfo.result === 'success' ? GREEN : '#ff6b6b' }}>
@@ -1964,118 +1809,12 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
                 </span>
               </div>
             )}
-
-            {/* HTTPS warning */}
-            {isHttpsCtx && !browserMode && (
-              <div style={{
-                marginBottom: 8, padding: '8px 10px', borderRadius: 7,
-                backgroundColor: 'rgba(201,168,76,0.08)',
-                border: '1px solid rgba(201,168,76,0.25)',
-              }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: GOLD, marginBottom: 3 }}>
-                  ⚠ URL เป็น HTTPS — Print Server ต้องการ HTTP
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5, marginBottom: 5 }}>
-                  เบราว์เซอร์บล็อก HTTP request จาก HTTPS
-                </div>
-                <button
-                  onClick={() => { window.location.href = window.location.href.replace('https://', 'http://') }}
-                  style={{
-                    padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-                    border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}18`,
-                    color: GOLD, fontSize: 11, fontWeight: 700,
-                  }}
-                >🔗 เปลี่ยนไปใช้ HTTP</button>
-              </div>
-            )}
-
-            {/* WebUSB section */}
-            {browserMode ? null : webUsbSupported ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                {!printerConnected ? (
-                  <button onClick={handleConnect} disabled={printerBusy} style={{
-                    flex: 1, padding: '7px 0', borderRadius: 7,
-                    border: '1px solid rgba(255,255,255,0.12)', backgroundColor: 'transparent',
-                    color: 'rgba(255,255,255,0.45)', fontSize: 11, cursor: printerBusy ? 'wait' : 'pointer',
-                  }}>
-                    {printerBusy ? '...' : '🔌 เชื่อมต่อ WebUSB'}
-                  </button>
-                ) : (
-                  <button onClick={handleDisconnect} style={{
-                    flex: 1, padding: '7px 0', borderRadius: 7,
-                    border: '1px solid rgba(220,80,80,0.3)', backgroundColor: 'rgba(220,80,80,0.08)',
-                    color: '#e07070', fontSize: 11, cursor: 'pointer',
-                  }}>ยกเลิก WebUSB</button>
-                )}
-                <button onClick={handleDebugUsb} style={{
-                  flex: 1, padding: '7px 0', borderRadius: 7,
-                  border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent',
-                  color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: 'pointer',
-                }}>🔍 Debug USB</button>
-              </div>
-            ) : (
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
-                WebUSB ไม่รองรับ (ใช้ Chrome/Edge) — Print Server ยังใช้งานได้
-              </div>
-            )}
           </div>
 
-          {/* Receipt customization */}
-          <div>
-            <div style={sectionLabel}>ปรับแต่งใบเสร็จ</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 6 }}>
-              {browserMode ? 'ใบเสร็จพิมพ์ตามภาษาที่เลือกตอนรับเงิน (ลาว / ไทย / อังกฤษ)' : 'วิธีเก่า (IP / Print Server) พิมพ์ได้แค่ภาษาอังกฤษ'}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>ชื่อร้านบนใบเสร็จ</div>
-                <input value={shopName} onChange={e => setShopName(e.target.value)} style={popupInput} placeholder="ALAN COFFEE & TRAVEL" />
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>ข้อความท้ายใบเสร็จ</div>
-                <input value={footerText} onChange={e => setFooterText(e.target.value)} style={popupInput} placeholder="Thank you for visiting" />
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
-                  {browserMode ? 'พิมพ์ตามที่พิมพ์ไว้ (ใช้ลาว/ไทยได้) — ถ้าตั้งข้อความท้ายใบเสร็จในตั้งค่าร้านไว้ จะใช้ของตั้งค่าร้านก่อน' : 'วิธีเก่าพิมพ์ได้แค่ภาษาอังกฤษ'}
-                </div>
-                {/[^\x00-\x7F]/.test(footerText) && (
-                  <div style={{ fontSize: 10, color: '#e07070', marginTop: 3 }}>
-                    ⚠ ตัวอักษรที่ไม่ใช่ภาษาอังกฤษจะแสดงเป็น ?
-                  </div>
-                )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>เบอร์โทร</div>
-                  <input value={phone} onChange={e => setPhone(e.target.value)} style={popupInput} placeholder="020 xxx xxxx" />
-                </div>
-                <div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5 }}>ที่อยู่ / สาขา</div>
-                  <input value={address} onChange={e => setAddress(e.target.value)} style={popupInput} placeholder="Vientiane, Laos" />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {(['qr', 'vat'] as const).map(key => {
-                  const val    = key === 'qr' ? showQr : showVat
-                  const setter = key === 'qr' ? setShowQr : setShowVat
-                  const label  = key === 'qr' ? 'แสดง QR Code' : 'แสดง VAT'
-                  return (
-                    <button key={key} onClick={() => setter(!val)} style={{
-                      flex: 1, padding: '7px 0', borderRadius: 6, cursor: 'pointer', fontSize: 12,
-                      fontWeight: val ? 700 : 400,
-                      border: `1px solid ${val ? GOLD : 'rgba(255,255,255,0.1)'}`,
-                      backgroundColor: val ? `${GOLD}18` : 'transparent',
-                      color: val ? GOLD : 'rgba(255,255,255,0.4)',
-                    }}>{val ? '✓ ' : ''}{label}</button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Receipt Designer */}
+          {/* Receipt layout — this device */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={sectionLabel}>ออกแบบใบเสร็จ</div>
+              <div style={sectionLabel}>รูปแบบใบเสร็จ (เครื่องนี้)</div>
               <button onClick={() => setShowPreview(true)} style={{
                 fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
                 border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD,
@@ -2090,7 +1829,6 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
                 ['showStaff',      showStaff,      setShowStaff,      'ชื่อพนักงาน'],
                 ['showQueueLarge', showQueueLarge, setShowQueueLarge, 'เลขคิวใหญ่'],
                 ['showItemPrice',  showItemPrice,  setShowItemPrice,  'ราคาต่อชิ้น'],
-                ['showVat',        showVat,        setShowVat,        'VAT breakdown'],
               ] as [string, boolean, (v: boolean) => void, string][]).map(([key, val, setter, label]) => (
                 <button key={key} onClick={() => setter(!val)} style={{
                   padding: '7px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11,
@@ -2181,36 +1919,6 @@ function SettingsPopup({ onClose }: { onClose: () => void }) {
             )
           })()}
 
-          {/* Currency */}
-          <div>
-            <div style={sectionLabel}>สกุลเงินที่แสดง</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {['LAK', 'THB', 'USD'].map(c => (
-                <button key={c} onClick={() => setCurrency(c)} style={{
-                  flex: 1, padding: '8px 0', borderRadius: 6,
-                  border: `1px solid ${currency === c ? GOLD : 'rgba(255,255,255,0.1)'}`,
-                  backgroundColor: currency === c ? `${GOLD}18` : 'transparent',
-                  color: currency === c ? GOLD : 'rgba(255,255,255,0.4)',
-                  fontWeight: currency === c ? 700 : 400, fontSize: 13, cursor: 'pointer',
-                }}>{c}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Quick links */}
-          <div>
-            <div style={sectionLabel}>ลิงก์ด่วน</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[{ href: '/cafe', label: '⚙️ Admin' }, { href: '/queue', label: '📺 คิว TV' }, { href: '/', label: '🌐 เว็บ' }].map(l => (
-                <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" style={{
-                  flex: 1, padding: '8px 0', borderRadius: 6, textAlign: 'center',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  backgroundColor: 'rgba(255,255,255,0.04)',
-                  color: 'rgba(255,255,255,0.5)', fontSize: 12, textDecoration: 'none',
-                }}>{l.label}</a>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
@@ -2945,10 +2653,15 @@ export default function POSClient() {
       if (saved) setCart(JSON.parse(saved) as CartItem[])
     } catch { /* ignore */ }
     setMounted(true)
-    // Load shop settings for receipt
+    // Shop settings for receipts come from ตั้งค่าร้าน. The last good copy is kept on this device
+    // so a POS that starts offline (or sells before the request returns) still prints them.
+    try {
+      const cached = localStorage.getItem('pos_site_settings_cache')
+      if (cached) setPosSettings(s => ({ ...s, ...JSON.parse(cached) }))
+    } catch { /* no cache */ }
     supabase.rpc('get_site_settings').then(({ data }) => {
       if (data) {
-        setPosSettings({
+        const next = {
           shop_name:         (data.shop_name as string)         || '',
           vat_percent:       parseFloat((data.vat_percent as string) || '0') || 0,
           qr_payment_number: (data.qr_payment_number as string) || '',
@@ -2957,7 +2670,9 @@ export default function POSClient() {
           shop_address:      (data.shop_address as string)      || '',
           shop_phone:        (data.shop_phone as string)        || '',
           receipt_footer:    (data.receipt_footer as string)    || '',
-        })
+        }
+        setPosSettings(next)
+        try { localStorage.setItem('pos_site_settings_cache', JSON.stringify(next)) } catch { /* ignore */ }
       }
     })
   }, [])
@@ -3176,13 +2891,11 @@ export default function POSClient() {
     setShowCharge(false)
     loadTodayOrders()
 
-    // Receipt fields: the owner's receipt settings (site_settings) first, then this
-    // device's POS settings panel, then defaults.
-    const lsGet = (k: string) => { try { return localStorage.getItem(k) || '' } catch { return '' } }
-    const shopName   = posSettings.shop_name || lsGet('receipt_shop_name') || 'ALAN COFFEE & TRAVEL'
-    const footerText = posSettings.receipt_footer || lsGet('receipt_footer_text') || 'Thank you for visiting'
-    const phone      = posSettings.shop_phone || lsGet('receipt_phone')
-    const address    = posSettings.shop_address || lsGet('receipt_address')
+    // Receipt fields come from ตั้งค่าร้าน (site_settings) only, then defaults.
+    const shopName   = posSettings.shop_name || 'ALAN COFFEE & TRAVEL'
+    const footerText = posSettings.receipt_footer || 'Thank you for visiting'
+    const phone      = posSettings.shop_phone
+    const address    = posSettings.shop_address
     const printData = {
       shopName, queue: queueNum, receipt, table, customer,
       cartSnapshot, subtotal, discountAmt: discAmt,
@@ -3201,7 +2914,9 @@ export default function POSClient() {
     saveForReprint(printData)
     printFnRef.current = () => thermalPrint(printData)
     setShowOrderSuccess(true)
-    if (lsGet('pos_auto_print') === 'false') { setPrintStatus('off'); return }
+    let autoPrintOff = false
+    try { autoPrintOff = localStorage.getItem('pos_auto_print') === 'false' } catch { /* storage blocked: print */ }
+    if (autoPrintOff) { setPrintStatus('off'); return }
     runPrint()
   }
 
@@ -3435,7 +3150,10 @@ export default function POSClient() {
           onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
       )}
 
-      {showSettings && <SettingsPopup onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsPopup onClose={() => setShowSettings(false)} shop={{
+        shopName: posSettings.shop_name, footerText: posSettings.receipt_footer,
+        phone: posSettings.shop_phone, address: posSettings.shop_address,
+      }} />}
       {showCustomerSelector && (
         <CustomerSelector
           shopId={shopId}
@@ -3595,9 +3313,6 @@ export default function POSClient() {
 
       {/* ── TEST MODE BANNER */}
       {testMode && <TestModeBanner onDisable={disableTestMode} />}
-
-      {/* ── HTTPS WARNING BANNER (print server blocked by mixed-content) */}
-      <HttpBanner />
 
       {/* ── PRINT LANGUAGE FALLBACK TOAST */}
       {printFallbackLang && (

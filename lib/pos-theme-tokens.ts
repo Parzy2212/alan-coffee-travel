@@ -104,7 +104,7 @@ export const SUCCESS = '#4cba7f' // consistent everywhere already
 export const DANGER        = '#ff6b6b' // canonical — used in 22 files / 46 occurrences (POSClient, components/shop/*, HealthCheck, Owner, import, templates)
 export const DANGER_LEGACY = '#ff4d4d' // minority value — used in components/cafe/shared.tsx, CafeClient, StaffClient, StockTab, shop/audit-log, shop/team (7 files / 13 occurrences)
 
-export const WARNING        = '#f59e0b' // canonical — standard amber, used in POSClient, HealthCheck, Owner, HttpBanner, TestModeBanner
+export const WARNING        = '#f59e0b' // canonical — standard amber, used in POSClient, HealthCheck, Owner, TestModeBanner
 export const WARNING_LEGACY = '#ff9933' // minority value — used in components/cafe/shared.tsx, CafeClient, StaffClient, StockTab
 
 // Intentional exception to the black-gold palette — NOT a stray/off-brand
