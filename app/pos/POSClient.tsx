@@ -189,6 +189,8 @@ function sweetnessFromDefault(ds: string | null): string {
   return 'หวานปกติ'
 }
 
+const NETWORK_TIMEOUT_MS = 10000
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // offline bills get 901, 902 ... per day; the server keeps the number if it is still free
@@ -1154,7 +1156,11 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   async function confirm() {
     if (busy.current) return
     busy.current = true
-    try { await submitCheckout() } finally { busy.current = false }
+    try {
+      await submitCheckout()
+    } catch {
+      setErrMsg('เกิดข้อผิดพลาด ยังไม่ได้บันทึกบิล ลองใหม่อีกครั้ง'); setLoading(false)
+    } finally { busy.current = false }
   }
 
   async function submitCheckout() {
@@ -1185,8 +1191,8 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
       p_expected_total:  subtotal - sentDiscount,
     }
 
-    // ── Offline path: save locally, send when back online ──────────────────────
-    if (!navigator.onLine) {
+    // ── Offline: save locally, send when back online ───────────────────────────
+    async function saveOffline() {
       const offlineQueue = nextOfflineQueueNumber()
       try {
         await enqueueOrder({ fn: 'checkout_order', args: { ...args, p_created_at: new Date().toISOString(), p_queue_number: offlineQueue } }, clientUuid.current)
@@ -1196,18 +1202,24 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
       window.dispatchEvent(new Event('alan:queue-changed'))
       onSuccess(offlineQueue, String(offlineQueue).padStart(3, '0'), Math.max(changeAmt, 0), method, customerName, table, sentDiscount, method === 'cash' ? receivedNum : 0, discountReason, receiptLang)
       setLoading(false)
-      return
     }
+
+    // navigator.onLine stays true when WiFi is up without internet, or when a virtual adapter
+    // (Hyper-V, WSL, VPN) is up, so a network failure or a timeout below also saves offline.
+    // The same client_uuid makes the later replay return the bill if the server did get it.
+    if (!navigator.onLine) { await saveOffline(); return }
 
     if (!customerId && customer.trim() && phone.trim()) {
       const { data: custData } = await supabase.rpc('upsert_customer', {
         p_phone: phone.trim(),
         p_name:  customer.trim(),
-      })
+      }).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
       if (custData?.id) { customerId = custData.id as string; args.p_customer_id = customerId }
     }
 
-    const { data, error } = await supabase.rpc('checkout_order', args)
+    const { data, error, status } = await supabase.rpc('checkout_order', args).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
+    // status 0 = no reply (network down or timed out); 502-504 = gateway down. Not a rejected checkout.
+    if (error && (status === 0 || status === 502 || status === 503 || status === 504)) { await saveOffline(); return }
     if (error) { setErrMsg(translateError(error.message)); setLoading(false); return }
 
     const result = data as { queue_number: number; change_lak: number | null; discount_lak: number }
@@ -2960,16 +2972,21 @@ export default function POSClient() {
   // Replay offline queue when back online or SW triggers it
   useEffect(() => {
     if (!online || !shopId) return
+    let running = false
     const replay = () => {
+      if (running) return
+      running = true
       replayQueue(async (payload, order) => {
-        const { error } = await supabase.rpc('checkout_order', offlineCheckoutArgs(payload, order, shopId))
+        const { error } = await supabase.rpc('checkout_order', offlineCheckoutArgs(payload, order, shopId)).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
         if (!error) { window.dispatchEvent(new Event('alan:queue-changed')); return true }
         return false
-      }).catch(() => {})
+      }).catch(() => {}).finally(() => { running = false })
     }
     replay()
+    // the browser may never fire an "online" event (see saveOffline), so also retry on a timer
+    const timer = setInterval(replay, 15000)
     window.addEventListener('alan:replay-offline-queue', replay)
-    return () => window.removeEventListener('alan:replay-offline-queue', replay)
+    return () => { clearInterval(timer); window.removeEventListener('alan:replay-offline-queue', replay) }
   }, [online, shopId])
 
   // Fetch categories

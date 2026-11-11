@@ -31,7 +31,8 @@ export async function enqueueOrder(payload: Record<string, unknown>, id: string 
   const db  = await openDB()
   const row: OfflineOrder = { id, payload, createdAt: Date.now(), attempts: 0, lastAttempt: null }
   await new Promise<void>((res, rej) => {
-    const req = tx(db, 'readwrite').add(row)
+    // put, not add: saving the same checkout again (same id) must not fail
+    const req = tx(db, 'readwrite').put(row)
     req.onsuccess = () => res()
     req.onerror   = () => rej(req.error)
   })
