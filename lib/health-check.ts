@@ -24,14 +24,12 @@ export async function runHealthCheck(): Promise<HealthReport> {
     recipesRes,
     inventoryRes,
     employeesRes,
-    loyaltyRes,
     settingsRes,
     recipesMissingPriceRes,
   ] = await Promise.all([
     supabase.from('recipes').select('id, price_lak, requires_customization', { count: 'exact' }).eq('is_active', true),
     supabase.from('inventory').select('id, current_qty', { count: 'exact' }).eq('is_active', true),
     supabase.from('employees').select('id', { count: 'exact' }),
-    supabase.from('loyalty_settings').select('enabled').maybeSingle(),
     supabase.rpc('get_site_settings'),
     supabase.from('recipes').select('id').eq('is_active', true).eq('price_lak', 0),
   ])
@@ -39,7 +37,6 @@ export async function runHealthCheck(): Promise<HealthReport> {
   const recipeCount     = recipesRes.count ?? 0
   const inventoryCount  = inventoryRes.count ?? 0
   const employeeCount   = employeesRes.count ?? 0
-  const loyaltyEnabled  = loyaltyRes.data?.enabled ?? false
   const settings        = (settingsRes.data ?? {}) as Record<string, string>
   const missingPriceCount = (recipesMissingPriceRes.data ?? []).length
 
@@ -48,10 +45,10 @@ export async function runHealthCheck(): Promise<HealthReport> {
   const employeesWithPin = employeeCount
 
   // POS localStorage checks (only works client-side — called from client component)
-  let printerName = ''
+  let lastPrint: { time?: string; result?: string } | null = null
   let testModeOn  = false
   if (typeof window !== 'undefined') {
-    printerName = localStorage.getItem('alan_printer_name') ?? ''
+    try { lastPrint = JSON.parse(localStorage.getItem('pos_last_print_info') || 'null') } catch { /* corrupt: treat as never printed */ }
     testModeOn  = localStorage.getItem('pos_test_mode') === 'true'
   }
 
@@ -66,21 +63,21 @@ export async function runHealthCheck(): Promise<HealthReport> {
       label: 'ชื่อร้านค้า',
       detail: shopName ? `"${shopName}"` : 'ยังไม่ได้ตั้งชื่อร้าน',
       status: shopName ? 'ok' : 'error',
-      href: '/shop/settings', actionLabel: 'ตั้งค่า',
+      href: '/cafe?tab=settings', actionLabel: 'ตั้งค่า',
     },
     {
       id: 'shop_address', section: 'ข้อมูลร้าน',
       label: 'ที่อยู่ร้าน',
       detail: shopAddr ? shopAddr.slice(0, 40) : 'ยังไม่ได้ใส่ที่อยู่',
       status: shopAddr ? 'ok' : 'warn',
-      href: '/shop/settings', actionLabel: 'ตั้งค่า',
+      href: '/cafe?tab=settings', actionLabel: 'ตั้งค่า',
     },
     {
       id: 'menu_count', section: 'เมนู',
       label: 'จำนวนเมนู',
       detail: recipeCount >= 5 ? `มี ${recipeCount} รายการ` : recipeCount === 0 ? 'ยังไม่มีเมนู — ใช้ Template เพิ่มได้เร็ว!' : `มี ${recipeCount} รายการ (แนะนำ 5+)`,
       status: recipeCount >= 5 ? 'ok' : recipeCount === 0 ? 'error' : 'warn',
-      href: recipeCount === 0 ? '/cafe/templates' : '/cafe',
+      href: recipeCount === 0 ? '/cafe/templates' : '/cafe?tab=menu',
       actionLabel: recipeCount === 0 ? 'ใช้ Template' : 'จัดการเมนู',
     },
     {
@@ -88,14 +85,14 @@ export async function runHealthCheck(): Promise<HealthReport> {
       label: 'ทุกเมนูมีราคา',
       detail: missingPriceCount === 0 ? 'ครบทุกรายการ' : `${missingPriceCount} รายการยังไม่มีราคา`,
       status: missingPriceCount === 0 ? 'ok' : 'error',
-      href: '/cafe', actionLabel: 'แก้ไข',
+      href: '/cafe?tab=menu', actionLabel: 'แก้ไข',
     },
     {
       id: 'inventory', section: 'สต็อกวัตถุดิบ',
       label: 'สต็อกวัตถุดิบ',
       detail: inventoryCount >= 1 ? `มี ${inventoryCount} รายการ` : 'ยังไม่มีสต็อก',
       status: inventoryCount >= 1 ? 'ok' : 'warn',
-      href: '/cafe', actionLabel: 'เพิ่มสต็อก',
+      href: '/cafe?tab=stock', actionLabel: 'เพิ่มสต็อก',
     },
 
     // ── STAFF ──────────────────────────────────────────────────────────────────
@@ -116,18 +113,13 @@ export async function runHealthCheck(): Promise<HealthReport> {
 
     // ── POS ────────────────────────────────────────────────────────────────────
     {
-      id: 'printer_name', section: 'เครื่องพิมพ์',
-      label: 'ชื่อเครื่องพิมพ์',
-      detail: printerName ? `"${printerName}"` : 'ยังไม่ได้ตั้งค่า',
-      status: printerName ? 'ok' : 'warn',
-      href: '/shop/settings/printer', actionLabel: 'ตั้งค่า',
-    },
-    {
-      id: 'print_server', section: 'เครื่องพิมพ์',
-      label: 'Print Server',
-      detail: 'ตรวจสอบในหน้า POS ว่าสัญญาณเขียว',
-      status: 'warn',
-      href: '/pos', actionLabel: 'ไป POS',
+      id: 'printer', section: 'เครื่องพิมพ์',
+      label: 'พิมพ์ใบเสร็จได้ (เครื่องนี้)',
+      detail: lastPrint?.result === 'success' && lastPrint.time
+        ? `พิมพ์ล่าสุด ${new Date(lastPrint.time).toLocaleString('th-TH')}`
+        : 'ยังไม่เคยพิมพ์จากเครื่องนี้ — ขายบิลทดสอบ 1 ใบที่หน้าขาย',
+      status: lastPrint?.result === 'success' ? 'ok' : 'warn',
+      href: '/pos', actionLabel: 'ไปหน้าขาย',
     },
 
     // ── PAYMENTS ───────────────────────────────────────────────────────────────
@@ -137,14 +129,6 @@ export async function runHealthCheck(): Promise<HealthReport> {
       detail: hasTax ? 'ตั้งค่าแล้ว' : 'ยังไม่ได้ตั้ง (0% = ไม่มี VAT)',
       status: 'ok', // not mandatory — 0% is valid
     },
-    {
-      id: 'loyalty', section: 'ลูกค้า',
-      label: 'ระบบสะสมแต้ม',
-      detail: loyaltyEnabled ? 'เปิดใช้งาน' : 'ปิดอยู่',
-      status: loyaltyEnabled ? 'ok' : 'warn',
-      href: '/shop/settings/loyalty', actionLabel: 'ตั้งค่า',
-    },
-
     // ── SYSTEM ─────────────────────────────────────────────────────────────────
     {
       id: 'test_mode', section: 'ระบบ',

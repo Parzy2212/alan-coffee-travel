@@ -22,6 +22,8 @@ import { GettingStartedChecklist } from '@/components/cafe/GettingStartedCheckli
 import { QuickActionsFAB }         from '@/components/cafe/QuickActionsFAB'
 import { TodayStatsBar }           from '@/components/TodayStatsBar'
 import { useSoloMode }             from '@/lib/solo-mode'
+import { AppNav }                  from '@/components/AppNav'
+import { CAFE_TABS, cafeTabLabel }  from '@/lib/app-nav'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -204,6 +206,8 @@ const DEFAULT_SETTINGS: FullSettings = {
 
 // This page runs as the anon role, so secrets must never be loaded into or saved from the browser.
 const SECRET_SETTING_KEYS: readonly string[] = ['telegram_bot_token', 'low_stock_alert_line_token', 'daily_report_line_token']
+const HIDDEN_UNTIL_FIXED: boolean = false
+
 const SAVABLE_SETTING_KEYS = (Object.keys(DEFAULT_SETTINGS) as (keyof FullSettings)[])
   .filter(k => !SECRET_SETTING_KEYS.includes(k))
 const isSavableKey = (k: string): k is keyof FullSettings => (SAVABLE_SETTING_KEYS as string[]).includes(k)
@@ -2286,6 +2290,8 @@ function SettingsTab() {
         </div>
       </SettingSection>
 
+      {/* LINE (service closed), Telegram (token unreadable) and AI toggle (no effect) are hidden until fixed */}
+      {HIDDEN_UNTIL_FIXED && (<>
       {/* ── 4. แจ้งเตือน ── */}
       <SettingSection icon="🔔" title="ตั้งค่าแจ้งเตือน (Line)">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2404,6 +2410,7 @@ function SettingsTab() {
           </div>
         )}
       </SettingSection>
+      </>)}
 
       {/* ── 6. วิธีชำระเงิน ── */}
       <SettingSection icon="📍" title="ตำแหน่งร้าน (สำหรับตรวจสอบ GPS พนักงาน)">
@@ -3905,41 +3912,7 @@ function AuditTab() {
 
 // ─── Nav + Main Layout ─────────────────────────────────────────────────────────
 
-type NavGroup = { label: string; items: { id: Tab; label: string; icon: string }[] }
-
-const NAV_GROUPS: NavGroup[] = [
-  { label: 'ภาพรวม', items: [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-  ]},
-  { label: 'เมนูและสูตร', items: [
-    { id: 'menu',        label: 'เมนู',        icon: '🍽️' },
-    { id: 'categories',  label: 'หมวดหมู่',    icon: '🗂️' },
-    { id: 'recipe-cost', label: 'ต้นทุนสูตร',  icon: '🧮' },
-  ]},
-  { label: 'คลังสินค้า', items: [
-    { id: 'stock',    label: 'สต็อก',  icon: '📦' },
-    { id: 'purchase', label: 'การซื้อ', icon: '🧾' },
-  ]},
-  { label: 'ทีมงาน', items: [
-    { id: 'staff',    label: 'พนักงาน',  icon: '👥' },
-    { id: 'schedule', label: 'ตารางงาน', icon: '📅' },
-  ]},
-  { label: 'ลูกค้าและการเงิน', items: [
-    { id: 'customers', label: 'ลูกค้า',         icon: '🧑‍🤝‍🧑' },
-    { id: 'finance',   label: 'การเงิน',         icon: '💰' },
-    { id: 'audit',     label: 'บันทึกระบบ',      icon: '📋' },
-  ]},
-  { label: 'ระบบ', items: [
-    { id: 'settings', label: 'ตั้งค่า',    icon: '⚙️' },
-    { id: 'ai',       label: 'AI Analyst', icon: '✨' },
-  ]},
-]
-
-// Flat list for lookup
-const NAV_ITEMS = NAV_GROUPS.flatMap(g => g.items)
-
-// IDs hidden from sidebar in solo mode
-const SOLO_HIDDEN: Tab[] = ['staff', 'schedule']
+// Sidebar = the shared app menu (lib/app-nav.ts). Tabs not in it are hidden until fixed.
 
 export default function CafeClient() {
   const [tab,     setTab]     = useState<Tab>('dashboard')
@@ -3949,52 +3922,32 @@ export default function CafeClient() {
   function switchTab(t: Tab) {
     setTab(t)
     setVisited(prev => { const next = new Set(prev); next.add(t); return next })
+    try { window.history.replaceState(null, '', t === 'dashboard' ? '/cafe' : `/cafe?tab=${t}`) } catch { /* ignore */ }
   }
+
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t && t !== 'dashboard' && CAFE_TABS.includes(t)) switchTab(t as Tab)
+    else if (t) window.history.replaceState(null, '', '/cafe')
+  }, [])
 
   function tabWrap(id: Tab, node: React.ReactNode) {
     if (!visited.has(id)) return null
     return <div style={{ display: tab === id ? undefined : 'none' }}>{node}</div>
   }
 
-  // Filter nav groups: hide solo-only tabs when solo mode is on
-  const visibleGroups = NAV_GROUPS
-    .map(g => ({
-      ...g,
-      items: solo ? g.items.filter(item => !SOLO_HIDDEN.includes(item.id)) : g.items,
-    }))
-    .filter(g => g.items.length > 0)
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: BLACK, color: '#fff', fontFamily: 'var(--font-body, Inter, sans-serif)' }}>
       {/* ── Sidebar ── */}
-      <div style={{ width: 220, flexShrink: 0, backgroundColor: DARK, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', padding: '32px 0' }}>
+      <div style={{ width: 220, flexShrink: 0, backgroundColor: DARK, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', padding: '32px 0', position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start' }}>
         <div style={{ padding: '0 24px 32px' }}>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: 22, color: '#fff', letterSpacing: '-0.5px' }}>ALAN</div>
           <div style={{ fontSize: 11, color: GOLD, letterSpacing: '4px', textTransform: 'uppercase' }}>CAFE OS</div>
         </div>
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 0, padding: '0 12px', overflowY: 'auto' }}>
-          {visibleGroups.map((group, gi) => (
-            <div key={gi}>
-              {gi > 0 && <div style={{ height: 1, backgroundColor: `${GOLD}20`, margin: '6px 2px 4px' }} />}
-              <div style={{ fontSize: 9, color: `${GOLD}66`, textTransform: 'uppercase', letterSpacing: '1.5px', padding: '6px 14px 2px', fontWeight: 600, userSelect: 'none' }}>
-                {group.label}
-              </div>
-              {group.items.map(item => (
-                <button key={item.id} onClick={() => switchTab(item.id)} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '9px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                  backgroundColor: tab === item.id ? `${GOLD}18` : 'transparent',
-                  color: tab === item.id ? GOLD : 'rgba(255,255,255,0.42)',
-                  fontSize: 13, fontWeight: tab === item.id ? 600 : 400,
-                  textAlign: 'left', transition: 'all .15s', width: '100%',
-                }}>
-                  <span style={{ fontSize: 15 }}>{item.icon}</span>
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
+          <AppNav currentTab={tab} onCafeTab={t => switchTab(t as Tab)} />
+        </div>
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
           {/* Solo mode hint */}
           {solo && (
@@ -4017,12 +3970,6 @@ export default function CafeClient() {
               </div>
             </div>
           )}
-          <div style={{ padding: '12px 24px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <a href="/pos"   style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ POS</a>
-            <a href="/queue" style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ จอ TV</a>
-            <a href="/owner" style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ Mobile Dashboard</a>
-            <a href="/"      style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', textDecoration: 'none' }}>→ หน้าหลัก</a>
-          </div>
           <div style={{ borderTop: '1px solid rgba(201,168,76,0.1)' }}>
             <AvatarDropdown solo={solo} />
           </div>
@@ -4034,7 +3981,7 @@ export default function CafeClient() {
         <TodayStatsBar />
         <div style={{ padding: '40px 40px', flex: 1 }}>
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{NAV_ITEMS.find(n => n.id === tab)?.label}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{cafeTabLabel(tab)}</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', marginTop: 6 }}>Alan Cafe OS — Admin</div>
         </div>
         {tabWrap('dashboard',   <DashboardTab />)}

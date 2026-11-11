@@ -101,8 +101,8 @@ function QuickActions() {
   const actions = [
     { label: 'Open POS',      href: '/pos',       icon: '🛒', primary: true },
     { label: "Today's Report", href: '/cafe',      icon: '📊', primary: false },
-    { label: 'Stock Check',   href: '/cafe',       icon: '📦', primary: false },
-    { label: 'Customers',     href: '/cafe',       icon: '👥', primary: false },
+    { label: 'Stock Check',   href: '/cafe?tab=stock', icon: '📦', primary: false },
+    { label: 'Menu',          href: '/cafe?tab=menu',  icon: '🍽️', primary: false },
   ]
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>

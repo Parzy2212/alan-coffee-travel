@@ -20,7 +20,7 @@ const PERSONAL_ITEMS: MenuItem[] = [
 ]
 
 const SHOP_ITEMS: MenuItem[] = [
-  { label: 'ตั้งค่าร้าน', href: '/shop/settings', icon: '⚙️' },
+  { label: 'ตั้งค่าร้าน', href: '/cafe?tab=settings', icon: '⚙️' },
   { label: 'ทีมงาน', href: '/shop/team', icon: '👥' },
 ]
 

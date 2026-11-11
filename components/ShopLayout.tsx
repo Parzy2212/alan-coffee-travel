@@ -1,24 +1,13 @@
 'use client'
 
-import { useEffect, type ReactNode } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { getInitials } from '@/lib/avatar'
+import { AppNav } from '@/components/AppNav'
 
 const GOLD = '#c9a84c'
 
-const NAV_ITEMS: { href: string; label: string; icon: string; soon?: boolean; dividerBefore?: boolean; groupLabel?: string }[] = [
-  { href: '/shop/settings',          label: 'ทั่วไป',        icon: '⚙️',  groupLabel: 'ร้าน' },
-  { href: '/shop/settings/currency', label: 'สกุลเงิน',      icon: '💱'  },
-  { href: '/shop/settings/payment',  label: 'วิธีชำระเงิน',  icon: '💳',  groupLabel: 'การรับเงิน' },
-  { href: '/shop/settings/loyalty',  label: 'แต้มสะสม',      icon: '🎁'  },
-  { href: '/shop/settings/receipt',  label: 'ใบเสร็จ',       icon: '🧾',  groupLabel: 'อุปกรณ์' },
-  { href: '/shop/settings/printer',  label: 'เครื่องพิมพ์',  icon: '🖨️'  },
-  { href: '/shop/team',              label: 'ทีมงาน',        icon: '👥',  dividerBefore: true },
-  { href: '/shop/team/employees',    label: 'พนักงาน POS',   icon: '🏷️'  },
-  { href: '/shop/audit-log',         label: 'บันทึกระบบ',    icon: '📋',  dividerBefore: true },
-  { href: '/shop/billing',           label: 'ค่าบริการ',     icon: '💰',  dividerBefore: true, soon: true },
-]
 
 const STYLES = `
   .shop-root {
@@ -38,34 +27,9 @@ const STYLES = `
     width: 220px; flex-shrink: 0;
     border-right: 1px solid rgba(255,255,255,0.06);
     padding: 20px 0; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent;
   }
-  .shop-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
-  .shop-nav-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 6px 2px; }
-  .shop-nav-group-label {
-    font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px;
-    color: rgba(201,168,76,0.55); text-transform: uppercase;
-    padding: 14px 14px 4px;
-  }
-  .shop-nav > div:first-child .shop-nav-group-label { padding-top: 2px; }
-  .shop-nav-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px; border-radius: 8px;
-    text-decoration: none; color: rgba(255,255,255,0.4);
-    font-size: 14px; font-weight: 400;
-    border-left: 3px solid transparent;
-    transition: color 0.15s, background-color 0.15s;
-    width: 100%; box-sizing: border-box; cursor: pointer;
-  }
-  .shop-nav-item:not(.soon):hover {
-    color: rgba(255,255,255,0.7);
-    background-color: rgba(255,255,255,0.03);
-  }
-  .shop-nav-item.active {
-    color: ${GOLD}; font-weight: 600;
-    border-left-color: ${GOLD};
-    background-color: rgba(201,168,76,0.06);
-  }
-  .shop-nav-item.soon { opacity: 0.45; cursor: default; pointer-events: none; }
+  .shop-menu-btn { display: none; }
   .shop-content { flex: 1; overflow-y: auto; padding: 40px 48px; }
   .shop-inner { max-width: 680px; width: 100%; }
 
@@ -73,27 +37,12 @@ const STYLES = `
     .shop-root { height: auto; overflow: visible; }
     .shop-topbar { padding: 0 16px; }
     .shop-body { flex-direction: column; min-height: auto; }
-    .shop-sidebar {
-      width: 100%; height: auto; overflow-x: auto; overflow-y: hidden;
-      border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06);
-      padding: 4px 0 0;
-    }
-    .shop-nav {
-      flex-direction: row; gap: 0; padding: 0 12px;
-      -webkit-overflow-scrolling: touch; scrollbar-width: none;
-    }
-    .shop-nav::-webkit-scrollbar { display: none; }
-    .shop-nav-divider { display: none; }
-    .shop-nav-group-label { display: none; }
-    .shop-nav-item {
-      border-left: none !important; border-bottom: 2px solid transparent;
-      border-radius: 0; padding: 10px 12px;
-      white-space: nowrap; background: none !important;
-    }
-    .shop-nav-item.active {
-      border-left-color: transparent !important;
-      border-bottom-color: ${GOLD} !important;
-      background-color: transparent !important;
+    .shop-sidebar { display: none; width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 8px 0 12px; }
+    .shop-sidebar.open { display: block; }
+    .shop-menu-btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.12); background: transparent; color: rgba(255,255,255,0.7);
+      font-size: 13px; font-family: inherit; cursor: pointer;
     }
     .shop-content { padding: 24px 16px; overflow-y: visible; }
   }
@@ -102,7 +51,7 @@ const STYLES = `
 export function ShopLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const pathname = usePathname()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login')
@@ -135,6 +84,9 @@ export function ShopLayout({ children }: { children: ReactNode }) {
         >
           &larr; แดชบอร์ด
         </a>
+        <button type="button" className="shop-menu-btn" aria-expanded={menuOpen} aria-controls="shop-sidebar" onClick={() => setMenuOpen(o => !o)}>
+          ☰ เมนู
+        </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {email}
@@ -152,31 +104,8 @@ export function ShopLayout({ children }: { children: ReactNode }) {
 
       {/* Body */}
       <div className="shop-body">
-        <div className="shop-sidebar">
-          <nav className="shop-nav">
-            {NAV_ITEMS.map(item => (
-              <div key={item.href}>
-                {item.dividerBefore && <div className="shop-nav-divider" />}
-                {item.groupLabel && <div className="shop-nav-group-label">{item.groupLabel}</div>}
-                <a
-                  href={item.soon ? undefined : item.href}
-                  className={[
-                    'shop-nav-item',
-                    pathname === item.href ? 'active' : '',
-                    item.soon ? 'soon' : '',
-                  ].filter(Boolean).join(' ')}
-                >
-                  <span style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-                  <span style={{ flex: 1 }}>{item.label}</span>
-                  {item.soon && (
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', padding: '2px 6px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 4 }}>
-                      เร็วๆ นี้
-                    </span>
-                  )}
-                </a>
-              </div>
-            ))}
-          </nav>
+        <div id="shop-sidebar" className={menuOpen ? 'shop-sidebar open' : 'shop-sidebar'}>
+          <AppNav />
         </div>
 
         <div className="shop-content">

@@ -33,7 +33,8 @@ export function GettingStartedChecklist() {
     if (localStorage.getItem(LS_HIDDEN))    { setHidden(true);    return }
     if (localStorage.getItem(LS_COLLAPSED)) { setCollapsed(true) }
 
-    const printer = !!localStorage.getItem('alan_printer_name')
+    let printer = false
+    try { printer = JSON.parse(localStorage.getItem('pos_last_print_info') || 'null')?.result === 'success' } catch { /* corrupt: not done */ }
 
     Promise.all([
       supabase.from('recipes').select('id', { count: 'exact', head: true }),
@@ -185,11 +186,11 @@ export function GettingStartedChecklist() {
 
 function buildTasks(c: Counts) {
   return [
-    { label: 'ตั้งค่าร้านค้า',                 done: true,                  href: '/shop/settings',          star: false },
+    { label: 'ตั้งค่าร้านค้า',                 done: true,                  href: '/cafe?tab=settings',      star: false },
     { label: 'เพิ่มเมนูเริ่มต้น (หรือใช้ Template)', done: c.recipeCount >= 1, href: '/cafe/templates',        star: false },
-    { label: 'ตั้งค่าเครื่องพิมพ์',            done: c.printerSet,           href: '/shop/settings/printer',  star: false },
+    { label: 'พิมพ์ใบเสร็จได้ (เครื่องนี้)',     done: c.printerSet,           href: '/pos',                    star: false },
     { label: 'เพิ่มเมนูครบ 10 รายการ',         done: c.recipeCount >= 10,   href: '/cafe/import',            star: false },
-    { label: 'เพิ่มสต็อกวัตถุดิบ',             done: c.inventoryCount >= 1, href: '/cafe',                   star: false },
+    { label: 'เพิ่มสต็อกวัตถุดิบ',             done: c.inventoryCount >= 1, href: '/cafe?tab=stock',         star: false },
     { label: 'เพิ่มพนักงาน POS',               done: c.employeeCount >= 1,  href: '/shop/team/employees',    star: false },
     { label: 'ตรวจสอบความพร้อมก่อนเปิดร้าน',   done: c.orderCount >= 1,     href: '/cafe/health-check',      star: true  },
     { label: 'ทดสอบออเดอร์แรก (Test Mode)',    done: c.orderCount >= 1,     href: '/pos',                    star: false },

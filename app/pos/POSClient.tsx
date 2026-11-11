@@ -22,6 +22,7 @@ import { getPinnedRecipes, togglePinnedRecipe } from '@/lib/user-preferences'
 import { useActiveEmployee } from '@/lib/use-active-employee'
 import { useLang, type Lang } from '@/contexts/LanguageContext'
 import { LanguageSwitcher } from '@/components/pos/LanguageSwitcher'
+import { AppNav } from '@/components/AppNav'
 import { getMenuName } from '@/lib/menu-i18n'
 import { formatSecondary } from '@/lib/currency'
 import {
@@ -1362,7 +1363,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                 <div style={{ padding: '28px 16px', textAlign: 'center', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.lg, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                   <div style={{ fontSize: 40 }}>🏦</div>
                   <div style={{ fontSize: 13, color: TEXT_2 }}>กรุณาเพิ่มธนาคารในตั้งค่า</div>
-                  <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปหน้าตั้งค่า →</a>
+                  <a href="/cafe?tab=settings" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปหน้าตั้งค่า →</a>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1508,7 +1509,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                   <div style={{ padding: '24px 16px', textAlign: 'center', border: `1px dashed ${BORDER_DEFAULT}`, borderRadius: RADIUS.lg, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                     <div style={{ fontSize: 36 }}>📱</div>
                     <div style={{ fontSize: 13, color: TEXT_2 }}>ยังไม่ได้ตั้งค่า QR Payment</div>
-                    <a href="/cafe" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปตั้งค่า →</a>
+                    <a href="/cafe?tab=settings" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontSize: 12, textDecoration: 'none', fontWeight: 600, marginTop: 4 }}>⚙️ ไปตั้งค่า →</a>
                   </div>
                 )}
               </div>
@@ -2813,6 +2814,15 @@ function PosClockDisplay() {
 
 export default function POSClient() {
   const { employee: activeEmployee, ready: employeeReady, clockIn, clockOut } = useActiveEmployee()
+  const [showAppMenu, setShowAppMenu] = useState(false)
+  const canOpenAppMenu = activeEmployee?.role === 'manager' || activeEmployee?.role === 'owner'
+  const appMenuBtnRef = useRef<HTMLButtonElement>(null)
+  const appMenuCloseRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { if (!canOpenAppMenu) setShowAppMenu(false) }, [canOpenAppMenu])
+  useEffect(() => {
+    if (showAppMenu) appMenuCloseRef.current?.focus()
+  }, [showAppMenu])
+  function closeAppMenu() { setShowAppMenu(false); appMenuBtnRef.current?.focus() }
   const [shopId,       setShopId]       = useState<string | null>(null)
   const [mounted,      setMounted]      = useState(false)
   const [recipes,      setRecipes]      = useState<Recipe[]>([])
@@ -3239,6 +3249,7 @@ export default function POSClient() {
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     function handler(e: KeyboardEvent) {
+      if (showAppMenu) { if (e.key === 'Escape') setShowAppMenu(false); return }
       const tag = (e.target as HTMLElement).tagName
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 
@@ -3314,7 +3325,7 @@ export default function POSClient() {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showOrderSuccess, showCustomerSelector, displayRecipes])
+  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showOrderSuccess, showCustomerSelector, displayRecipes, showAppMenu])
 
   const cartPayload = cart.map(item => ({
     recipe_id:      item.recipe.id,
@@ -3395,6 +3406,20 @@ export default function POSClient() {
       />
       {showShiftClose && <ShiftClosePopup todayTotal={todayTotal} todayCount={todayCount} onClose={() => setShowShiftClose(false)} />}
       {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
+      {showAppMenu && canOpenAppMenu && (
+        <div onClick={closeAppMenu} style={{ position: 'fixed', inset: 0, zIndex: 400, backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div role="dialog" aria-modal="true" aria-label="เมนูหลัก" onClick={e => e.stopPropagation()} style={{
+            position: 'absolute', top: 0, bottom: 0, left: 0, width: 260, maxWidth: '85vw',
+            backgroundColor: '#111', borderRight: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto', padding: '16px 0 24px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 12px' }}>
+              <span style={{ fontWeight: 800, fontSize: 15, color: '#fff' }}>ALAN <span style={{ color: GOLD, fontSize: 11, letterSpacing: '2.5px' }}>CAFE OS</span></span>
+              <button ref={appMenuCloseRef} onClick={closeAppMenu} aria-label="ปิดเมนู" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', fontSize: 20, cursor: 'pointer' }}>×</button>
+            </div>
+            <AppNav />
+          </div>
+        </div>
+      )}
 
       {/* ── Order success celebration ── */}
       {showOrderSuccess && successData && (
@@ -3420,6 +3445,13 @@ export default function POSClient() {
         backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {canOpenAppMenu && (
+            <button ref={appMenuBtnRef} onClick={() => setShowAppMenu(true)} aria-label="เมนูหลัก" title="เมนูหลัก" aria-haspopup="dialog" aria-expanded={showAppMenu} style={{
+              width: 34, height: 34, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)',
+              backgroundColor: 'transparent', color: 'rgba(255,255,255,0.7)', fontSize: 16, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>☰</button>
+          )}
           <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: '#fff', letterSpacing: '-0.5px' }}>ALAN</span>
           <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: GOLD }} />
           <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, letterSpacing: '2.5px', textTransform: 'uppercase' }}>Cafe OS</span>

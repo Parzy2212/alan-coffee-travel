@@ -1,21 +1,16 @@
-import { ShopIdentitySection } from '@/components/shop/ShopIdentitySection'
-import { ContactSection } from '@/components/shop/ContactSection'
-import { BusinessSection } from '@/components/shop/BusinessSection'
-import { OperatingHoursSection } from '@/components/shop/OperatingHoursSection'
+import { MovedNotice } from '@/components/shop/MovedNotice'
 
 export const metadata = { title: 'Shop Settings — Alan Cafe OS' }
 
 export default function ShopSettingsPage() {
   return (
-    <>
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: 'white', marginBottom: 6 }}>ตั้งค่าร้าน</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>ข้อมูลทั่วไปของร้านคุณ</div>
-      </div>
-      <ShopIdentitySection />
-      <ContactSection />
-      <BusinessSection />
-      <OperatingHoursSection />
-    </>
+    <MovedNotice
+      title="ข้อมูลร้าน"
+      reason="ชื่อร้าน ที่อยู่ และเบอร์โทรที่ขึ้นบนใบเสร็จ ตั้งได้ที่ ข้อมูลร้าน & การรับเงิน หรือ ใบเสร็จ (ใช้ค่าชุดเดียวกัน) ข้อความท้ายบิลและ VAT ตั้งที่ ใบเสร็จ"
+      links={[
+        { href: '/cafe?tab=settings', label: 'ข้อมูลร้าน & การรับเงิน' },
+        { href: '/shop/settings/receipt', label: 'ใบเสร็จ' },
+      ]}
+    />
   )
 }

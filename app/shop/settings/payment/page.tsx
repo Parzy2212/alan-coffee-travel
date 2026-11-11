@@ -1,15 +1,13 @@
-import { PaymentMethodsSection } from '@/components/shop/PaymentMethodsSection'
+import { MovedNotice } from '@/components/shop/MovedNotice'
 
 export const metadata = { title: 'Payment Methods — Alan Cafe OS' }
 
 export default function PaymentSettingsPage() {
   return (
-    <>
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: 'white', marginBottom: 6 }}>วิธีชำระเงิน</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>เลือกวิธีชำระเงินที่รับในร้าน</div>
-      </div>
-      <PaymentMethodsSection />
-    </>
+    <MovedNotice
+      title="การรับเงิน"
+      reason="QR Code ชำระเงินและบัญชีธนาคารรับโอนที่หน้าขายใช้จริง ตั้งได้ที่ ข้อมูลร้าน & การรับเงิน"
+      links={[{ href: '/cafe?tab=settings', label: 'ข้อมูลร้าน & การรับเงิน' }]}
+    />
   )
 }
