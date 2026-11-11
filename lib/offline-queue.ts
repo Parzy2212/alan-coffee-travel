@@ -27,9 +27,8 @@ function tx(db: IDBDatabase, mode: IDBTransactionMode) {
   return db.transaction(STORE, mode).objectStore(STORE)
 }
 
-export async function enqueueOrder(payload: Record<string, unknown>): Promise<string> {
+export async function enqueueOrder(payload: Record<string, unknown>, id: string = crypto.randomUUID()): Promise<string> {
   const db  = await openDB()
-  const id  = crypto.randomUUID()
   const row: OfflineOrder = { id, payload, createdAt: Date.now(), attempts: 0, lastAttempt: null }
   await new Promise<void>((res, rej) => {
     const req = tx(db, 'readwrite').add(row)
@@ -92,7 +91,7 @@ function tryRegisterSync() {
 }
 
 export async function replayQueue(
-  submitFn: (payload: Record<string, unknown>) => Promise<boolean>
+  submitFn: (payload: Record<string, unknown>, order: OfflineOrder) => Promise<boolean>
 ): Promise<{ replayed: number; failed: number }> {
   const orders = await getPendingOrders()
   let replayed = 0; let failed = 0
@@ -101,7 +100,7 @@ export async function replayQueue(
     const delay = Math.min(1000 * 2 ** order.attempts, 30000)
     if (order.lastAttempt && Date.now() - order.lastAttempt < delay) { failed++; continue }
     try {
-      const ok = await submitFn(order.payload)
+      const ok = await submitFn(order.payload, order)
       if (ok) { await removeOrder(order.id); replayed++ } else { failed++ }
     } catch { failed++ }
   }

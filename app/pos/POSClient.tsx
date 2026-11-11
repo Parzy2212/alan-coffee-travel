@@ -15,7 +15,7 @@ import { TestModeBanner } from '@/components/pos/TestModeBanner'
 import { HttpBanner } from '@/components/pos/HttpBanner'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
-import { enqueueOrder, replayQueue } from '@/lib/offline-queue'
+import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
 import { useNetworkStatus } from '@/lib/network-status'
 import { useTestMode } from '@/lib/test-mode'
 import { getPinnedRecipes, togglePinnedRecipe } from '@/lib/user-preferences'
@@ -189,7 +189,43 @@ function sweetnessFromDefault(ds: string | null): string {
   return 'หวานปกติ'
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// offline bills get 901, 902 ... per day; the server keeps the number if it is still free
+function nextOfflineQueueNumber(): number {
+  const key = 'pos_offline_queue_' + new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
+  let n = 0
+  try { n = parseInt(localStorage.getItem(key) || '0', 10) || 0 } catch { /* storage blocked */ }
+  n = n >= 99 ? 1 : n + 1
+  try { localStorage.setItem(key, String(n)) } catch { /* storage blocked */ }
+  return 900 + n
+}
+
+// Bills saved before 055 were {p_cart, p_customer_id, _meta} and never synced (the old replay sent _meta to the RPC).
+// The shop had not sold for real yet, so they go in as TEST bills, dated now.
+function offlineCheckoutArgs(payload: Record<string, unknown>, order: OfflineOrder, shopId: string | null): Record<string, unknown> {
+  if (payload.fn === 'checkout_order') return payload.args as Record<string, unknown>
+  const cart = (payload.p_cart ?? []) as { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
+  const meta = (payload._meta ?? {}) as { method?: string; receivedNum?: number; discountAmt?: number; discountReason?: string; table?: string; customerName?: string; staffNote?: string }
+  const subtotal = cart.reduce((s, i) => s + i.unit_price_lak * i.qty, 0)
+  const discount = Math.min(meta.discountAmt ?? 0, subtotal)
+  return {
+    p_client_uuid: order.id, p_shop_id: shopId, p_employee_id: null,
+    p_cart: cart.map(({ recipe_id, qty, customization }) => ({ recipe_id, qty, customization })),
+    p_customer_id: payload.p_customer_id ?? null, p_payment_method: meta.method ?? 'cash',
+    p_amount_received: meta.method === 'cash' ? Math.max(meta.receivedNum ?? 0, subtotal - discount) : null,
+    p_discount_lak: discount, p_discount_reason: meta.discountReason || null,
+    p_table_number: meta.table || null, p_customer_name: meta.customerName || null, p_staff_note: meta.staffNote || null,
+    p_is_test: true, p_expected_total: subtotal - discount,
+  }
+}
+
 function translateError(msg: string): string {
+  if (msg.includes('PRICE_CHANGED')) return 'ราคาเมนูเปลี่ยนแล้ว กด F5 โหลดหน้าใหม่ แล้วคิดเงินอีกครั้ง'
+  if (msg.includes('menu item not available')) return 'มีเมนูในบิลที่ถูกปิดหรือลบไปแล้ว กด F5 โหลดหน้าใหม่'
+  if (msg.includes('cash received is less')) return 'เงินที่รับมาไม่เพียงพอ'
+  if (msg.includes('discount must be')) return 'ส่วนลดมากกว่ายอดบิล'
+  if (msg.includes('employee is not an active')) return 'พนักงานที่เข้ากะอยู่ไม่ได้อยู่ในร้านนี้ ออกจากกะแล้วใส่ PIN ใหม่'
   if (msg.includes('Insufficient stock')) {
     const match = msg.match(/"([^"]+)"/)
     const ingredient = match?.[1] ?? 'วัตถุดิบ'
@@ -1018,12 +1054,13 @@ function DigitalReceiptPopup({
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, selectedCustomer, isTestMode, defaultLang, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, defaultLang, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
   discount: string
   discountReason: string
   activeEmployeeId?: string | null
+  shopId: string | null
   selectedCustomer?: Customer | null
   isTestMode?: boolean
   defaultLang?: Lang
@@ -1050,6 +1087,8 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   const [splitTransfer,  setSplitTransfer]  = useState('')
   const [slipRef,        setSlipRef]        = useState('') // folded into staff_note on submit — no dedicated DB column
   const overlayRef = useRef<HTMLDivElement>(null)
+  // one id per checkout: a double tap or a retry after a lost reply returns the same bill
+  const clientUuid = useRef(crypto.randomUUID())
 
   const discountAmt   = parseFloat(discount) || 0
   const finalTotal    = Math.max(subtotal - discountAmt, 0)
@@ -1111,7 +1150,14 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     setReceived(p => p + key)
   }
 
+  const busy = useRef(false)
   async function confirm() {
+    if (busy.current) return
+    busy.current = true
+    try { await submitCheckout() } finally { busy.current = false }
+  }
+
+  async function submitCheckout() {
     if (!cashOk) { setErrMsg('เงินที่รับมาไม่เพียงพอ'); return }
     setLoading(true); setErrMsg('')
 
@@ -1119,17 +1165,36 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     let customerId: string | null = selectedCustomer?.id ?? null
     const customerName = selectedCustomer?.name ?? customer.trim()
 
-    // ── Offline path: enqueue locally and succeed immediately ──────────────────
+    if (!shopId) { setErrMsg('ยังโหลดข้อมูลร้านไม่เสร็จ ลองใหม่อีกครั้ง'); setLoading(false); return }
+
+    const sentDiscount = Math.min(discountAmt, subtotal)
+    const args = {
+      p_client_uuid:     clientUuid.current,
+      p_shop_id:         shopId,
+      p_employee_id:     activeEmployeeId && UUID_RE.test(activeEmployeeId) ? activeEmployeeId : null,
+      p_cart:            cartPayload.map(({ recipe_id, qty, customization }) => ({ recipe_id, qty, customization })),
+      p_customer_id:     customerId,
+      p_payment_method:  method,
+      p_amount_received: method === 'cash' ? receivedNum : null,
+      p_discount_lak:    sentDiscount,
+      p_discount_reason: sentDiscount > 0 ? (discountReason || null) : null,
+      p_table_number:    table || null,
+      p_customer_name:   customerName || null,
+      p_staff_note:      [staffNote, slipRef ? `อ้างอิง: ${slipRef}` : null].filter(Boolean).join(' · ') || null,
+      p_is_test:         !!isTestMode,
+      p_expected_total:  subtotal - sentDiscount,
+    }
+
+    // ── Offline path: save locally, send when back online ──────────────────────
     if (!navigator.onLine) {
-      const offlineQueue = Math.floor(Math.random() * 900) + 100  // temp queue # until sync
-      await enqueueOrder({
-        p_cart:        cartPayload,
-        p_customer_id: customerId,
-        _meta: { method, receivedNum, changeAmt: Math.max(changeAmt, 0), table, customerName, discountAmt, discountReason, staffNote, activeEmployeeId },
-      })
+      const offlineQueue = nextOfflineQueueNumber()
+      try {
+        await enqueueOrder({ fn: 'checkout_order', args: { ...args, p_created_at: new Date().toISOString(), p_queue_number: offlineQueue } }, clientUuid.current)
+      } catch {
+        setErrMsg('บันทึกบิลในเครื่องไม่สำเร็จ ห้ามรับเงิน ลองใหม่อีกครั้ง'); setLoading(false); return
+      }
       window.dispatchEvent(new Event('alan:queue-changed'))
-      const finalReceipt = String(offlineQueue).padStart(3, '0')
-      onSuccess(offlineQueue, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason, receiptLang)
+      onSuccess(offlineQueue, String(offlineQueue).padStart(3, '0'), Math.max(changeAmt, 0), method, customerName, table, sentDiscount, method === 'cash' ? receivedNum : 0, discountReason, receiptLang)
       setLoading(false)
       return
     }
@@ -1139,44 +1204,14 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
         p_phone: phone.trim(),
         p_name:  customer.trim(),
       })
-      if (custData?.id) customerId = custData.id as string
+      if (custData?.id) { customerId = custData.id as string; args.p_customer_id = customerId }
     }
 
-    const { data, error } = await supabase.rpc('create_order_with_deduction', {
-      p_cart:        cartPayload,
-      p_customer_id: customerId,
-    })
+    const { data, error } = await supabase.rpc('checkout_order', args)
     if (error) { setErrMsg(translateError(error.message)); setLoading(false); return }
 
-    const result = data as { order_id: string; queue_number: number }
-
-    // Fire finalize in the background — order is already committed and paid.
-    // This records payment metadata (received, change, table, note) without blocking the UI.
-    supabase.rpc('finalize_order_payment', {
-      p_order_id:        result.order_id,
-      p_payment_method:  method,
-      p_amount_received: method === 'cash' ? receivedNum : null,
-      p_change_amount:   method === 'cash' ? Math.max(changeAmt, 0) : null,
-      p_table_number:    table         || null,
-      p_customer_name:   customerName  || null,
-      p_discount_amount: discountAmt,
-      p_discount_reason: discountReason || null,
-      p_staff_note:      [staffNote, slipRef ? `อ้างอิง: ${slipRef}` : null].filter(Boolean).join(' · ') || null,
-    }).then(null, () => { /* background — non-critical */ })
-
-    if (activeEmployeeId) {
-      supabase.from('orders').update({ employee_id: activeEmployeeId }).eq('id', result.order_id)
-        .then(null, () => { /* background — non-critical */ })
-    }
-
-    if (isTestMode) {
-      supabase.from('orders').update({ is_test: true }).eq('id', result.order_id)
-        .then(null, () => { /* background — non-critical */ })
-    }
-
-    // Use queue number as receipt ID so we can show success immediately
-    const finalReceipt = String(result.queue_number).padStart(3, '0')
-    onSuccess(result.queue_number, finalReceipt, Math.max(changeAmt, 0), method, customerName, table, discountAmt, method === 'cash' ? receivedNum : 0, discountReason, receiptLang)
+    const result = data as { queue_number: number; change_lak: number | null; discount_lak: number }
+    onSuccess(result.queue_number, String(result.queue_number).padStart(3, '0'), Math.max(result.change_lak ?? 0, 0), method, customerName, table, Number(result.discount_lak) || 0, method === 'cash' ? receivedNum : 0, discountReason, receiptLang)
     setLoading(false)
   }
 
@@ -2551,6 +2586,7 @@ function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, to
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 13, color: isVoid ? 'rgba(255,255,255,0.2)' : GOLD, minWidth: 40, fontVariantNumeric: 'tabular-nums' }}>{fmtQueue(order.queue_number)}</span>
                       <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', minWidth: 36 }}>{fmtTime(order.created_at_vt)}</span>
+                      {order.status === 'test' && <span title="บิลทดสอบ: ไม่นับยอดขาย ไม่ตัดสต็อก" style={{ fontSize: 9, fontWeight: 700, color: '#f59e0b', border: '1px solid rgba(245,158,11,0.5)', borderRadius: 4, padding: '0 4px', flexShrink: 0 }}>TEST</span>}
                       <span style={{ flex: 1, fontSize: 11, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</span>
                       <span style={{ fontSize: 12, fontWeight: 700, color: isVoid ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtLak(order.total_lak)}</span>
                       <span style={{ fontSize: 14, flexShrink: 0 }}>{payIcon}</span>
@@ -2871,13 +2907,21 @@ export default function POSClient() {
   }, [])
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  // Load shopId via auth client (needed for PIN verification)
+  // Load shopId via auth client (needed for PIN verification and checkout).
+  // Offline, the last known id is used, so a POS reloaded without internet can still take sales.
   useEffect(() => {
+    if (!navigator.onLine) {
+      try { const cached = localStorage.getItem('pos_shop_id'); if (cached) setShopId(s => s ?? cached) } catch { /* storage blocked */ }
+    }
     import('@/lib/supabase-auth').then(({ authClient }) => {
       authClient.auth.getUser().then(({ data: { user } }) => {
         if (!user) return
         authClient.from('shop_users').select('shop_id').eq('user_id', user.id).maybeSingle()
-          .then(({ data }) => { if (data?.shop_id) setShopId(data.shop_id as string) })
+          .then(({ data }) => {
+            if (!data?.shop_id) return
+            setShopId(data.shop_id as string)
+            try { localStorage.setItem('pos_shop_id', data.shop_id as string) } catch { /* storage blocked */ }
+          })
       })
     })
   }, [])
@@ -2915,10 +2959,10 @@ export default function POSClient() {
 
   // Replay offline queue when back online or SW triggers it
   useEffect(() => {
-    if (!online) return
+    if (!online || !shopId) return
     const replay = () => {
-      replayQueue(async (payload) => {
-        const { error } = await supabase.rpc('create_order_with_deduction', payload)
+      replayQueue(async (payload, order) => {
+        const { error } = await supabase.rpc('checkout_order', offlineCheckoutArgs(payload, order, shopId))
         if (!error) { window.dispatchEvent(new Event('alan:queue-changed')); return true }
         return false
       }).catch(() => {})
@@ -2926,7 +2970,7 @@ export default function POSClient() {
     replay()
     window.addEventListener('alan:replay-offline-queue', replay)
     return () => window.removeEventListener('alan:replay-offline-queue', replay)
-  }, [online])
+  }, [online, shopId])
 
   // Fetch categories
   useEffect(() => {
@@ -3367,6 +3411,7 @@ export default function POSClient() {
         <ChargePopup subtotal={subtotal} cartPayload={cartPayload}
           discount={String(discountAmt)} discountReason={discountLabel}
           activeEmployeeId={activeEmployee?.id ?? null}
+          shopId={shopId}
           selectedCustomer={selectedCustomer}
           isTestMode={testMode}
           defaultLang={lang}
