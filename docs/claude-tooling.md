@@ -29,7 +29,10 @@ The profile holds a live login to the POS: don't copy it anywhere, and delete th
   `docs/pos-printer-setup-th.md`). Undo: Printers & scanners → Xprinter XP-80 → Remove; Settings → Apps → uninstall the driver.
 - "Alan POS TEST" shortcuts (Desktop + Start menu) and Edge profile `%LOCALAPPDATA%\AlanPOS\AlanPOSTESTProfile`, made by
   `docs/pos-setup/create-pos-shortcut.ps1 -Url http://localhost:3000/pos -Name 'Alan POS TEST'` for local testing.
-  Delete both after the production "Alan POS" shortcut is made.
+  **Deleted** 2026-11-11 (shortcuts + profile) after the production shortcut was made.
+- "Alan POS" shortcuts (Desktop + Start menu, `https://alancoffeetravel.com/pos`) and Edge profile
+  `%LOCALAPPDATA%\AlanPOS\AlanPOSProfile`, made 2026-11-11 by `create-pos-shortcut.ps1` (defaults). This is the shop's
+  real POS icon. Undo: delete both shortcuts and `%LOCALAPPDATA%\AlanPOS`.
 - Windows: "Let Windows manage my default printer" turned **off** (`HKCU\Software\Microsoft\Windows NT\CurrentVersion\Windows`
   `LegacyDefaultPrinterMode` = 1) and HP LaserJet Professional P1102 set back as default (owner approved). Windows had
   switched the default to the Xprinter after test prints. Undo: turn the setting back on in Printers & scanners.
