@@ -651,3 +651,44 @@ button, a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ─── Receipt printing (lib/receipt-print.ts) ─────────────── */
+#print-receipt { display: none; }
+
+.rcpt {
+  width: 72mm;
+  margin: 0 auto;
+  color: #000;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.rcpt.w58 { width: 48mm; font-size: 11px; }
+.rcpt[lang="lo"] { font-size: 13px; }
+.rcpt.w58[lang="lo"] { font-size: 12px; }
+html body .rcpt,
+html body .rcpt * {
+  font-family: var(--font-body), var(--font-lao), var(--font-thai), sans-serif !important;
+}
+.rcpt .c   { text-align: center; overflow-wrap: anywhere; }
+.rcpt .r   { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; }
+.rcpt .r span:first-child { overflow-wrap: anywhere; }
+.rcpt .r span:last-child  { white-space: nowrap; }
+.rcpt .b   { font-weight: 700; }
+.rcpt .big { font-size: 1.3em; }
+.rcpt .q   { font-size: 2.6em; line-height: 1.1; }
+.rcpt .s   { font-size: 0.9em; }
+.rcpt .sub { padding-left: 3mm; font-size: 0.9em; }
+.rcpt hr   { border: 0; border-top: 1px dashed #000; margin: 1.5mm 0; }
+.rcpt hr.d { border-top: 2px solid #000; }
+
+/* rendered off-screen while printing so its height can be measured */
+@media screen {
+  html.printing-receipt #print-receipt { display: block; position: fixed; left: -10000px; top: 0; }
+}
+
+@media print {
+  html.printing-receipt body > *:not(#print-receipt) { display: none !important; }
+  html.printing-receipt #print-receipt { display: block !important; }
+  html.printing-receipt, html.printing-receipt body { background: #fff !important; margin: 0 !important; }
+}

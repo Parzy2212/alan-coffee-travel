@@ -143,18 +143,8 @@ export function ReceiptSection() {
             </div>
           </div>
 
-          {/* Auto-print toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', backgroundColor: settings.receipt_auto_print === 'true' ? STATE_SELECTED_BG : 'transparent', border: `1px solid ${settings.receipt_auto_print === 'true' ? STATE_SELECTED_BORDER : BORDER_SUBTLE}`, borderRadius: RADIUS.lg }}>
-            <div>
-              <div style={{ color: TEXT_1, fontSize: 14, fontWeight: 600, marginBottom: 2 }}>พิมพ์ใบเสร็จอัตโนมัติ</div>
-              <div style={{ color: TEXT_2, fontSize: 12 }}>พิมพ์ทันทีเมื่อชำระเงินเสร็จ</div>
-            </div>
-            <button
-              onClick={() => setSettings(s => ({ ...s, receipt_auto_print: s.receipt_auto_print === 'true' ? 'false' : 'true' }))}
-              style={{ width: 44, height: 24, borderRadius: RADIUS.pill, backgroundColor: settings.receipt_auto_print === 'true' ? GOLD : BORDER_DEFAULT, border: 'none', cursor: 'pointer', position: 'relative', transition: 'background-color 0.15s', flexShrink: 0 }}
-            >
-              <div style={{ position: 'absolute', top: 3, left: settings.receipt_auto_print === 'true' ? 23 : 3, width: 18, height: 18, borderRadius: '50%', backgroundColor: TEXT_1, transition: 'left 0.15s' }} />
-            </button>
+          <div style={{ color: TEXT_2, fontSize: 12, lineHeight: 1.5 }}>
+            พิมพ์ใบเสร็จอัตโนมัติ: ตั้งที่เครื่อง POS → ⚙️ POS Settings → เครื่องพิมพ์ใบเสร็จ (ตั้งแยกแต่ละเครื่อง เปิดไว้เป็นค่าเริ่มต้น)
           </div>
         </div>
       </div>

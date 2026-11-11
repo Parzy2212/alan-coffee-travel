@@ -35,17 +35,25 @@ const CSS = `
 }
 `
 
+export type PrintStatus = 'off' | 'printing' | 'sent' | 'error'
+
 export interface OrderSuccessProps {
   queue: number
   total: number
   onDismiss: () => void
+  printStatus?: PrintStatus
+  printError?: string
+  onRetryPrint?: () => void
 }
 
-export function OrderSuccess({ queue, total, onDismiss }: OrderSuccessProps) {
+export function OrderSuccess({ queue, total, onDismiss, printStatus = 'off', printError, onRetryPrint }: OrderSuccessProps) {
   const [count, setCount] = useState(3)
   const particles = useRef(mkParticles(52)).current
+  // Hold the screen while printing and on a print error, so a failed receipt is never skipped unseen
+  const paused = printStatus === 'printing' || printStatus === 'error'
 
   useEffect(() => {
+    if (paused) return
     const t = setInterval(() => {
       setCount(n => {
         if (n <= 1) { clearInterval(t); onDismiss(); return 0 }
@@ -53,7 +61,7 @@ export function OrderSuccess({ queue, total, onDismiss }: OrderSuccessProps) {
       })
     }, 1000)
     return () => clearInterval(t)
-  }, [onDismiss])
+  }, [onDismiss, paused])
 
   return (
     <div
@@ -141,7 +149,30 @@ export function OrderSuccess({ queue, total, onDismiss }: OrderSuccessProps) {
         }}>
           {total.toLocaleString('en-US')} ₭
         </div>
+        {printStatus !== 'error' && (
+          <div style={{ marginTop: 18, fontSize: 15, color: 'rgba(255,255,255,0.6)' }}>
+            {printStatus === 'printing' ? '🖨 กำลังส่งพิมพ์ใบเสร็จ...'
+              : printStatus === 'sent' ? '🖨 ส่งพิมพ์แล้ว — ถ้าไม่มีกระดาษออก กดพิมพ์ซ้ำที่ "คิว & ออเดอร์"'
+              : 'พิมพ์อัตโนมัติปิดอยู่ — พิมพ์ใบเสร็จได้ที่ "คิว & ออเดอร์"'}
+          </div>
+        )}
       </div>
+
+      {printStatus === 'error' && (
+        <div role="alert" style={{
+          marginTop: 28, maxWidth: 440, padding: '16px 20px', borderRadius: 14, textAlign: 'center',
+          backgroundColor: 'rgba(255,107,107,0.12)', border: '2px solid rgba(255,107,107,0.6)',
+        }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#ff6b6b', marginBottom: 6 }}>พิมพ์ใบเสร็จไม่สำเร็จ</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 14, overflowWrap: 'anywhere' }}>{printError}</div>
+          {onRetryPrint && (
+            <button onClick={onRetryPrint} style={{
+              padding: '12px 28px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              backgroundColor: '#ff6b6b', color: '#0a0a0a', fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-heading)',
+            }}>🖨 พิมพ์อีกครั้ง</button>
+          )}
+        </div>
+      )}
 
       {/* actions */}
       <div
@@ -153,16 +184,20 @@ export function OrderSuccess({ queue, total, onDismiss }: OrderSuccessProps) {
           animation: '_os_in 0.5s 0.5s both',
         }}
       >
-        <div style={{
-          fontSize: 13, color: 'rgba(255,255,255,0.25)',
-          animation: '_os_blink 1.2s ease-in-out infinite',
-        }}>
-          อัตโนมัติกลับใน {count} วินาที...
-        </div>
+        {!paused && (
+          <div style={{
+            fontSize: 13, color: 'rgba(255,255,255,0.25)',
+            animation: '_os_blink 1.2s ease-in-out infinite',
+          }}>
+            อัตโนมัติกลับใน {count} วินาที...
+          </div>
+        )}
         <button
           onClick={onDismiss}
+          disabled={printStatus === 'printing'}
           aria-label="ทำออเดอร์ใหม่"
           style={{
+            opacity: printStatus === 'printing' ? 0.4 : 1,
             padding: '15px 40px', borderRadius: 14,
             border: `1px solid rgba(201,168,76,0.3)`,
             backgroundColor: 'rgba(201,168,76,0.1)',

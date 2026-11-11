@@ -2261,12 +2261,9 @@ function SettingsTab() {
               <input value={settings.service_charge_percent} onChange={set('service_charge_percent')} type="number" min="0" max="100" step="0.1" style={inputStyle} placeholder="0 = ไม่มี" />
             </Field>
           </div>
-          <SettingsToggle
-            value={isOn('receipt_auto_print')}
-            onChange={toggle('receipt_auto_print')}
-            label="พิมพ์ใบเสร็จอัตโนมัติ"
-            sub="พิมพ์ทันทีหลังชำระเงิน"
-          />
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>
+            พิมพ์ใบเสร็จอัตโนมัติ: ตั้งที่เครื่อง POS → ⚙️ POS Settings → เครื่องพิมพ์ใบเสร็จ (แยกแต่ละเครื่อง เปิดไว้เป็นค่าเริ่มต้น)
+          </div>
         </div>
       </SettingSection>
 

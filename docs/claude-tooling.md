@@ -24,5 +24,15 @@ The profile holds a live login to the POS: don't copy it anywhere, and delete th
   temporary Chrome policy `WebUsbAllowDevicesForUrls` in `HKCU\Software\Policies\{Google\Chrome,Chromium}` for
   `http://localhost:8099` → **removed** the same day (keys deleted). No driver or program installed.
 
+- Xprinter receipt driver (official, `Xprinter.receipt.driver.2025.10.22.01.exe` from xprintertech.com, signed by Zhuhai
+  Hena), installed by the owner: queue **Xprinter XP-80** on `USB002`. This is the chosen print path (see
+  `docs/pos-printer-setup-th.md`). Undo: Printers & scanners → Xprinter XP-80 → Remove; Settings → Apps → uninstall the driver.
+- "Alan POS TEST" shortcuts (Desktop + Start menu) and Edge profile `%LOCALAPPDATA%\AlanPOS\AlanPOSTESTProfile`, made by
+  `docs/pos-setup/create-pos-shortcut.ps1 -Url http://localhost:3000/pos -Name 'Alan POS TEST'` for local testing.
+  Delete both after the production "Alan POS" shortcut is made.
+- Windows: "Let Windows manage my default printer" turned **off** (`HKCU\Software\Microsoft\Windows NT\CurrentVersion\Windows`
+  `LegacyDefaultPrinterMode` = 1) and HP LaserJet Professional P1102 set back as default (owner approved). Windows had
+  switched the default to the Xprinter after test prints. Undo: turn the setting back on in Printers & scanners.
+
 Already present before 2026-11-10 (not changed): Playwright MCP `@playwright/mcp@0.0.79` (`.mcp.json`), `typescript-lsp`,
 `claude-code-setup`, `security-guidance` (installed, disabled), project skills in `.claude/skills/`.

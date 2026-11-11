@@ -1,10 +1,11 @@
 // lib/thermal-printer.ts
-// WebUSB ESC/POS thermal printer — Chrome/Edge only.
-// Falls back gracefully; call isSupported() before use.
-// Receipt language: thermal print always uses PC437 (Latin ASCII).
-//   Lao  — no ESC/POS code page exists; always falls back to English.
-//   Thai — requires code page 20 (TIS-620/PC874) which we don't send; falls back to English.
-//   English — always supported.
+// Receipt printing. Default: HTML through the OS printer driver
+// (lib/receipt-print.ts), which renders Lao/Thai. Legacy raw ESC/POS paths
+// (print server / printer IP / WebUSB) run only when a print server printer
+// name or a printer IP is saved; they are PC437 (Latin ASCII) only, so Lao
+// and Thai receipts fall back to English there.
+
+import { printReceiptViaBrowser } from '@/lib/receipt-print'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ export type PrintReceiptData = {
   table:          string
   customer:       string
   staffName?:     string
-  cartSnapshot:   { qty: number; recipe: { product_name: string; price_lak: number }; customization: string }[]
+  cartSnapshot:   { qty: number; recipe: { product_name: string; product_name_th?: string | null; product_name_lo?: string | null; price_lak: number }; customization: string }[]
   subtotal:       number
   discountAmt:    number
   discountReason: string
@@ -30,6 +31,49 @@ export type PrintReceiptData = {
   pointsEarned?:  number
   pointsBalance?: number
   isBirthday?:    boolean
+  isTest?:        boolean
+  lang?:          PrintLang
+  soldAt?:        string   // ISO time of the sale; reprints show it instead of the print time
+}
+
+// ── Reprint store ─────────────────────────────────────────────────────────────
+// The receipt exactly as printed at checkout, kept on this device so "คิว & ออเดอร์"
+// can reprint it in the same language. The DB doesn't keep the receipt language
+// or per-item prices in get_today_orders yet (planned with the checkout rework).
+// Keyed by queue number and kept for today only (queue numbers restart daily; that list shows today).
+
+const REPRINT_KEY = 'pos_reprint_receipts'
+
+const isToday = (iso?: string) => !!iso && new Date(iso).toDateString() === new Date().toDateString()
+
+export function saveForReprint(data: PrintReceiptData): void {
+  let all: Record<string, PrintReceiptData> = {}
+  try { all = JSON.parse(localStorage.getItem(REPRINT_KEY) || '{}') } catch { /* corrupt: start over */ }
+  // Today only: queue numbers restart daily, so older entries could match a new bill
+  for (const k of Object.keys(all)) if (!isToday(all[k].soldAt)) delete all[k]
+  try {
+    all[String(data.queue)] = {
+      ...data,
+      cartSnapshot: data.cartSnapshot.map(i => ({
+        qty: i.qty, customization: i.customization,
+        recipe: { product_name: i.recipe.product_name, product_name_th: i.recipe.product_name_th, product_name_lo: i.recipe.product_name_lo, price_lak: i.recipe.price_lak },
+      })),
+    }
+    localStorage.setItem(REPRINT_KEY, JSON.stringify(all))
+  } catch (e) {
+    console.warn('[POS] could not keep receipt for reprint:', e)
+  }
+}
+
+/** The saved receipt for this queue number, only if its total matches the order (guards against a stale entry). */
+export function getSavedReceipt(queue: number, totalLak: number): PrintReceiptData | null {
+  try {
+    const d = (JSON.parse(localStorage.getItem(REPRINT_KEY) || '{}') as Record<string, PrintReceiptData>)[String(queue)]
+    // orders.total_lak may be stored before or after the discount
+    return d && isToday(d.soldAt) && [d.finalTotal, d.subtotal].some(t => Math.round(t) === Math.round(totalLak)) ? d : null
+  } catch {
+    return null
+  }
 }
 
 // ── Print language support ────────────────────────────────────────────────────
@@ -39,12 +83,18 @@ export type PrintReceiptData = {
 type PrintLang = 'en' | 'th' | 'lo'
 const PRINT_FALLBACK_PREF_KEY = 'pos_print_lang_fallback_pref'
 
+// No print server printer name and no printer IP saved -> print through the
+// browser and the OS driver, which renders every language.
+export function usesBrowserPrint(): boolean {
+  return !getPrinterName() && !getPrinterIp()
+}
+
 export function isPrintable(lang: PrintLang): boolean {
-  return lang === 'en'
+  return lang === 'en' || usesBrowserPrint()
 }
 
 export function effectivePrintLang(lang: PrintLang): { lang: PrintLang; didFallback: boolean } {
-  if (lang === 'en') return { lang: 'en', didFallback: false }
+  if (isPrintable(lang)) return { lang, didFallback: false }
   return { lang: 'en', didFallback: true }
 }
 
@@ -87,7 +137,7 @@ export function getReceiptDesign(): ReceiptDesign {
 
 // Receipt label translations — thermal print is always ASCII so we use English
 // for the actual ESC/POS binary; `lang` only affects the screen preview labels.
-const RECEIPT_LABELS = {
+export const RECEIPT_LABELS = {
   en: { subtotal: 'SUBTOTAL', total: 'TOTAL', payment: 'PAYMENT:', received: 'RECEIVED:', change: 'CHANGE:', discount: 'DISCOUNT', queue: '** QUEUE **', birthday: '** HAPPY BIRTHDAY! **', thanks: 'Thank you & come back', staff: 'STAFF:', points: 'Points earned:', pointsBal: 'Points balance:' },
   th: { subtotal: 'ยอดรวม', total: 'ยอดสุทธิ', payment: 'ชำระเงิน:', received: 'รับมา:', change: 'เงินทอน:', discount: 'ส่วนลด', queue: '** คิว **', birthday: '** สุขสันต์วันเกิด! **', thanks: 'ขอบคุณ มาอีกนะคะ', staff: 'พนักงาน:', points: 'ได้รับแต้ม:', pointsBal: 'ยอดแต้ม:' },
   lo: { subtotal: 'ລວມ', total: 'ລວມທັງໝົດ', payment: 'ຊຳລະ:', received: 'ຮັບມາ:', change: 'ເງິນທອນ:', discount: 'ສ່ວນຫຼຸດ', queue: '** ຄິວ **', birthday: '** ສຸກສັນວັນເກີດ! **', thanks: 'ຂອບໃຈ ມາໃໝ່ດ້ວຍ', staff: 'ພະນັກງານ:', points: 'ໄດ້ຮັບແຕ້ມ:', pointsBal: 'ຍອດແຕ້ມ:' },
@@ -212,7 +262,7 @@ const WIDTH_80 = 48 // 80mm paper = 48 chars at standard font
 const PAPER_WIDTH_KEY = 'pos_paper_width'
 
 export function getPaperWidth(): 58 | 80 {
-  try { return localStorage.getItem(PAPER_WIDTH_KEY) === '80' ? 80 : 58 } catch { return 58 }
+  try { return localStorage.getItem(PAPER_WIDTH_KEY) === '58' ? 58 : 80 } catch { return 80 }
 }
 
 function charWidth(mm: 58 | 80): number {
@@ -636,6 +686,10 @@ function centerStr(s: string, w: number): string {
 /** Build ESC/POS receipt and send to printer.
  *  Tries in order: WiFi (port 9100) → local print server → WebUSB → throws */
 export async function printReceipt(data: PrintReceiptData): Promise<void> {
+  if (usesBrowserPrint()) {
+    await printReceiptViaBrowser(data, data.lang ?? 'en')
+    return
+  }
   const design   = getReceiptDesign()
   const mm       = getPaperWidth()
   const W        = charWidth(mm)
@@ -744,7 +798,7 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     return
   }
 
-  // ── Full fallback chain (no printer name configured) ──────────────────────
+  // ── Printer IP configured (no printer name) ───────────────────────────────
 
   if (ip) {
     try {
@@ -777,7 +831,4 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   }
 
   throw new Error(`Print failed — ${errors.join(' | ')}`)
-  // NOTE: window.print() intentionally removed. Thermal printers receiving
-  // print jobs through the GDI browser driver render a raster bitmap, not
-  // ESC/POS text — output is pixelated and fades within days.
 }
