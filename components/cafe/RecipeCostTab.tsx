@@ -7,6 +7,7 @@ import {
   inputStyle, btnStyle, btnStyleSm,
   Toast, SectionCard, Field,
 } from '@/components/cafe/shared'
+import { ShopCostPanel } from '@/components/cafe/ShopCostSection'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ type BaseIng    = { base_id: string; inventory_id: string; qty_required: number 
 // ─── RecipeCostTab ────────────────────────────────────────────────────────────
 
 export default function RecipeCostTab() {
-  type SubTab = 'ingredients' | 'bases' | 'recipes' | 'pricing'
+  type SubTab = 'ingredients' | 'bases' | 'recipes' | 'pricing' | 'shopcost'
 
   const [sub,          setSub]         = useState<SubTab>('ingredients')
   const [inventory,    setInventory]   = useState<InvItem[]>([])
@@ -803,15 +804,16 @@ export default function RecipeCostTab() {
     { id: 'bases',       label: 'สูตรพื้นฐาน' },
     { id: 'recipes',     label: 'สร้างสูตร'    },
     { id: 'pricing',     label: 'ราคา & Margin' },
+    { id: 'shopcost',    label: 'ต้นทุนร้าน'   },
   ]
 
   return (
     <div>
       <Toast msg={msg} />
-      <div style={{ display: 'flex', marginBottom: 28, borderBottom: `1px solid ${BORDER}` }}>
+      <div style={{ display: 'flex', marginBottom: 28, borderBottom: `1px solid ${BORDER}`, overflowX: 'auto' }}>
         {subs.map(s => (
           <button key={s.id} onClick={() => setSub(s.id)} style={{
-            padding: '8px 22px', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500,
+            padding: '8px 22px', whiteSpace: 'nowrap', flexShrink: 0, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500,
             backgroundColor: 'transparent',
             color: sub === s.id ? GOLD : 'rgba(255,255,255,0.4)',
             borderBottom: sub === s.id ? `2px solid ${GOLD}` : '2px solid transparent',
@@ -823,6 +825,8 @@ export default function RecipeCostTab() {
       {sub === 'bases'       && <BaseRecipesPanel />}
       {sub === 'recipes'     && <FormulaPanel />}
       {sub === 'pricing'     && <PricingPanel />}
+      {/* kept mounted so unsaved cost edits survive switching sub-tabs */}
+      <div style={{ display: sub === 'shopcost' ? undefined : 'none' }}><ShopCostPanel onSaved={loadOverhead} /></div>
     </div>
   )
 }

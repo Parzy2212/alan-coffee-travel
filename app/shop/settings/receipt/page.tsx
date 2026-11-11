@@ -1,15 +1,13 @@
-import { ReceiptSection } from '@/components/shop/ReceiptSection'
+import { MovedNotice } from '@/components/shop/MovedNotice'
 
 export const metadata = { title: 'Receipt Settings — Alan Cafe OS' }
 
-export default function ReceiptSettingsPage() {
+export default function Page() {
   return (
-    <>
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: 'white', marginBottom: 6 }}>ตั้งค่าใบเสร็จ</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>ปรับแต่งข้อมูลที่แสดงในใบเสร็จ</div>
-      </div>
-      <ReceiptSection />
-    </>
+    <MovedNotice
+      title="ใบเสร็จ"
+      reason="ข้อมูลบนใบเสร็จ (ชื่อร้าน ที่อยู่ เบอร์โทร ข้อความท้ายบิล VAT) ย้ายไปอยู่ในหน้า ตั้งค่าร้าน แล้ว"
+      links={[{ href: '/cafe?tab=settings', label: 'ตั้งค่าร้าน' }]}
+    />
   )
 }

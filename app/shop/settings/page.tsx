@@ -2,15 +2,12 @@ import { MovedNotice } from '@/components/shop/MovedNotice'
 
 export const metadata = { title: 'Shop Settings — Alan Cafe OS' }
 
-export default function ShopSettingsPage() {
+export default function Page() {
   return (
     <MovedNotice
-      title="ข้อมูลร้าน"
-      reason="ชื่อร้าน ที่อยู่ และเบอร์โทรที่ขึ้นบนใบเสร็จ ตั้งได้ที่ ข้อมูลร้าน & การรับเงิน หรือ ใบเสร็จ (ใช้ค่าชุดเดียวกัน) ข้อความท้ายบิลและ VAT ตั้งที่ ใบเสร็จ"
-      links={[
-        { href: '/cafe?tab=settings', label: 'ข้อมูลร้าน & การรับเงิน' },
-        { href: '/shop/settings/receipt', label: 'ใบเสร็จ' },
-      ]}
+      title="ตั้งค่าร้านรวมอยู่ที่เดียวแล้ว"
+      reason="ชื่อร้าน ที่อยู่ ใบเสร็จ VAT การรับเงิน จอคิว และอัตราแลกเปลี่ยน ตั้งได้ที่หน้า ตั้งค่าร้าน หน้าเดียว"
+      links={[{ href: '/cafe?tab=settings', label: 'ตั้งค่าร้าน' }]}
     />
   )
 }

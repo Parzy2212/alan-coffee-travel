@@ -1,6 +1,6 @@
 // The one menu for the shop app (/cafe, /shop/*, POS ☰). Approved map 2026-11-11.
 // Hidden until fixed (not listed): customers & loyalty, finance, Alan AI, audit log,
-// Telegram/LINE, /shop/settings general, payment methods, printer, billing.
+// Telegram/LINE, billing. All /shop/settings/* pages point to /cafe?tab=settings (one settings page, 2026-11-11).
 
 export type AppNavItem = {
   href: string
@@ -32,17 +32,15 @@ export const APP_NAV: AppNavGroup[] = [
     { href: '/shop/team/employees', label: 'PIN หน้าขาย',   icon: '🏷️' },
   ]},
   { label: 'ตั้งค่า', items: [
-    { href: '/cafe?tab=settings',       label: 'ข้อมูลร้าน & การรับเงิน', icon: '⚙️' },
-    { href: '/shop/settings/receipt',   label: 'ใบเสร็จ',                icon: '🧾' },
-    { href: '/shop/settings/currency',  label: 'สกุลเงิน',               icon: '💱' },
-    { href: '/account/profile',         label: 'บัญชีของฉัน',            icon: '👤' },
+    { href: '/cafe?tab=settings', label: 'ตั้งค่าร้าน',  icon: '⚙️' },
+    { href: '/account/profile',   label: 'บัญชีของฉัน', icon: '👤' },
   ]},
   { label: 'โมดูลเสริม', module: true, items: [
     { href: '/queue',                label: 'จอคิว TV',          icon: '📺' },
     { href: '/cafe?tab=staff',       label: 'พนักงาน & ลงเวลา', icon: '⏱️', soloHidden: true },
     { href: '/cafe?tab=schedule',    label: 'ตารางงาน',         icon: '📅', soloHidden: true },
     { href: '/staff',                label: 'จอลงเวลา (Kiosk)', icon: '🪪', soloHidden: true },
-    { href: '/cafe?tab=recipe-cost', label: 'ต้นทุนสูตร',       icon: '🧮' },
+    { href: '/cafe?tab=recipe-cost', label: 'ต้นทุนเมนู',       icon: '🧮' },
     { href: '/cafe/templates',       label: 'ตั้งร้านด่วน',      icon: '⚡' },
     { href: '/cafe/health-check',    label: 'ตรวจความพร้อม',    icon: '✅' },
   ]},
