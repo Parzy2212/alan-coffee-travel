@@ -1,7 +1,7 @@
 'use client'
 
 const CITIES = [
-  'Vientiane', 'Luang Prabang', 'Champasak', 'Attapeu',
+  'Attapeu', 'Vientiane', 'Luang Prabang', 'Champasak',
   'Savannakhet', 'Xiangkhouang', 'Bokeo', 'Oudomxay', 'Other',
 ]
 

@@ -12,8 +12,8 @@ import { ShopCostPanel } from '@/components/cafe/ShopCostSection'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type InvItem    = { id: string; name: string; name_th: string | null; unit: string; cost_per_unit: number | null; current_qty: number }
-type BaseRecipe = { id: string; name: string; unit: string; total_yield: number }
-type BaseIng    = { base_id: string; inventory_id: string; qty_required: number }
+type BaseRecipe = { id: string; name: string; unit: string; yield_qty: number }
+type BaseIng    = { base_id: string; inventory_id: string; qty: number }
 
 // ─── RecipeCostTab ────────────────────────────────────────────────────────────
 
@@ -40,9 +40,9 @@ export default function RecipeCostTab() {
   }, [])
 
   const loadBases = useCallback(() => {
-    supabase.from('recipe_bases').select('id, name, unit, total_yield').order('name')
+    supabase.from('recipe_bases').select('id, name, unit, yield_qty').order('name')
       .then(({ data }) => { if (data) setBaseRecipes(data as BaseRecipe[]) })
-    supabase.from('recipe_base_ingredients').select('base_id, inventory_id, qty_required')
+    supabase.from('recipe_base_ingredients').select('base_id, inventory_id, qty')
       .then(({ data }) => { if (data) setBaseIngs(data as BaseIng[]) })
   }, [])
 
@@ -78,14 +78,14 @@ export default function RecipeCostTab() {
 
   function baseCostPerUnit(baseId: string): number {
     const base = baseRecipes.find(b => b.id === baseId)
-    if (!base || base.total_yield <= 0) return 0
+    if (!base || base.yield_qty <= 0) return 0
     const cost = baseIngs
       .filter(bi => bi.base_id === baseId)
       .reduce((s, bi) => {
         const inv = inventory.find(i => i.id === bi.inventory_id)
-        return s + (inv?.cost_per_unit ?? 0) * bi.qty_required
+        return s + (inv?.cost_per_unit ?? 0) * bi.qty
       }, 0)
-    return cost / base.total_yield
+    return cost / base.yield_qty
   }
 
   // ── Ingredients Panel (read-only inventory view) ──────────────────────────
@@ -138,7 +138,7 @@ export default function RecipeCostTab() {
   // ── Base Recipes Panel ────────────────────────────────────────────────────
 
   function BaseRecipesPanel() {
-    type BaseIngForm = { inventory_id: string; qty_required: string }
+    type BaseIngForm = { inventory_id: string; qty: string }
     type BaseForm    = { name: string; unit: string; items: BaseIngForm[] }
 
     const [editId, setEditId] = useState<string | null>(null)
@@ -153,19 +153,19 @@ export default function RecipeCostTab() {
     async function startEdit(b: BaseRecipe) {
       setEditId(b.id)
       const { data } = await supabase.from('recipe_base_ingredients')
-        .select('inventory_id, qty_required')
+        .select('inventory_id, qty')
         .eq('base_id', b.id)
       setForm({
         name: b.name,
         unit: b.unit,
-        items: ((data ?? []) as { inventory_id: string; qty_required: number }[])
-          .map(r => ({ inventory_id: r.inventory_id, qty_required: String(r.qty_required) })),
+        items: ((data ?? []) as { inventory_id: string; qty: number }[])
+          .map(r => ({ inventory_id: r.inventory_id, qty: String(r.qty) })),
       })
     }
 
     function addItem() {
       if (!inventory.length) return
-      setForm(f => ({ ...f, items: [...f.items, { inventory_id: inventory[0].id, qty_required: '0' }] }))
+      setForm(f => ({ ...f, items: [...f.items, { inventory_id: inventory[0].id, qty: '0' }] }))
     }
 
     function updateItem(idx: number, patch: Partial<BaseIngForm>) {
@@ -180,19 +180,19 @@ export default function RecipeCostTab() {
       if (!form.name) { setMsg('กรอกชื่อสูตรพื้นฐาน'); return }
       setSaving(true)
       try {
-        const totalYield = form.items.reduce((s, i) => s + (parseFloat(i.qty_required) || 0), 0)
+        const totalYield = form.items.reduce((s, i) => s + (parseFloat(i.qty) || 0), 0)
         let baseId: string
 
         if (editId === 'new') {
           const { data, error } = await supabase.from('recipe_bases')
-            .insert({ name: form.name, unit: form.unit, total_yield: totalYield })
+            .insert({ name: form.name, unit: form.unit, yield_qty: totalYield })
             .select('id').single()
           if (error) throw new Error('ไม่สามารถบันทึกได้: ' + error.message)
           baseId = (data as { id: string }).id
         } else {
           baseId = editId!
           const { error } = await supabase.from('recipe_bases')
-            .update({ name: form.name, unit: form.unit, total_yield: totalYield })
+            .update({ name: form.name, unit: form.unit, yield_qty: totalYield })
             .eq('id', baseId)
           if (error) throw new Error('ไม่สามารถอัปเดตได้: ' + error.message)
           await supabase.from('recipe_base_ingredients').delete().eq('base_id', baseId)
@@ -202,7 +202,7 @@ export default function RecipeCostTab() {
           const rows = form.items.map(i => ({
             base_id:      baseId,
             inventory_id: i.inventory_id,
-            qty_required: parseFloat(i.qty_required) || 0,
+            qty: parseFloat(i.qty) || 0,
           }))
           const { error } = await supabase.from('recipe_base_ingredients').insert(rows)
           if (error) throw new Error('ไม่สามารถบันทึกส่วนผสมได้: ' + error.message)
@@ -228,9 +228,9 @@ export default function RecipeCostTab() {
     // Live cost preview for the form being edited
     const previewCost = form.items.reduce((s, item) => {
       const inv = inventory.find(i => i.id === item.inventory_id)
-      return s + (inv?.cost_per_unit ?? 0) * (parseFloat(item.qty_required) || 0)
+      return s + (inv?.cost_per_unit ?? 0) * (parseFloat(item.qty) || 0)
     }, 0)
-    const autoYield  = form.items.reduce((s, i) => s + (parseFloat(i.qty_required) || 0), 0)
+    const autoYield  = form.items.reduce((s, i) => s + (parseFloat(i.qty) || 0), 0)
     const cpUnit     = autoYield > 0 ? previewCost / autoYield : 0
 
     return (
@@ -268,7 +268,7 @@ export default function RecipeCostTab() {
                     </div>
                     {form.items.map((item, idx) => {
                       const inv      = inventory.find(i => i.id === item.inventory_id)
-                      const qty      = parseFloat(item.qty_required) || 0
+                      const qty      = parseFloat(item.qty) || 0
                       const itemCost = (inv?.cost_per_unit ?? 0) * qty
                       return (
                         <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
@@ -276,8 +276,8 @@ export default function RecipeCostTab() {
                             {inventory.map(i => <option key={i.id} value={i.id}>{i.name_th || i.name} ({i.unit})</option>)}
                           </select>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <input style={{ ...inputStyle, flex: 1 }} type="number" min={0} value={item.qty_required}
-                              onChange={e => updateItem(idx, { qty_required: e.target.value })} />
+                            <input style={{ ...inputStyle, flex: 1 }} type="number" min={0} value={item.qty}
+                              onChange={e => updateItem(idx, { qty: e.target.value })} />
                             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{inv?.unit ?? ''}</span>
                           </div>
                           <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>{itemCost.toFixed(0)} ₭</span>
@@ -331,7 +331,7 @@ export default function RecipeCostTab() {
                   <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderRadius: 8, backgroundColor: CARD2, alignItems: 'center', fontSize: 14 }}>
                     <span style={{ fontWeight: 600 }}>{b.name}</span>
                     <span style={{ color: 'rgba(255,255,255,0.5)' }}>{b.unit}</span>
-                    <span>{b.total_yield.toLocaleString()} {b.unit}</span>
+                    <span>{b.yield_qty.toLocaleString()} {b.unit}</span>
                     <span style={{ color: cpu > 0 ? GOLD : 'rgba(255,255,255,0.25)', fontWeight: 700 }}>
                       {cpu > 0 ? cpu.toFixed(3) + ' ₭/' + b.unit : '—'}
                     </span>

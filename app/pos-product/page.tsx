@@ -264,7 +264,7 @@ export default function POSProductPage() {
           </h2>
           <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 16, lineHeight: 1.8, maxWidth: 560, margin: '0 auto 28px' }}>
             รองรับสกุลเงินกีบ (LAK) ภาษาไทย ลาว อังกฤษ
-            เขตเวลา Asia/Vientiane และปริ้นใบเสร็จด้วยอักขระพิเศษได้ถูกต้อง
+            เวลาลาว และปริ้นใบเสร็จด้วยอักขระพิเศษได้ถูกต้อง
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             {['🇱🇦 ลาว', '🇹🇭 ไทย', '🇬🇧 English', 'LAK ·฿ · $', 'GMT+7'].map(tag => (

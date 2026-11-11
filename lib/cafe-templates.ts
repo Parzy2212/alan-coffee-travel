@@ -311,7 +311,9 @@ export async function applyTemplate(template: CafeTemplate): Promise<ApplyResult
       .map(link => ({
         recipe_id:    recipeMap.get(link.recipe_name.toLowerCase())!,
         inventory_id: inventoryMap.get(link.ingredient_name.toLowerCase())!,
-        qty_required: link.qty_required,
+        qty_normal:   link.qty_required,
+        qty_less:     link.qty_required,
+        qty_more:     link.qty_required,
         unit:         link.unit,
       }))
 

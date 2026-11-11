@@ -66,7 +66,7 @@ export default function OnboardingPage() {
   // ── Wizard state ────────────────────────────────────────────────────────
   const [persona, setPersona] = useState<Persona>('owner')
   const [shopName, setShopName] = useState('Alan Coffee & Travel')
-  const [city, setCity] = useState('Vientiane')
+  const [city, setCity] = useState('Attapeu')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(['1', '2', '3']))
   const [customItems, setCustomItems] = useState<CustomItem[]>([])
   const [printerPath, setPrinterPath] = useState<PrinterPath | null>(null)

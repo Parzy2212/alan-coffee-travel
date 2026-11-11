@@ -3,19 +3,12 @@
 import { useState } from 'react'
 
 export type PrinterPath = 'setup' | 'later' | 'none'
-type ConnType = 'usb' | 'network' | 'bluetooth'
 type TestStatus = 'idle' | 'printing' | 'success' | 'fail'
 
 const PATH_OPTIONS: { id: PrinterPath; title: string; sub: string; icon: string }[] = [
   { id: 'setup', icon: '🖨️', title: 'มีอยู่แล้ว — ตั้งค่าเลย', sub: 'เชื่อมต่อและทดสอบพิมพ์ตอนนี้' },
-  { id: 'later', icon: '🕐', title: 'ยังไม่มี — ตั้งทีหลัง',   sub: 'ข้ามก่อน ตั้งค่าจาก Settings ทีหลัง' },
-  { id: 'none',  icon: '📱', title: 'ไม่ใช้เครื่องพิมพ์',      sub: 'ส่งใบเสร็จผ่าน LINE หรือ QR code' },
-]
-
-const CONN_TYPES: { id: ConnType; icon: string; label: string; enabled: boolean }[] = [
-  { id: 'usb',       icon: '🔌', label: 'USB',       enabled: true  },
-  { id: 'network',   icon: '📡', label: 'Network',   enabled: false },
-  { id: 'bluetooth', icon: '🔵', label: 'Bluetooth', enabled: false },
+  { id: 'later', icon: '🕐', title: 'ยังไม่มี — ตั้งทีหลัง',   sub: 'ข้ามก่อน ตั้งทีหลังได้ที่ หน้าขาย → ⚙️' },
+  { id: 'none',  icon: '📱', title: 'ไม่ใช้เครื่องพิมพ์',      sub: 'ขายได้ตามปกติ โดยไม่พิมพ์ใบเสร็จ' },
 ]
 
 interface Props {
@@ -27,8 +20,6 @@ interface Props {
 }
 
 export function PrinterSetup({ printerPath, onPathChange, shopName, onNext, onBack }: Props) {
-  const [connType, setConnType] = useState<ConnType>('usb')
-  const [printerName, setPrinterName] = useState('')
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testError, setTestError] = useState('')
 
@@ -42,18 +33,9 @@ export function PrinterSetup({ printerPath, onPathChange, shopName, onNext, onBa
     setTestStatus('printing')
     setTestError('')
 
-    // Persist printer name to localStorage before printing
-    try {
-      if (printerName.trim()) {
-        localStorage.setItem('pos_printer_name', printerName.trim())
-      } else {
-        localStorage.removeItem('pos_printer_name')
-      }
-    } catch { /* ignore */ }
-
     try {
       const { testPrint } = await import('@/lib/thermal-printer')
-      await testPrint(shopName || 'Alan Coffee & Travel')
+      await testPrint(shopName || 'Alan Coffee & Travel', '')
       setTestStatus('success')
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -71,7 +53,7 @@ export function PrinterSetup({ printerPath, onPathChange, shopName, onNext, onBa
         เครื่องพิมพ์
       </h2>
       <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>
-        Alan CafeOS รองรับเครื่องพิมพ์ความร้อน Xprinter, EPSON และอื่น ๆ
+        พิมพ์ผ่านไดรเวอร์เครื่องพิมพ์ของ Windows — ใช้ได้กับเครื่องพิมพ์ความร้อน Xprinter, EPSON และอื่น ๆ
       </p>
 
       {/* Path chooser */}
@@ -120,63 +102,10 @@ export function PrinterSetup({ printerPath, onPathChange, shopName, onNext, onBa
           padding: '20px',
           marginBottom: 20,
         }}>
-          {/* Connection type */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, letterSpacing: '0.5px', marginBottom: 10 }}>
-              ประเภทการเชื่อมต่อ
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {CONN_TYPES.map(ct => {
-                const selected = connType === ct.id
-                return (
-                  <div key={ct.id} style={{ flex: 1, position: 'relative' }}>
-                    <button
-                      onClick={() => ct.enabled && setConnType(ct.id)}
-                      disabled={!ct.enabled}
-                      title={!ct.enabled ? 'Coming soon' : undefined}
-                      style={{
-                        width: '100%', padding: '12px 8px',
-                        backgroundColor: selected && ct.enabled ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.03)',
-                        border: `1px solid ${selected && ct.enabled ? 'rgba(201,168,76,0.5)' : 'rgba(255,255,255,0.07)'}`,
-                        borderRadius: 10, cursor: ct.enabled ? 'pointer' : 'not-allowed',
-                        fontFamily: 'inherit', textAlign: 'center',
-                        opacity: ct.enabled ? 1 : 0.4,
-                        transition: 'all 0.12s',
-                      }}
-                    >
-                      <div style={{ fontSize: 20, marginBottom: 4, lineHeight: 1 }}>{ct.icon}</div>
-                      <div style={{ color: selected && ct.enabled ? '#c9a84c' : 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 600 }}>
-                        {ct.label}
-                      </div>
-                      {!ct.enabled && (
-                        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, marginTop: 2 }}>Coming soon</div>
-                      )}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Printer name (Windows printer name for print server) */}
-          <div style={{ marginBottom: 18 }}>
-            <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, letterSpacing: '0.5px', display: 'block', marginBottom: 7 }}>
-              ชื่อเครื่องพิมพ์ใน Windows <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: 400 }}>(ไม่บังคับ)</span>
-            </label>
-            <input
-              style={{
-                width: '100%', backgroundColor: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8,
-                padding: '11px 14px', color: 'white', fontSize: 14,
-                outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit',
-              }}
-              value={printerName}
-              onChange={e => setPrinterName(e.target.value)}
-              placeholder="เช่น Xprinter 58 (ชื่อใน Control Panel)"
-            />
-            <div style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, marginTop: 5, lineHeight: 1.4 }}>
-              เปิด Control Panel → Devices and Printers เพื่อดูชื่อ
-            </div>
+          <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, lineHeight: 1.8, marginBottom: 18 }}>
+            1. ต่อเครื่องพิมพ์กับคอมพิวเตอร์ แล้วติดตั้งไดรเวอร์ของเครื่องพิมพ์ใน Windows<br />
+            2. ตั้งเครื่องพิมพ์ใบเสร็จเป็น <span style={{ color: 'rgba(201,168,76,0.8)' }}>เครื่องพิมพ์หลัก (Default)</span> ของ Windows<br />
+            3. กด ทดสอบพิมพ์ — ถ้ามีหน้าต่างพิมพ์ขึ้นมา ให้เลือกเครื่องพิมพ์ใบเสร็จแล้วกดพิมพ์
           </div>
 
           {/* Test print */}
@@ -195,8 +124,8 @@ export function PrinterSetup({ printerPath, onPathChange, shopName, onNext, onBa
             >
               {testStatus === 'idle'     && '🖨️ ทดสอบพิมพ์'}
               {testStatus === 'printing' && '⏳ กำลังพิมพ์...'}
-              {testStatus === 'success'  && '✓ พิมพ์สำเร็จ — เครื่องพิมพ์พร้อมใช้งาน'}
-              {testStatus === 'fail'     && '✗ ไม่พบเครื่องพิมพ์ — กดลองใหม่'}
+              {testStatus === 'success'  && '✓ ส่งงานพิมพ์แล้ว — ดูว่ากระดาษออกมาหรือไม่'}
+              {testStatus === 'fail'     && '✗ พิมพ์ไม่สำเร็จ — กดลองใหม่'}
             </button>
 
             {testStatus === 'fail' && (
@@ -205,9 +134,9 @@ export function PrinterSetup({ printerPath, onPathChange, shopName, onNext, onBa
                   ตรวจสอบ:
                 </div>
                 <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, lineHeight: 1.6 }}>
-                  1. เปิดโปรแกรม AlanPOS Print Server แล้วหรือยัง?<br />
-                  2. เครื่องพิมพ์เปิดอยู่และต่อสาย USB แล้วหรือยัง?<br />
-                  3. ตรวจสอบ Control Panel → Devices and Printers
+                  1. เครื่องพิมพ์เปิดอยู่และต่อสาย USB แล้วหรือยัง?<br />
+                  2. ติดตั้งไดรเวอร์และตั้งเป็นเครื่องพิมพ์หลักใน Windows แล้วหรือยัง?<br />
+                  3. ตรวจสอบ Settings → Bluetooth &amp; devices → Printers &amp; scanners
                 </div>
                 {testError && (
                   <div style={{ marginTop: 8, color: 'rgba(255,255,255,0.2)', fontSize: 10, fontFamily: 'monospace', wordBreak: 'break-all' }}>
@@ -233,7 +162,7 @@ export function PrinterSetup({ printerPath, onPathChange, shopName, onNext, onBa
           </div>
           <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.7 }}>
             คุณยังใช้ Alan CafeOS ได้เต็มระบบโดยไม่มีเครื่องพิมพ์<br />
-            เมื่อพร้อมแล้ว ตั้งค่าได้จาก <span style={{ color: 'rgba(201,168,76,0.7)' }}>Settings → เครื่องพิมพ์</span>
+            เมื่อพร้อมแล้ว ตั้งค่าได้จาก <span style={{ color: 'rgba(201,168,76,0.7)' }}>หน้าขาย → ⚙️</span>
           </div>
         </div>
       )}

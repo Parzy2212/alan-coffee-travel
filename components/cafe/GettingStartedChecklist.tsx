@@ -14,6 +14,7 @@ type Counts = {
   employeeCount:  number
   orderCount:     number
   printerSet:     boolean
+  shopInfoSet:    boolean
 }
 
 const ANIM = `
@@ -41,13 +42,17 @@ export function GettingStartedChecklist() {
       supabase.from('inventory').select('id', { count: 'exact', head: true }),
       supabase.from('employees').select('id', { count: 'exact', head: true }),
       supabase.from('orders').select('id', { count: 'exact', head: true }),
-    ]).then(([r, inv, emp, ord]) => {
+      supabase.rpc('get_site_settings'),
+    ]).then(([r, inv, emp, ord, site]) => {
+      const ss = (site.data && typeof site.data === 'object' ? site.data : {}) as Record<string, unknown>
+      const filled = (k: string) => typeof ss[k] === 'string' && (ss[k] as string).trim() !== ''
       setCounts({
         recipeCount:    r.count   ?? 0,
         inventoryCount: inv.count ?? 0,
         employeeCount:  emp.count ?? 0,
         orderCount:     ord.count ?? 0,
         printerSet:     printer,
+        shopInfoSet:    filled('shop_name') && filled('shop_address') && filled('shop_phone'),
       })
     })
     return () => { if (collapseTimer.current) clearTimeout(collapseTimer.current) }
@@ -186,7 +191,7 @@ export function GettingStartedChecklist() {
 
 function buildTasks(c: Counts) {
   return [
-    { label: 'ตั้งค่าร้านค้า',                 done: true,                  href: '/cafe?tab=settings',      star: false },
+    { label: 'กรอกชื่อร้าน ที่อยู่ และเบอร์โทร', done: c.shopInfoSet,       href: '/cafe?tab=settings',      star: false },
     { label: 'เพิ่มเมนูเริ่มต้น (หรือใช้ Template)', done: c.recipeCount >= 1, href: '/cafe/templates',        star: false },
     { label: 'พิมพ์ใบเสร็จได้ (เครื่องนี้)',     done: c.printerSet,           href: '/pos',                    star: false },
     { label: 'เพิ่มเมนูครบ 10 รายการ',         done: c.recipeCount >= 10,   href: '/cafe/import',            star: false },

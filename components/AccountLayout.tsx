@@ -10,7 +10,6 @@ const GOLD = '#c9a84c'
 const NAV_ITEMS = [
   { href: '/account/profile',       label: 'โปรไฟล์',     icon: '👤' },
   { href: '/account/security',      label: 'ความปลอดภัย', icon: '🔒' },
-  { href: '/account/notifications', label: 'การแจ้งเตือน', icon: '🔔' },
   { href: '/account/activity',      label: 'กิจกรรม',      icon: '📋' },
 ]
 

@@ -40,7 +40,7 @@ const esc = (s: string) => s
 
 const lak = (n: number) => `${Math.round(n || 0).toLocaleString('en-US')} ₭`
 
-export function buildReceiptHtml(data: PrintReceiptData, lang: ReceiptLang, design: ReceiptDesign = getReceiptDesign()): string {
+export function buildReceiptHtml(data: PrintReceiptData, lang: ReceiptLang, design: ReceiptDesign = getReceiptDesign(), paperMm: 58 | 80 = getPaperWidth()): string {
   const lbl = RECEIPT_LABELS[lang]
   const ex  = EXTRA[lang]
   const now = data.soldAt ? new Date(data.soldAt) : new Date()
@@ -94,7 +94,7 @@ export function buildReceiptHtml(data: PrintReceiptData, lang: ReceiptLang, desi
   if (data.isTest)        out.push(c('*** TEST - NOT A REAL ORDER ***', 'b'))
   out.push(`<div style="height:${design.blankLines * 4}mm"></div>`)
 
-  return `<div class="rcpt w${getPaperWidth()}" lang="${lang}">${out.join('')}</div>`
+  return `<div class="rcpt w${paperMm}" lang="${lang}">${out.join('')}</div>`
 }
 
 async function waitForFonts(): Promise<void> {

@@ -1772,7 +1772,7 @@ function SettingsTab() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="ชื่อร้าน"><input value={settings.shop_name} onChange={set('shop_name')} style={inputStyle} placeholder="Alan Coffee & Travel" /></Field>
           <Field label="ที่อยู่">
-            <textarea value={settings.shop_address} onChange={set('shop_address')} style={{ ...inputStyle, height: 56, resize: 'vertical' as const }} placeholder="123 ถนน... เวียงจันทน์" />
+            <textarea value={settings.shop_address} onChange={set('shop_address')} style={{ ...inputStyle, height: 56, resize: 'vertical' as const }} placeholder="บ้าน... เมือง... แขวงอัตตะปือ" />
           </Field>
           <div className="settings-grid-2">
             <Field label="เบอร์โทรศัพท์"><input value={settings.shop_phone} onChange={set('shop_phone')} style={inputStyle} placeholder="020-xxx-xxx" /></Field>
@@ -1947,7 +1947,7 @@ function SettingsTab() {
                 value={isOn('telegram_notify_daily_report')}
                 onChange={toggle('telegram_notify_daily_report')}
                 label="📊 รายงานประจำวัน"
-                sub="สรุปยอดขายทุกคืน 22:00 (Asia/Vientiane)"
+                sub="สรุปยอดขายทุกคืน 22:00 (เวลาลาว)"
               />
               <SettingsToggle
                 value={isOn('telegram_notify_large_order')}
@@ -2967,7 +2967,7 @@ function AISettingsSection() {
             value={enabled}
             onChange={v => void toggleEnabled(v)}
             label={saving ? 'กำลังบันทึก...' : 'สร้าง Insights อัตโนมัติ'}
-            sub="ทุกวัน 02:00 Asia/Vientiane — ต้องการ pg_cron + alan-insights deployed"
+            sub="ทุกวัน 02:00 (เวลาลาว) — ต้องการ pg_cron + alan-insights deployed"
           />
         )}
         {toggleError && <div style={{ marginTop: 8, fontSize: 12, color: RED }}>{toggleError}</div>}
@@ -3071,7 +3071,7 @@ function ChatSection() {
       const lines = [
         `=== ALAN CAFE — BUSINESS INTELLIGENCE REPORT ===`,
         `วันที่: ${today} (${dayName})${isWeekend ? ' [วันหยุดสุดสัปดาห์]' : ' [วันธรรมดา]'}`,
-        `เวลา: ${timeStr} ICT (Vientiane)`,
+        `เวลา: ${timeStr} ICT (เวลาลาว, ร้านอยู่แขวงอัตตะปือ)`,
         ``,
         `=== ⚠️ FINANCIAL CONSTRAINTS (HARD LIMITS) ===`,
         `เงินสดในมือ: ${cashBalance.toLocaleString()} LAK${cashBalance < 1000000 ? ' ⚠️ ต่ำมาก — แนะนำเฉพาะวิธีฟรีหรือต้นทุนต่ำ' : ''}`,
@@ -3145,10 +3145,10 @@ function ChatSection() {
     setInput('')
     setLoading(true)
 
-    const systemInstruction = `You are "Alan" — a world-class F&B business consultant with 20 years of hands-on experience in Southeast Asian café markets. You are the embedded AI intelligence inside Alan Cafe's proprietary Cafe OS in Vientiane, Laos.
+    const systemInstruction = `You are "Alan" — a world-class F&B business consultant with 20 years of hands-on experience in Southeast Asian café markets. You are the embedded AI intelligence inside Alan Cafe's proprietary Cafe OS in Attapeu, Laos.
 
 About Alan Cafe:
-- Specialty coffee shop in Vientiane, Laos serving coffee, drinks, and food
+- Specialty coffee shop in Attapeu, Laos serving coffee, drinks, and food
 - Runs a custom Cafe OS with POS, inventory, staff, CRM, and finance modules
 - Customers are a mix of local Lao people and expats
 
@@ -3520,9 +3520,11 @@ export default function CafeClient() {
   const [tab,     setTab]     = useState<Tab>('dashboard')
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set<Tab>(['dashboard']))
   const { solo, override }    = useSoloMode()
+  const [navOpen, setNavOpen] = useState(false)
 
   function switchTab(t: Tab) {
     setTab(t)
+    setNavOpen(false)
     setVisited(prev => { const next = new Set(prev); next.add(t); return next })
     try { window.history.replaceState(null, '', t === 'dashboard' ? '/cafe' : `/cafe?tab=${t}`) } catch { /* ignore */ }
   }
@@ -3541,8 +3543,19 @@ export default function CafeClient() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: BLACK, color: '#fff', fontFamily: 'var(--font-body, Inter, sans-serif)' }}>
+      <style>{`
+        .cafe-menu-btn, .cafe-nav-backdrop { display: none; }
+        @media (max-width: 767px) {
+          .cafe-sidebar { position: fixed !important; left: 0; top: 0; height: 100dvh !important; z-index: 210; transform: translateX(-100%); visibility: hidden; transition: transform 0.2s, visibility 0s 0.2s; }
+          .cafe-sidebar.open { transform: none; visibility: visible; transition: transform 0.2s; box-shadow: 0 0 40px rgba(0,0,0,0.6); }
+          .cafe-nav-backdrop.open { display: block; position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,0.6); }
+          .cafe-menu-btn { display: inline-flex; position: fixed; left: 16px; bottom: 16px; z-index: 190; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+          .cafe-content-pad { padding: 20px 16px !important; }
+        }
+      `}</style>
+      <div className={`cafe-nav-backdrop${navOpen ? ' open' : ''}`} onClick={() => setNavOpen(false)} />
       {/* ── Sidebar ── */}
-      <div style={{ width: 220, flexShrink: 0, backgroundColor: DARK, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', padding: '32px 0', position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start' }}>
+      <div className={`cafe-sidebar${navOpen ? ' open' : ''}`} style={{ width: 220, flexShrink: 0, backgroundColor: DARK, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', padding: '32px 0', position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start' }}>
         <div style={{ padding: '0 24px 32px' }}>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: 22, color: '#fff', letterSpacing: '-0.5px' }}>ALAN</div>
           <div style={{ fontSize: 11, color: GOLD, letterSpacing: '4px', textTransform: 'uppercase' }}>CAFE OS</div>
@@ -3579,9 +3592,14 @@ export default function CafeClient() {
       </div>
 
       {/* ── Content ── */}
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <TodayStatsBar />
-        <div style={{ padding: '40px 40px', flex: 1 }}>
+        <div className="cafe-content-pad" style={{ padding: '40px 40px', flex: 1 }}>
+        <button className="cafe-menu-btn" onClick={() => setNavOpen(true)} aria-label="เปิดเมนู" style={{
+          alignItems: 'center', gap: 8, padding: '10px 14px', minHeight: 44,
+          backgroundColor: DARK, border: `1px solid ${BORDER}`, borderRadius: 10,
+          color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+        }}>☰ เมนู</button>
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{cafeTabLabel(tab)}</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', marginTop: 6 }}>Alan Cafe OS — Admin</div>

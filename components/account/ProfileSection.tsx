@@ -35,19 +35,6 @@ const INP: React.CSSProperties = {
   transition: 'border-color 0.15s',
 }
 
-const LANGUAGES = [
-  { value: 'th', label: 'ไทย' },
-  { value: 'lo', label: 'ລາວ' },
-  { value: 'en', label: 'English' },
-]
-const TIMEZONES = [
-  { value: 'Asia/Vientiane', label: 'Asia/Vientiane (UTC+7)' },
-  { value: 'Asia/Bangkok',   label: 'Asia/Bangkok (UTC+7)'   },
-  { value: 'Asia/Yangon',    label: 'Asia/Yangon (UTC+6:30)' },
-  { value: 'Asia/Kolkata',   label: 'Asia/Kolkata (UTC+5:30)'},
-  { value: 'UTC',            label: 'UTC (UTC+0)'             },
-]
-
 interface Form {
   displayName: string
   phone: string
@@ -136,22 +123,6 @@ export function ProfileSection() {
           }}>
             <span style={{ color: GOLD, fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{initials}</span>
           </div>
-          <div>
-            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 8, lineHeight: 1.5 }}>
-              อัปโหลดรูปโปรไฟล์
-            </div>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '7px 14px',
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 8, cursor: 'not-allowed',
-              color: 'rgba(255,255,255,0.25)', fontSize: 13,
-            }}>
-              เลือกรูปภาพ
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', padding: '1px 5px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3 }}>เร็วๆ นี้</span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -179,7 +150,7 @@ export function ProfileSection() {
                 style={INP}
               />
               <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginTop: 5 }}>
-                ชื่อนี้จะแสดงในใบเสร็จและรายงาน
+                ชื่อนี้แสดงในรายชื่อทีมงาน (ไม่ได้พิมพ์ลงใบเสร็จ — ชื่อบนใบเสร็จตั้งที่ ตั้งค่าร้าน)
               </div>
             </div>
 
@@ -195,36 +166,6 @@ export function ProfileSection() {
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                 style={INP}
               />
-            </div>
-
-            {/* Language */}
-            <div>
-              <label style={LABEL}>ภาษา</label>
-              <div style={{ position: 'relative' }}>
-                <select
-                  value={form.language}
-                  onChange={e => setForm(f => ({ ...f, language: e.target.value }))}
-                  style={{ ...INP, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', paddingRight: 36 }}
-                >
-                  {LANGUAGES.map(l => <option key={l.value} value={l.value} style={{ backgroundColor: '#1a1a1a' }}>{l.label}</option>)}
-                </select>
-                <div style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)', pointerEvents: 'none', fontSize: 10 }}>▼</div>
-              </div>
-            </div>
-
-            {/* Timezone */}
-            <div>
-              <label style={LABEL}>เขตเวลา</label>
-              <div style={{ position: 'relative' }}>
-                <select
-                  value={form.timezone}
-                  onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))}
-                  style={{ ...INP, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', paddingRight: 36 }}
-                >
-                  {TIMEZONES.map(tz => <option key={tz.value} value={tz.value} style={{ backgroundColor: '#1a1a1a' }}>{tz.label}</option>)}
-                </select>
-                <div style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)', pointerEvents: 'none', fontSize: 10 }}>▼</div>
-              </div>
             </div>
 
             {/* Error */}
@@ -263,17 +204,6 @@ export function ProfileSection() {
           <div>
             <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, marginBottom: 4 }}>อีเมลปัจจุบัน</div>
             <div style={{ color: 'white', fontSize: 15, fontWeight: 500 }}>{email}</div>
-          </div>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '7px 14px',
-            backgroundColor: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 8, cursor: 'not-allowed',
-            color: 'rgba(255,255,255,0.25)', fontSize: 13,
-          }}>
-            เปลี่ยนอีเมล
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', padding: '1px 5px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3 }}>เร็วๆ นี้</span>
           </div>
         </div>
       </div>

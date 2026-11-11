@@ -47,7 +47,7 @@ export function WelcomeBanner() {
           ยินดีต้อนรับสู่ Alan Cafe OS{shopName ? `, ${shopName}!` : '!'}
         </div>
         <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, marginBottom: 16 }}>
-          ตั้งค่าร้านของคุณใน 5 ขั้นตอนง่ายๆ ดูรายการด้านล่างและเริ่มต้นได้เลย
+          ทำตามรายการ "เริ่มต้นใช้งาน" ด้านล่างทีละข้อ แล้วเริ่มขายได้เลย
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <a href="/pos" style={{

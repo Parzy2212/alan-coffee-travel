@@ -1,7 +1,7 @@
 // lib/thermal-printer.ts
 // Receipt printing. Default: HTML through the OS printer driver
 // (lib/receipt-print.ts), which renders Lao/Thai. Legacy raw ESC/POS paths
-// (print server / printer IP / WebUSB) run only when a print server printer
+// (print server / printer IP) run only when a print server printer
 // name or a printer IP is saved; they are PC437 (Latin ASCII) only, so Lao
 // and Thai receipts fall back to English there.
 
@@ -230,13 +230,6 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign,
   return lines.join('\n')
 }
 
-export type PrinterStatus = {
-  connected:  boolean
-  deviceName: string | null
-}
-
-type SavedDevice = { vendorId: number; productId: number; name: string }
-
 // ── ESC/POS constants ─────────────────────────────────────────────────────────
 
 const ESC = 0x1B
@@ -372,165 +365,16 @@ function line(str: string): Uint8Array {
   return concat(encodeLine(str), [LF])
 }
 
-// ── USB device management ─────────────────────────────────────────────────────
-
-interface UsbEndpoint      { direction: string; type: string; endpointNumber: number; packetSize?: number }
-interface UsbAlternate     { interfaceClass?: number; interfaceSubclass?: number; interfaceProtocol?: number; alternateSetting?: number; endpoints: UsbEndpoint[] }
-interface UsbInterface     { interfaceNumber: number; alternates: UsbAlternate[] }
-interface UsbConfiguration { configurationValue?: number; interfaces: UsbInterface[] }
-interface UsbDevice {
-  vendorId:         number
-  productId:        number
-  manufacturerName?: string
-  productName?:     string
-  configurations:   UsbConfiguration[]
-  open():           Promise<void>
-  close():          Promise<void>
-  selectConfiguration(n: number): Promise<void>
-  claimInterface(n: number):      Promise<void>
-  releaseInterface(n: number):    Promise<void>
-  transferOut(ep: number, data: BufferSource): Promise<{ status: string }>
-}
-interface UsbApi {
-  requestDevice(opts: { filters: object[] }): Promise<UsbDevice>
-  getDevices(): Promise<UsbDevice[]>
-}
-
-function usb(): UsbApi | null {
-  if (typeof navigator === 'undefined') return null
-  return (navigator as unknown as { usb?: UsbApi }).usb ?? null
-}
-
-let _device: UsbDevice | null = null
-const STORAGE_KEY = 'pos_usb_printer'
-
-function loadSaved(): SavedDevice | null {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') } catch { return null }
-}
-function persistDevice(d: UsbDevice): void {
-  const s: SavedDevice = {
-    vendorId:  d.vendorId,
-    productId: d.productId,
-    name:      d.productName || d.manufacturerName
-            || `USB ${d.vendorId.toString(16).toUpperCase()}:${d.productId.toString(16).toUpperCase()}`,
-  }
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)) } catch { /* ignore */ }
-}
-function clearPersisted(): void {
-  try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
-}
-
-function logDeviceStructure(device: UsbDevice): void {
-  console.log(`[thermal-printer] Device structure — vendorId: 0x${device.vendorId.toString(16).toUpperCase().padStart(4,'0')} productId: 0x${device.productId.toString(16).toUpperCase().padStart(4,'0')}`)
-  for (const cfg of device.configurations) {
-    console.log(`  configuration ${cfg.configurationValue ?? '?'} (${cfg.interfaces.length} interfaces)`)
-    for (const iface of cfg.interfaces) {
-      for (const alt of iface.alternates) {
-        console.log(`    interface ${iface.interfaceNumber} alt ${alt.alternateSetting} class 0x${(alt.interfaceClass ?? 0).toString(16).toUpperCase()} sub 0x${(alt.interfaceSubclass ?? 0).toString(16).toUpperCase()} proto 0x${(alt.interfaceProtocol ?? 0).toString(16).toUpperCase()}`)
-        for (const ep of alt.endpoints) {
-          console.log(`      endpoint ${ep.endpointNumber} dir=${ep.direction} type=${ep.type} pktSize=${ep.packetSize ?? '?'}`)
-        }
-      }
-    }
-  }
-}
-
-function findEndpoint(device: UsbDevice): { interfaceNumber: number; endpointNumber: number } | null {
-  for (const wantBulk of [true, false]) {
-    for (const cfg of device.configurations) {
-      for (const iface of cfg.interfaces) {
-        for (const alt of iface.alternates) {
-          for (const ep of alt.endpoints) {
-            if (ep.direction !== 'out') continue
-            if (wantBulk && ep.type !== 'bulk') continue
-            console.log(`[thermal-printer] Using endpoint ${ep.endpointNumber} (${ep.type}-OUT) on interface ${iface.interfaceNumber}`)
-            return { interfaceNumber: iface.interfaceNumber, endpointNumber: ep.endpointNumber }
-          }
-        }
-      }
-    }
-  }
-  return null
-}
-
-async function openDevice(device: UsbDevice): Promise<void> {
-  await device.open()
-  try { await device.selectConfiguration(1) } catch { /* already at config 1 */ }
-
-  logDeviceStructure(device)
-
-  const claimed: number[] = []
-  for (const cfg of device.configurations) {
-    for (const iface of cfg.interfaces) {
-      try {
-        await device.claimInterface(iface.interfaceNumber)
-        claimed.push(iface.interfaceNumber)
-        console.log(`[thermal-printer] Claimed interface ${iface.interfaceNumber}`)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        console.warn(`[thermal-printer] Could not claim interface ${iface.interfaceNumber}: ${msg}`)
-        if (msg.toLowerCase().includes('unable to claim interface')) {
-          throw new Error(
-            'Windows is using this printer — try: Device Manager → USB Printer Port → Disable, then reconnect'
-          )
-        }
-      }
-    }
-  }
-
-  const ep = findEndpoint(device)
-  if (!ep) throw new Error('No OUT endpoint found on this device. Is it a printer?')
-
-  for (const n of claimed) {
-    if (n !== ep.interfaceNumber) {
-      await device.releaseInterface(n).catch(() => {/* ignore */})
-    }
-  }
-
-  if (!claimed.includes(ep.interfaceNumber)) {
-    await device.claimInterface(ep.interfaceNumber)
-  }
-}
-
-async function sendBytes(data: Uint8Array): Promise<void> {
-  if (!_device) throw new Error('Printer not connected')
-  const ep = findEndpoint(_device)
-  if (!ep) throw new Error('Endpoint lost')
-  const CHUNK = 16384
-  for (let i = 0; i < data.length; i += CHUNK) {
-    await _device.transferOut(ep.endpointNumber, data.slice(i, i + CHUNK))
-  }
-}
-
 // ── WiFi / Print-Server helpers ───────────────────────────────────────────────
 
 const PRINTER_IP_KEY        = 'pos_printer_ip'
 const PRINTER_NAME_KEY      = 'pos_printer_name'
 const PRINT_SERVER_BASE     = 'http://127.0.0.1:12345'
 const PRINT_SERVER_URL      = `${PRINT_SERVER_BASE}/print`
-const PRINT_SERVER_STATUS   = `${PRINT_SERVER_BASE}/status`
 const WIFI_TIMEOUT_MS   = 4000
 // 5000ms for the /print POST: Windows spooling a physical print job takes 3-4s.
 // A shorter value causes AbortError even though the job actually printed.
 const SERVER_TIMEOUT_MS = 5000
-
-// Module-level cache for /status — avoids hammering localhost when settings popup opens repeatedly
-let _statusCache: { ok: boolean; ts: number } | null = null
-const STATUS_CACHE_TTL = 30_000  // 30 seconds
-
-/** Check if the local print server is reachable. Result is cached for 30 s.
- *  Uses a 4 s timeout — Windows IPC to the server process can be slow. */
-export async function checkPrintServer(): Promise<boolean> {
-  if (_statusCache && Date.now() - _statusCache.ts < STATUS_CACHE_TTL) return _statusCache.ok
-  try {
-    const res = await fetch(PRINT_SERVER_STATUS, { signal: AbortSignal.timeout(4000) })
-    _statusCache = { ok: res.ok, ts: Date.now() }
-    return res.ok
-  } catch {
-    _statusCache = { ok: false, ts: Date.now() }
-    return false
-  }
-}
 
 export function getPrinterIp(): string {
   try { return localStorage.getItem(PRINTER_IP_KEY) ?? '' } catch { return '' }
@@ -596,74 +440,7 @@ async function sendViaPrintServer(data: Uint8Array, ip?: string): Promise<void> 
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function isSupported(): boolean {
-  return usb() !== null
-}
-
-export async function getStatus(): Promise<PrinterStatus> {
-  if (!isSupported()) return { connected: false, deviceName: null }
-  if (_device)        return { connected: true,  deviceName: _device.productName || 'USB Printer' }
-
-  const saved = loadSaved()
-  if (!saved) return { connected: false, deviceName: null }
-
-  try {
-    const devices = await usb()!.getDevices()
-    const match   = devices.find(d => d.vendorId === saved.vendorId && d.productId === saved.productId)
-    if (!match) return { connected: false, deviceName: saved.name }
-    await openDevice(match)
-    _device = match
-    return { connected: true, deviceName: match.productName || saved.name }
-  } catch {
-    return { connected: false, deviceName: saved.name }
-  }
-}
-
-export async function connectPrinter(): Promise<string> {
-  const api = usb()
-  if (!api) throw new Error('WebUSB not supported. Use Chrome or Edge.')
-
-  const device = await api.requestDevice({ filters: [{ vendorId: 0x0483, productId: 0x5743 }] })
-
-  console.log(
-    `[thermal-printer] Selected device — vendorId: 0x${device.vendorId.toString(16).toUpperCase()}`,
-    `productId: 0x${device.productId.toString(16).toUpperCase()}`,
-    `name: "${device.productName || device.manufacturerName || '(none)'}"`,
-  )
-
-  await openDevice(device)
-  _device = device
-  persistDevice(device)
-
-  const name = device.productName || device.manufacturerName
-    || `USB ${device.vendorId.toString(16).toUpperCase()}:${device.productId.toString(16).toUpperCase()}`
-  console.log(`[thermal-printer] Connected: ${name}`)
-  return name
-}
-
-export async function debugDevices(): Promise<string> {
-  const api = usb()
-  if (!api) return 'WebUSB not supported in this browser.'
-  try {
-    const devices = await api.getDevices()
-    if (devices.length === 0) return 'No paired USB devices found.\nClick "Connect Printer" first to grant permission.'
-    return devices.map((d, i) =>
-      `[${i + 1}] ${d.productName || d.manufacturerName || '(unnamed)'}\n` +
-      `    vendorId:  0x${d.vendorId.toString(16).toUpperCase().padStart(4, '0')}\n` +
-      `    productId: 0x${d.productId.toString(16).toUpperCase().padStart(4, '0')}`
-    ).join('\n\n')
-  } catch (e) {
-    return `Error: ${e instanceof Error ? e.message : String(e)}`
-  }
-}
-
-export async function disconnectPrinter(): Promise<void> {
-  if (_device) { try { await _device.close() } catch { /* ignore */ } }
-  _device = null
-  clearPersisted()
-}
-
-export async function testPrint(shopName = 'ALAN COFFEE & TRAVEL'): Promise<void> {
+export async function testPrint(shopName: string, footerText: string): Promise<void> {
   await printReceipt({
     shopName,
     queue: 0, receipt: 'TEST', table: '', customer: '',
@@ -672,7 +449,7 @@ export async function testPrint(shopName = 'ALAN COFFEE & TRAVEL'): Promise<void
     ],
     subtotal: 0, discountAmt: 0, discountReason: '', finalTotal: 0,
     method: 'cash', received: 0, change: 0, vatPct: 0,
-    footerText: 'Thank you & come back',
+    footerText,
   })
 }
 
@@ -684,7 +461,8 @@ function centerStr(s: string, w: number): string {
 }
 
 /** Build ESC/POS receipt and send to printer.
- *  Tries in order: WiFi (port 9100) → local print server → WebUSB → throws */
+ *  Windows driver (browser print) unless this device still has the retired
+ *  print-server / network-printer settings: then WiFi (port 9100) → local print server → throws */
 export async function printReceipt(data: PrintReceiptData): Promise<void> {
   if (usesBrowserPrint()) {
     await printReceiptViaBrowser(data, data.lang ?? 'en')
@@ -816,18 +594,6 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     return
   } catch (e) {
     errors.push(`PrintServer: ${e instanceof Error ? e.message : String(e)}`)
-  }
-
-  try {
-    if (!_device) {
-      const s = await getStatus()
-      if (!s.connected) throw new Error('not connected')
-    }
-    await sendBytes(bytes)
-    console.log('[thermal-printer] Printed via WebUSB')
-    return
-  } catch (e) {
-    errors.push(`WebUSB: ${e instanceof Error ? e.message : String(e)}`)
   }
 
   throw new Error(`Print failed — ${errors.join(' | ')}`)

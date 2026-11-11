@@ -27,10 +27,11 @@ import { formatSecondary } from '@/lib/currency'
 import {
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
   setPrinterName as saveServerPrinterName, getPrinterName as getSavedPrinterName, getPrinterIp, setPrinterIp,
-  buildReceiptText, type ReceiptDesign,
+  type ReceiptDesign,
   effectivePrintLang, hasDismissedFallbackWarning, dismissFallbackWarning,
   saveForReprint, getSavedReceipt,
 } from '@/lib/thermal-printer'
+import { buildReceiptHtml, type ReceiptLang } from '@/lib/receipt-print'
 import {
   BG_BASE, BG_SURFACE, BG_CARD_ALT,
   BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
@@ -1625,7 +1626,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 const RETIRED_DEVICE_KEYS = [
   'receipt_shop_name', 'receipt_footer_text', 'receipt_phone', 'receipt_address',
   'receipt_show_qr', 'receipt_show_vat', 'pos_currency',
-  'pos_https_banner_dismissed', 'pos_always_use_http',
+  'pos_https_banner_dismissed', 'pos_always_use_http', 'pos_usb_printer',
 ]
 
 function SettingsPopup({ onClose, shop }: {
@@ -1649,6 +1650,7 @@ function SettingsPopup({ onClose, shop }: {
   const [extraLine2,     setExtraLine2]     = useState(() => ls('receipt_extra_line_2'))
   const [blankLines,     setBlankLines]     = useState(() => parseInt(ls('receipt_blank_lines', '4'), 10) || 4)
   const [showPreview,    setShowPreview]    = useState(false)
+  const [previewLang,    setPreviewLang]    = useState<ReceiptLang>('th')
 
   // The retired print-server / network-printer method; saving switches this device to the Windows driver
   const [legacyPrinter] = useState(() => !!(getSavedPrinterName() || getPrinterIp()))
@@ -1668,7 +1670,7 @@ function SettingsPopup({ onClose, shop }: {
     setPrinterBusy(true)
     setTestPrintMsg(null)
     try {
-      await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL')
+      await thermalTestPrint(shopName || 'ALAN COFFEE & TRAVEL', footerText || 'Thank you for visiting')
       setTestPrintMsg({ text: 'ส่งงานพิมพ์แล้ว ✓', ok: true })
     } catch (e) {
       console.error('[POS] Test print failed:', e)
@@ -1884,19 +1886,19 @@ function SettingsPopup({ onClose, shop }: {
               showQueueLarge, showItemPrice,
               extraLine1, extraLine2, blankLines,
             }
-            const sample = buildReceiptText({
+            const sampleHtml = buildReceiptHtml({
               shopName: shopName || 'ALAN COFFEE & TRAVEL',
               queue: 42, receipt: '042',
               table: 'A1', customer: 'ลูกค้าทดสอบ',
               cartSnapshot: [
-                { qty: 2, recipe: { product_name: 'Lao Coffee', price_lak: 25000 }, customization: 'ไม่ใส่น้ำตาล' },
+                { qty: 2, recipe: { product_name: 'Lao Coffee', price_lak: 25000 }, customization: 'หวานน้อย · เย็น' },
                 { qty: 1, recipe: { product_name: 'Matcha Latte', price_lak: 35000 }, customization: '' },
               ],
               subtotal: 85000, discountAmt: 0, discountReason: '', finalTotal: 85000,
               method: 'cash', received: 100000, change: 15000, vatPct: 0,
               footerText: footerText || 'Thank you for visiting',
               phone: phone || '', address: address || '',
-            }, design)
+            }, previewLang, design, paperWidth === '58' ? 58 : 80)
             return (
               <div onClick={() => setShowPreview(false)} style={{
                 position: 'fixed', inset: 0, zIndex: 300,
@@ -1908,12 +1910,18 @@ function SettingsPopup({ onClose, shop }: {
                   maxHeight: '80dvh', overflowY: 'auto', maxWidth: 360, width: '100%',
                 }}>
                   <div style={{ fontSize: 10, color: '#999', marginBottom: 8, fontFamily: 'monospace' }}>
-                    ตัวอย่างใบเสร็จ (80mm) — กดพื้นหลังเพื่อปิด
+                    ตัวอย่างใบเสร็จ ({paperWidth}mm, ข้อมูลร้านจาก ตั้งค่าร้าน) — กดพื้นหลังเพื่อปิด
                   </div>
-                  <pre style={{
-                    fontFamily: 'Courier New, monospace', fontSize: 8, lineHeight: 1.4,
-                    margin: 0, whiteSpace: 'pre', color: '#111', overflowX: 'auto',
-                  }}>{sample}</pre>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    {(['en', 'th', 'lo'] as const).map(l => (
+                      <button key={l} onClick={() => setPreviewLang(l)} style={{
+                        fontSize: 11, padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
+                        border: '1px solid #ccc', backgroundColor: previewLang === l ? '#111' : '#fff',
+                        color: previewLang === l ? '#fff' : '#333',
+                      }}>{l === 'en' ? 'EN' : l === 'th' ? 'ไทย' : 'ລາວ'}</button>
+                    ))}
+                  </div>
+                  <div style={{ overflowX: 'auto' }} dangerouslySetInnerHTML={{ __html: sampleHtml }} />
                 </div>
               </div>
             )

@@ -1,15 +1,14 @@
-'use client'
+import { MovedNotice } from '@/components/shop/MovedNotice'
 
-import { LoyaltySection } from '@/components/shop/LoyaltySection'
+export const metadata = { title: 'Loyalty — Alan Cafe OS' }
 
+// Hidden until loyalty works end to end (2026-11-11); components/shop/LoyaltySection.tsx is kept for that.
 export default function LoyaltySettingsPage() {
   return (
-    <div style={{ maxWidth: 580, margin: '0 auto', padding: '32px 16px' }}>
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginBottom: 6 }}>โปรแกรมสะสมแต้ม</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>ตั้งค่าระบบ Loyalty Points และสิทธิพิเศษ VIP</div>
-      </div>
-      <LoyaltySection />
-    </div>
+    <MovedNotice
+      title="ยังไม่เปิดใช้งาน"
+      reason="ระบบสะสมแต้มยังไม่พร้อมใช้ ปิดไว้ก่อน"
+      links={[{ href: '/cafe?tab=settings', label: 'ตั้งค่าร้าน' }]}
+    />
   )
 }
