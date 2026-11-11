@@ -7,6 +7,12 @@ import { getInvitationDetails } from '@/lib/invitations'
 
 const GOLD = '#c9a84c'
 
+// Only same-site paths ("/pos", not "//evil.com" or "https://...")
+function safeNext(raw: string | null): string | null {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return null
+  return raw
+}
+
 const inp: React.CSSProperties = {
   width: '100%',
   backgroundColor: 'rgba(255,255,255,0.05)',
@@ -31,10 +37,12 @@ export default function LoginPage() {
   const [resetSuccess, setResetSuccess] = useState(false)
   const [inviteToken, setInviteToken] = useState('')
   const [inviteShopName, setInviteShopName] = useState('')
+  const [nextPath, setNextPath] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    setNextPath(safeNext(params.get('next')))
     if (params.get('reset') === 'success') {
       setResetSuccess(true)
       toastTimer.current = setTimeout(() => setResetSuccess(false), 5000)
@@ -50,9 +58,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!authLoading && session) {
-      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : '/cafe')
+      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : (nextPath ?? '/cafe'))
     }
-  }, [session, authLoading, router, inviteToken])
+  }, [session, authLoading, router, inviteToken, nextPath])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,7 +72,7 @@ export default function LoginPage() {
       setError(error.includes('Invalid') ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : error)
       setLoading(false)
     } else {
-      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : '/cafe')
+      router.replace(inviteToken ? `/accept-invite?token=${encodeURIComponent(inviteToken)}` : (nextPath ?? '/cafe'))
     }
   }
 
