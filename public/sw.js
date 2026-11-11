@@ -38,6 +38,9 @@ self.addEventListener('fetch', event => {
   const { request } = event
   const url = new URL(request.url)
 
+  // Dev server chunk URLs are not content-hashed, so caching them serves stale code
+  if (['localhost', '127.0.0.1', '[::1]'].includes(self.location.hostname)) return
+
   // Skip non-GET and chrome-extension
   if (request.method !== 'GET') return
   if (url.protocol === 'chrome-extension:') return
