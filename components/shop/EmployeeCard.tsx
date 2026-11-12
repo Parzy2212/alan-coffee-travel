@@ -14,7 +14,6 @@ interface EmployeeCardProps {
   onChangePin: () => void
   onHistory: () => void
   onToggleActive: () => void
-  onDelete: () => void
 }
 
 function timeAgoShort(iso: string) {
@@ -29,7 +28,7 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
 }
 
-export function EmployeeCard({ employee, activeShift, onEdit, onChangePin, onHistory, onToggleActive, onDelete }: EmployeeCardProps) {
+export function EmployeeCard({ employee, activeShift, onEdit, onChangePin, onHistory, onToggleActive }: EmployeeCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -52,7 +51,6 @@ export function EmployeeCard({ employee, activeShift, onEdit, onChangePin, onHis
     { label: 'เปลี่ยน PIN',  icon: '🔑',  action: onChangePin },
     { label: 'ดูประวัติ',    icon: '📊',  action: onHistory },
     { label: employee.is_active ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน', icon: employee.is_active ? '🔴' : '🟢', action: onToggleActive },
-    { label: 'ลบพนักงาน',   icon: '🗑️',  action: onDelete, danger: true, disabled: isWorking },
   ]
 
   return (

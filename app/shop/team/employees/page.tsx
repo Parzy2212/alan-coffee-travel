@@ -27,8 +27,7 @@ export default function EmployeesPage() {
   const [activeShifts, setActiveShifts] = useState<ActiveShift[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<ModalState>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<Employee | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [toggleErr, setToggleErr] = useState('')
 
   const load = useCallback(async () => {
     if (!shopId) return
@@ -50,29 +49,34 @@ export default function EmployeesPage() {
 
   const activeShiftMap = new Map(activeShifts.map(s => [s.employee_id, s]))
 
+  // Same rules the old HR on/off button had: never switch off someone who is still
+  // clocked in at the kiosk, and take them off the future schedule.
   const handleToggleActive = async (emp: Employee) => {
+    setToggleErr('')
     const { authClient } = await import('@/lib/supabase-auth')
-    await authClient.from('employees').update({ is_active: !emp.is_active }).eq('id', emp.id)
-    load()
-  }
-
-  const handleDelete = async (emp: Employee) => {
-    setDeleting(true)
-    try {
-      const { authClient } = await import('@/lib/supabase-auth')
-      const { error } = await authClient.from('employees').delete().eq('id', emp.id)
-      if (error) {
-        if (error.message.includes('foreign key') || error.message.includes('orders')) {
-          await authClient.from('employees').update({ is_active: false }).eq('id', emp.id)
-        } else {
-          throw error
-        }
+    const { supabase } = await import('@/lib/supabase')
+    let staffId: string | null = null
+    if (emp.is_active) {
+      const { data: hr, error: hrErr } = await supabase.from('staff').select('id').eq('employee_id', emp.id).maybeSingle()
+      if (hrErr) { setToggleErr(`ปิดใช้งานไม่ได้: ตรวจการลงเวลาไม่สำเร็จ (${hrErr.message})`); return }
+      staffId = (hr as { id: string } | null)?.id ?? null
+      if (staffId) {
+        const { data: today, error: todayErr } = await supabase.rpc('get_staff_today_status')
+        if (todayErr) { setToggleErr(`ปิดใช้งานไม่ได้: ตรวจการลงเวลาไม่สำเร็จ (${todayErr.message})`); return }
+        const t = ((today ?? []) as { id: string; clock_in: string | null; clock_out: string | null }[]).find(r => r.id === staffId)
+        if (t?.clock_in && !t.clock_out) { setToggleErr(`ปิดใช้งาน ${emp.name} ไม่ได้: ยังลงเวลาเข้างานอยู่ ให้ลงเวลาออกก่อน`); return }
       }
-    } catch { /* ignore */ } finally {
-      setDeleting(false)
-      setDeleteConfirm(null)
-      load()
     }
+    // RLS refuses by updating 0 rows without an error, so ask for the row back
+    const { data: changed, error } = await authClient.from('employees').update({ is_active: !emp.is_active }).eq('id', emp.id).select('id')
+    if (error || !changed?.length) { setToggleErr(`เปลี่ยนสถานะไม่สำเร็จ: ${error?.message ?? 'ไม่มีสิทธิ์ หรือหมดเวลาเข้าสู่ระบบ ให้เข้าสู่ระบบใหม่'}`); return }
+    if (staffId) {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
+      const { error: schedErr } = await supabase.from('staff_schedules').delete()
+        .eq('staff_id', staffId).gte('date', today)
+      if (schedErr) setToggleErr(`ปิดใช้งานแล้ว แต่ลบกะล่วงหน้าในตารางงานไม่สำเร็จ: ${schedErr.message}`)
+    }
+    load()
   }
 
   const totalActive = employees.filter(e => e.is_active).length
@@ -123,25 +127,6 @@ export default function EmployeesPage() {
         <EmployeeHistoryModal employeeId={modal.employee.id} employeeName={modal.employee.name} hourlyRate={modal.employee.hourly_rate} onClose={() => setModal(null)} />
       )}
 
-      {/* Delete confirmation */}
-      {deleteConfirm && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: 28, maxWidth: 380, width: '100%', fontFamily: 'inherit' }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 10 }}>ลบพนักงาน?</div>
-            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
-              &ldquo;{deleteConfirm.name}&rdquo; จะถูกลบออกจากระบบ<br />
-              ถ้ามีประวัติขาย ลงเวลา หรือข้อมูล HR ผูกอยู่ จะถูกปิดการใช้งานแทนการลบ
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>ยกเลิก</button>
-              <button onClick={() => handleDelete(deleteConfirm)} disabled={deleting} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: 'none', backgroundColor: deleting ? 'rgba(255,77,77,0.3)' : '#ff4d4d', color: 'white', fontSize: 14, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                {deleting ? 'กำลังลบ...' : 'ลบพนักงาน'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
         <div>
@@ -162,6 +147,10 @@ export default function EmployeesPage() {
           + เพิ่มพนักงาน
         </button>
       </div>
+
+      {toggleErr && (
+        <div role="alert" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 9, border: '1px solid rgba(255,77,77,0.3)', backgroundColor: 'rgba(255,77,77,0.08)', color: '#ff8080', fontSize: 13 }}>{toggleErr}</div>
+      )}
 
       {/* Empty state */}
       {employees.length === 0 ? (
@@ -195,7 +184,6 @@ export default function EmployeesPage() {
               onChangePin={() => setModal({ type: 'edit', employee: emp, tab: 'pin' })}
               onHistory={() => setModal({ type: 'history', employee: emp })}
               onToggleActive={() => handleToggleActive(emp)}
-              onDelete={() => setDeleteConfirm(emp)}
             />
           ))}
         </div>
