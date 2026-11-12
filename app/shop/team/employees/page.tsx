@@ -80,7 +80,7 @@ export default function EmployeesPage() {
   }
 
   const totalActive = employees.filter(e => e.is_active).length
-  const totalWorking = activeShifts.filter(s => employees.find(e => e.id === s.employee_id)?.is_active).length
+  const totalWorking = employees.filter(e => e.is_active && activeShiftMap.has(e.id)).length
 
   if (shopLoading || loading) {
     return (

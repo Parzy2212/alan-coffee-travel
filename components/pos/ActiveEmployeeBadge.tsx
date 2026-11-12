@@ -29,6 +29,7 @@ export function ActiveEmployeeBadge({ employee, onClockOut }: ActiveEmployeeBadg
           .from('employee_shifts')
           .update({ clocked_out: new Date().toISOString() })
           .eq('id', employee.shiftId)
+          .is('clocked_out', null)
       }
     } catch { /* non-critical */ }
     onClockOut()

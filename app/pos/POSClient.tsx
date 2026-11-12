@@ -15,6 +15,7 @@ import { TestModeBanner } from '@/components/pos/TestModeBanner'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
+import { StuckBillsBanner } from '@/components/pos/StuckBillsBanner'
 import { useNetworkStatus } from '@/lib/network-status'
 import { useTestMode } from '@/lib/test-mode'
 import { getPinnedRecipes, togglePinnedRecipe } from '@/lib/user-preferences'
@@ -1057,7 +1058,7 @@ function DigitalReceiptPopup({
 
 function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, defaultLang, onSuccess, onClose }: {
   subtotal: number
-  cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
+  cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null; name?: string }[]
   discount: string
   discountReason: string
   activeEmployeeId?: string | null
@@ -1194,7 +1195,11 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     async function saveOffline() {
       const offlineQueue = nextOfflineQueueNumber()
       try {
-        await enqueueOrder({ fn: 'checkout_order', args: { ...args, p_created_at: new Date().toISOString(), p_queue_number: offlineQueue } }, clientUuid.current)
+        await enqueueOrder({
+          fn: 'checkout_order', args: { ...args, p_created_at: new Date().toISOString(), p_queue_number: offlineQueue },
+          // shown to the cashier if the server later refuses the bill (the RPC never sees this)
+          summary: { items: cartPayload.map(i => ({ name: i.name ?? '', qty: i.qty, price: i.unit_price_lak, note: i.customization })), received: method === 'cash' ? receivedNum : null },
+        }, clientUuid.current)
       } catch {
         setErrMsg('บันทึกบิลในเครื่องไม่สำเร็จ ห้ามรับเงิน ลองใหม่อีกครั้ง'); setLoading(false); return
       }
@@ -2500,6 +2505,23 @@ function PosClockDisplay() {
 export default function POSClient() {
   const { employee: activeEmployee, ready: employeeReady, clockIn, clockOut } = useActiveEmployee()
   const [showAppMenu, setShowAppMenu] = useState(false)
+  // A tablet left signed in overnight never shows the PIN pad again, so yesterday's shift would
+  // stay open for days. Ask for the PIN again on a new day; PinPad then closes the old shift.
+  useEffect(() => {
+    if (!activeEmployee) return
+    const day = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
+    const check = async () => {
+      if (day(new Date(activeEmployee.clockedInAt)) === day(new Date())) return
+      // only when the server answers: the PIN pad needs the internet, and a shop that opens
+      // without it must still be able to sell
+      const { error } = await supabase.from('employee_shifts').select('id').limit(1).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
+      if (!error) clockOut()
+    }
+    void check()
+    const timer = setInterval(check, 60000)
+    return () => clearInterval(timer)
+  }, [activeEmployee, clockOut])
+
   const canOpenAppMenu = activeEmployee?.role === 'manager' || activeEmployee?.role === 'owner'
   const appMenuBtnRef = useRef<HTMLButtonElement>(null)
   const appMenuCloseRef = useRef<HTMLButtonElement>(null)
@@ -2622,10 +2644,16 @@ export default function POSClient() {
       if (running) return
       running = true
       replayQueue(async (payload, order) => {
-        const { error } = await supabase.rpc('checkout_order', offlineCheckoutArgs(payload, order, shopId)).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
-        if (!error) { window.dispatchEvent(new Event('alan:queue-changed')); return true }
-        return false
-      }).catch(() => {}).finally(() => { running = false })
+        const { error, status } = await supabase.rpc('checkout_order', offlineCheckoutArgs(payload, order, shopId)).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
+        if (!error) return 'ok'
+        // A Postgres error code means the database read the bill and refused it: sending again cannot
+        // work (some refusals come back as HTTP 500, so the status is no guide). Connection, overload,
+        // read-only, lock, deadlock and timeout classes are temporary. No Postgres code (gateway page, captive portal,
+        // PostgREST's own PGRST errors) = try later; StuckBillsBanner shows the bill if that drags on.
+        const code = (error as { code?: string }).code ?? ''
+        const refused = /^[0-9A-Z]{5}$/.test(code) && !/^(08|25|40|53|55|57|58|XX)/.test(code) && status !== 408 && status !== 429
+        return refused ? { rejected: error.message } : 'retry'
+      }).catch(() => {}).finally(() => { running = false; window.dispatchEvent(new Event('alan:queue-changed')) })
     }
     replay()
     // the browser may never fire an "online" event (see saveOffline), so also retry on a timer
@@ -2957,6 +2985,7 @@ export default function POSClient() {
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if (showAppMenu) { if (e.key === 'Escape') setShowAppMenu(false); return }
+      if (document.querySelector('[data-stuck-bills-dialog]')) return
       const tag = (e.target as HTMLElement).tagName
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 
@@ -3039,6 +3068,7 @@ export default function POSClient() {
     qty:            item.qty,
     unit_price_lak: item.recipe.price_lak,
     customization:  item.customization || null,
+    name:           item.recipe.product_name,
   }))
 
   const todayTotal  = todayOrders.filter(o => o.status === 'paid').reduce((s, o) => s + o.total_lak, 0)
@@ -3244,6 +3274,8 @@ export default function POSClient() {
 
       {/* ── TEST MODE BANNER */}
       {testMode && <TestModeBanner onDisable={disableTestMode} />}
+
+      <StuckBillsBanner shopId={shopId} />
 
       {/* ── PRINT LANGUAGE FALLBACK TOAST */}
       {printFallbackLang && (

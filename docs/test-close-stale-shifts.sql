@@ -68,6 +68,14 @@ BEGIN
   report := report || E'\nINFO shifts that would be closed (' || n || '): ' || v_list;
   report := report || E'\nINFO open shifts started today, left open: ' || b_open_today;
   report := report || E'\nINFO closed shifts in the list: ' || b_closed || ' -> ' || (b_closed + n) || ' (the new ones show as 0 minutes)';
+  report := report || E'\nINFO policies on employee_shifts: ' || COALESCE((
+    SELECT string_agg(policyname || ' [' || cmd || ' ' || array_to_string(roles, '+') || ']', '; ' ORDER BY policyname)
+    FROM pg_policies WHERE schemaname = 'public' AND tablename = 'employee_shifts'), '(none)');
+  report := report || E'\nINFO row level security on employee_shifts: ' || (
+    SELECT CASE WHEN relrowsecurity THEN 'ON' ELSE 'OFF' END FROM pg_class WHERE oid = 'public.employee_shifts'::regclass);
+  report := report || E'\nINFO table rights anon: ' || COALESCE((
+    SELECT string_agg(privilege_type, ',' ORDER BY privilege_type) FROM information_schema.role_table_grants
+    WHERE table_schema = 'public' AND table_name = 'employee_shifts' AND grantee = 'anon'), '(none)');
   report := report || E'\nINFO triggers on employee_shifts: ' || v_triggers;
   report := report || E'\nINFO functions that read employee_shifts: ' || v_funcs;
 

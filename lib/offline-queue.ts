@@ -6,7 +6,11 @@ export type OfflineOrder = {
   createdAt: number
   attempts: number
   lastAttempt: number | null
+  rejected?: string    // the server's refusal; set = no more automatic sending
 }
+
+/** After this many sends without an answer the bill is shown to the cashier (sending still goes on). */
+export const STALLED_AFTER = 10
 
 const DB_NAME    = 'alan-cafe-offline'
 const DB_VERSION = 1
@@ -58,7 +62,7 @@ export async function removeOrder(id: string): Promise<void> {
   })
 }
 
-export async function updateAttempt(id: string): Promise<void> {
+async function patchOrder(id: string, patch: (o: OfflineOrder) => OfflineOrder): Promise<void> {
   const db = await openDB()
   const existing: OfflineOrder | undefined = await new Promise((res, rej) => {
     const req = tx(db, 'readonly').get(id)
@@ -67,10 +71,18 @@ export async function updateAttempt(id: string): Promise<void> {
   })
   if (!existing) return
   await new Promise<void>((res, rej) => {
-    const req = tx(db, 'readwrite').put({ ...existing, attempts: existing.attempts + 1, lastAttempt: Date.now() })
+    const req = tx(db, 'readwrite').put(patch(existing))
     req.onsuccess = () => res()
     req.onerror   = () => rej(req.error)
   })
+}
+
+/**
+ * Puts a bill back in line for sending now (the cashier pressed "send again"). attempts stays
+ * at the "shown" level so the bill keeps showing on the selling screen until it really gets in.
+ */
+export async function retryOrder(id: string): Promise<void> {
+  await patchOrder(id, ({ rejected: _dropped, ...o }) => ({ ...o, attempts: Math.max(o.attempts, STALLED_AFTER), lastAttempt: null }))
 }
 
 export async function getPendingCount(): Promise<number> {
@@ -91,19 +103,34 @@ function tryRegisterSync() {
   }
 }
 
+export function isStuck(o: OfflineOrder): boolean {
+  return !!o.rejected || o.attempts >= STALLED_AFTER
+}
+
+export type ReplayResult = 'ok' | 'retry' | { rejected: string }
+
+/**
+ * Sends the waiting bills. 'retry' = no answer from the server (try again later, with a
+ * growing pause). { rejected } = the server answered and refused the bill: sending it
+ * again cannot work, so it is kept, marked, and shown to the cashier instead.
+ */
 export async function replayQueue(
-  submitFn: (payload: Record<string, unknown>, order: OfflineOrder) => Promise<boolean>
+  submitFn: (payload: Record<string, unknown>, order: OfflineOrder) => Promise<ReplayResult>
 ): Promise<{ replayed: number; failed: number }> {
   const orders = await getPendingOrders()
   let replayed = 0; let failed = 0
   for (const order of orders) {
-    await updateAttempt(order.id)
+    if (order.rejected) { failed++; continue }
     const delay = Math.min(1000 * 2 ** order.attempts, 30000)
     if (order.lastAttempt && Date.now() - order.lastAttempt < delay) { failed++; continue }
+    let result: ReplayResult = 'retry'
+    try { result = await submitFn(order.payload, order) } catch { /* no answer: retry */ }
+    if (result === 'ok') { await removeOrder(order.id); replayed++; continue }
+    failed++
+    const reason = result === 'retry' ? undefined : result.rejected
     try {
-      const ok = await submitFn(order.payload, order)
-      if (ok) { await removeOrder(order.id); replayed++ } else { failed++ }
-    } catch { failed++ }
+      await patchOrder(order.id, o => ({ ...o, attempts: o.attempts + 1, lastAttempt: Date.now(), ...(reason ? { rejected: reason } : {}) }))
+    } catch { /* storage hiccup: the bill is still in the queue, go on with the next one */ }
   }
   return { replayed, failed }
 }

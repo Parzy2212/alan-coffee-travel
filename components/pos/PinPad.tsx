@@ -100,11 +100,38 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
       setGreeting(`สวัสดี ${emp.name}!`)
 
       const { supabase } = await import('@/lib/supabase')
-      const { data: shiftData } = await supabase
-        .from('employee_shifts')
-        .insert({ shop_id: shopId, employee_id: emp.id })
-        .select('id')
-        .single()
+      // One open shift per person. Shifts left open on earlier days are closed as 0 minutes
+      // (nobody knows when they really ended). A PIN entry on the same day (page reload, second
+      // device) continues today's first shift; extra open shifts of today are closed as 0 minutes.
+      // A failure here must not stop the cashier from selling.
+      let shiftData: { id: string; clocked_in: string } | null = null
+      try {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
+        const dayStart = new Date(`${today}T00:00:00+07:00`).getTime()
+        const { data: openShifts, error: openErr } = await supabase
+          .from('employee_shifts')
+          .select('id, clocked_in')
+          .eq('shop_id', shopId).eq('employee_id', emp.id).is('clocked_out', null)
+          .order('clocked_in', { ascending: true })
+        if (openErr) throw openErr
+        const open = (openShifts ?? []) as { id: string; clocked_in: string }[]
+        const current = open.find(s => new Date(s.clocked_in).getTime() >= dayStart)
+        for (const s of open) {
+          if (s.id === current?.id) continue
+          // row security refuses by changing 0 rows without an error, so ask for the row back
+          const { data: closed, error } = await supabase.from('employee_shifts').update({ clocked_out: s.clocked_in }).eq('id', s.id).is('clocked_out', null).select('id')
+          if (error || !closed?.length) console.warn('[PinPad] could not close old shift', error?.message ?? 'no row changed')
+        }
+        if (current) shiftData = current
+        else {
+          const { data, error } = await supabase.from('employee_shifts').insert({ shop_id: shopId, employee_id: emp.id }).select('id, clocked_in').single()
+          if (error) throw error
+          // device time, so a device clock that differs from the server cannot look like "another day"
+          shiftData = { id: (data as { id: string }).id, clocked_in: new Date().toISOString() }
+        }
+      } catch (e) {
+        console.warn('[PinPad] shift not recorded', e)
+      }
 
       setTimeout(() => {
         onClockIn({
@@ -112,7 +139,7 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
           name:        emp.name,
           role:        emp.role,
           shiftId:     shiftData?.id ?? '',
-          clockedInAt: new Date().toISOString(),
+          clockedInAt: shiftData?.clocked_in ?? new Date().toISOString(),
           shopId,
         })
         submitLock.current = false
