@@ -23,6 +23,8 @@ type StaffEntry = {
   avatar_url: string | null; scheduled_start_time: string | null
   face_descriptor: number[] | null
 }
+// Same main name as the POS list (employees); the Thai name is extra
+const staffLabel = (s: StaffEntry) => s.name_th ? `${s.name} · ${s.name_th}` : s.name
 type TodayRecord = { clock_in: string | null; clock_out: string | null; status: string | null }
 type SuccessInfo = { action: 'in' | 'out'; name: string; time: string; hours_worked?: number }
 type InventorySimple = { id: string; name: string; unit: string; cost_per_unit: number | null }
@@ -898,7 +900,7 @@ export default function StaffClient() {
                   onMouseLeave={e => (e.currentTarget.style.borderColor = BORDER)}>
                   <Avatar name={s.name} url={s.avatar_url} size={52} />
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{s.name_th ?? s.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{staffLabel(s)}</div>
                     <div style={{ marginTop: 5 }}><StatusBadge staffId={s.id} /></div>
                   </div>
                 </button>
@@ -914,7 +916,7 @@ export default function StaffClient() {
           <button onClick={() => setPhase('select')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
           <Avatar name={selected.name} url={selected.avatar_url} size={80} />
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{selected.name_th ?? selected.name}</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{staffLabel(selected)}</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>กรอก PIN ของคุณ</div>
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
@@ -954,7 +956,7 @@ export default function StaffClient() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 18px', backgroundColor: CARD, borderRadius: 14, border: `1px solid ${BORDER}` }}>
             <Avatar name={selected.name} url={selected.avatar_url} size={52} />
             <div>
-              <div style={{ fontSize: 17, fontWeight: 700 }}>{selected.name_th ?? selected.name}</div>
+              <div style={{ fontSize: 17, fontWeight: 700 }}>{staffLabel(selected)}</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
                 {action === 'in' ? 'เข้างาน' : 'ออกงาน'} — {new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
               </div>
@@ -1015,7 +1017,7 @@ export default function StaffClient() {
           <div style={{ padding: '20px 20px', borderRadius: 16, backgroundColor: CARD, border: `1px solid ${GOLD}33`, display: 'flex', alignItems: 'center', gap: 18 }}>
             <Avatar name={selected.name} url={selected.avatar_url} size={64} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{selected.name_th ?? selected.name}</div>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>{staffLabel(selected)}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                 <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 99, backgroundColor: `${GREEN}18`, color: GREEN, fontWeight: 600 }}>● ออนดิวตี้</span>
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>เข้างาน {successInfo.time}</span>
@@ -1088,7 +1090,7 @@ export default function StaffClient() {
               style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>
               ← {purchaseStep === 'done' ? 'กลับหน้าหลัก' : 'ย้อนกลับ'}
             </button>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>โดย {selected.name_th ?? selected.name}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>โดย {staffLabel(selected)}</div>
           </div>
 
           <div style={{ fontSize: 18, fontWeight: 800 }}>🧾 แจ้งซื้อวัตถุดิบ</div>
@@ -1302,7 +1304,7 @@ export default function StaffClient() {
         <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
           <button onClick={() => setPhase('dashboard')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
           <div style={{ fontSize: 18, fontWeight: 800 }}>📦 นับสต็อก</div>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {selected.name_th ?? selected.name}</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {staffLabel(selected)}</div>
 
           {auditLoading && auditItems.length === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1387,7 +1389,7 @@ function LeaveRequestForm({ selected, onBack }: { selected: StaffEntry; onBack: 
     <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
       <button onClick={onBack} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
       <div style={{ fontSize: 18, fontWeight: 800 }}>📅 ขอลา</div>
-      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {selected.name_th ?? selected.name}</div>
+      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {staffLabel(selected)}</div>
 
       {done ? (
         <div style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: `${GREEN}10`, border: `1px solid ${GREEN}33`, color: GREEN, fontSize: 14, fontWeight: 700 }}>

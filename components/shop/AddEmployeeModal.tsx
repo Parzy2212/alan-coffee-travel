@@ -134,7 +134,7 @@ export function AddEmployeeModal({ shopId, onSaved, onClose }: AddEmployeeModalP
             </div>
             <PinInput value={pin} onChange={p => { setPin(p); setPinError('') }} visible={pinVisible} error={!!pinError} />
             {pinError && <div style={{ color: '#ff6b6b', fontSize: 12, marginTop: 6 }}>{pinError}</div>}
-            <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, marginTop: 6 }}>พนักงานใช้ PIN นี้เพื่อเข้าสู่ระบบ POS</div>
+            <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, marginTop: 6 }}>พนักงานใช้ PIN นี้ทั้งเข้าหน้าขายและลงเวลา</div>
           </div>
 
           {/* Hourly rate */}

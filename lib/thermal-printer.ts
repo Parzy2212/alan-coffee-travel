@@ -110,7 +110,6 @@ export type ReceiptDesign = {
   showLogo:       boolean   // show shop name header
   showReceiptNum: boolean   // show order # line
   showStaff:      boolean   // show staff name line
-  staffName:      string    // staff name value
   showQueueLarge: boolean   // show large queue number box
   showItemPrice:  boolean   // show price on each item line
   extraLine1:     string    // free text line before footer
@@ -126,7 +125,6 @@ export function getReceiptDesign(): ReceiptDesign {
     showLogo:       g('receipt_show_logo',       'true')  === 'true',
     showReceiptNum: g('receipt_show_receipt_num','true')  === 'true',
     showStaff:      g('receipt_show_staff',      'false') === 'true',
-    staffName:      g('receipt_staff_name',      ''),
     showQueueLarge: g('receipt_show_queue_large','true')  === 'true',
     showItemPrice:  g('receipt_show_item_price', 'true')  === 'true',
     extraLine1:     g('receipt_extra_line_1',    ''),
@@ -178,8 +176,8 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign,
     L(orderLine.substring(0, W))
   }
   if (data.customer)    L(toAscii(data.customer).substring(0, W))
-  if (d.showStaff && (d.staffName || data.staffName)) {
-    L(`${lbl.staff} ${toAscii(d.staffName || data.staffName || '').substring(0, W - lbl.staff.length - 1)}`)
+  if (d.showStaff && data.staffName) {
+    L(`${lbl.staff} ${toAscii(data.staffName).substring(0, W - lbl.staff.length - 1)}`)
   }
 
   if (d.showQueueLarge) {
@@ -498,8 +496,8 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
     p(line(data.table ? `Order #${data.receipt}  Table: ${data.table}` : `Order #${data.receipt}`))
   }
   if (data.customer)   p(line(toAscii(data.customer).substring(0, W)))
-  if (design.showStaff && (design.staffName || data.staffName)) {
-    p(line(`STAFF: ${toAscii(design.staffName || data.staffName || '').substring(0, W - 7)}`))
+  if (design.showStaff && data.staffName) {
+    p(line(`STAFF: ${toAscii(data.staffName).substring(0, W - 7)}`))
   }
 
   // ── Queue number — prominent box ──────────────────────────────────────────

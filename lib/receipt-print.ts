@@ -56,8 +56,7 @@ export function buildReceiptHtml(data: PrintReceiptData, lang: ReceiptLang, desi
   out.push(c(when))
   if (design.showReceiptNum) out.push(c(`${ex.order} #${data.receipt}${data.table ? `  ${ex.table}: ${data.table}` : ''}`))
   if (data.customer)      out.push(c(data.customer))
-  const staff = design.staffName || data.staffName
-  if (design.showStaff && staff) out.push(c(`${lbl.staff} ${staff}`))
+  if (design.showStaff && data.staffName) out.push(c(`${lbl.staff} ${data.staffName}`))
 
   if (design.showQueueLarge) {
     out.push('<hr class="d">', c(lbl.queue.replace(/\*/g, '').trim(), 'b'), c(`#${String(data.queue).padStart(3, '0')}`, 'b q'), '<hr class="d">')

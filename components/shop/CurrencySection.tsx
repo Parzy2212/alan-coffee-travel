@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { IBM_Plex_Sans_Thai } from 'next/font/google'
-import { type CurrencyCode, saveExchangeRates, saveDisplayCurrencies } from '@/lib/currency'
+import { type CurrencyCode } from '@/lib/currency'
 import {
-  GOLD, SUCCESS, BG_VOID, BG_CARD, BORDER_SUBTLE, BORDER_DEFAULT,
+  GOLD, BG_VOID, BG_CARD, BORDER_SUBTLE, BORDER_DEFAULT,
   STATE_SELECTED_BG, STATE_SELECTED_BORDER, STATE_FOCUS_RING,
   TEXT_1, TEXT_2, FONT_MONO, RADIUS,
 } from '@/lib/pos-theme-tokens'
@@ -22,44 +22,24 @@ const CURRENCIES: { code: CurrencyCode; name: string; symbol: string }[] = [
   { code: 'CNY', name: 'Chinese Yuan', symbol: '¥'  },
 ]
 
-const DEFAULT_RATES: Record<CurrencyCode, number> = {
-  USD: 21800,
-  THB: 620,
-  VND: 1,
-  CNY: 3000,
-}
-
-export function CurrencySection() {
-  const [rates,    setRates]    = useState<Record<CurrencyCode, number>>(DEFAULT_RATES)
-  const [display,  setDisplay]  = useState<CurrencyCode[]>(['USD', 'THB'])
-  const [saved,    setSaved]    = useState(false)
-
-  useEffect(() => {
-    try {
-      const r = localStorage.getItem('pos_exchange_rates')
-      if (r) setRates({ ...DEFAULT_RATES, ...JSON.parse(r) })
-      const d = localStorage.getItem('pos_display_currencies')
-      if (d) setDisplay(JSON.parse(d))
-    } catch { /* ignore */ }
-  }, [])
+// Controlled: the values live in ตั้งค่าร้าน and are saved with its "บันทึกทั้งหมด" button.
+export function CurrencySection({ rates, display, onRates, onDisplay }: {
+  rates: Record<CurrencyCode, number>
+  display: CurrencyCode[]
+  onRates: (r: Record<CurrencyCode, number>) => void
+  onDisplay: (d: CurrencyCode[]) => void
+}) {
+  // What is being typed, so an empty or half-typed number ("0.") is not replaced mid-edit
+  const [typing, setTyping] = useState<{ code: CurrencyCode; text: string } | null>(null)
 
   function toggleDisplay(code: CurrencyCode) {
-    setDisplay(prev =>
-      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
-    )
-  }
-
-  function save() {
-    saveExchangeRates(rates)
-    saveDisplayCurrencies(display)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    onDisplay(display.includes(code) ? display.filter(c => c !== code) : [...display, code])
   }
 
   return (
     <div className={`${ibmPlexSansThai.className} currency-section`} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
-        <div style={{ fontSize: 11, color: TEXT_2, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>Exchange Rates (LAK per 1 unit)</div>
+        <div style={{ fontSize: 11, color: TEXT_2, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>อัตราแลกเปลี่ยน (กี่กีบ ต่อ 1 หน่วย)</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {CURRENCIES.map(c => (
             <div key={c.code} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', backgroundColor: BG_CARD, borderRadius: RADIUS.xl, border: `1px solid ${BORDER_SUBTLE}` }}>
@@ -69,9 +49,16 @@ export function CurrencySection() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
-                  type="number"
-                  value={rates[c.code]}
-                  onChange={e => setRates(prev => ({ ...prev, [c.code]: parseInt(e.target.value, 10) || 0 }))}
+                  type="number" min="0" step="any" inputMode="decimal"
+                  aria-label={`อัตรา ${c.code} เป็นกีบ`}
+                  value={typing?.code === c.code ? typing.text : rates[c.code] || ''}
+                  onFocus={() => setTyping({ code: c.code, text: String(rates[c.code] || '') })}
+                  onBlur={() => setTyping(null)}
+                  onChange={e => {
+                    setTyping({ code: c.code, text: e.target.value })
+                    const n = parseFloat(e.target.value)
+                    if (n > 0) onRates({ ...rates, [c.code]: n })
+                  }}
                   style={{
                     width: 100, padding: '6px 10px', borderRadius: RADIUS.md,
                     border: `1px solid ${BORDER_DEFAULT}`, backgroundColor: BG_VOID,
@@ -86,7 +73,7 @@ export function CurrencySection() {
       </div>
 
       <div>
-        <div style={{ fontSize: 11, color: TEXT_2, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>Show in POS (secondary display)</div>
+        <div style={{ fontSize: 11, color: TEXT_2, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>แสดงในหน้าขาย</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
           {CURRENCIES.map(c => (
             <button key={c.code} onClick={() => toggleDisplay(c.code)} style={{
@@ -100,20 +87,11 @@ export function CurrencySection() {
             </button>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: TEXT_2, marginTop: 8 }}>Appears below cart total in POS as a reference (e.g., $12.50  ·  ฿450)</div>
+        <div style={{ fontSize: 11, color: TEXT_2, marginTop: 8 }}>แสดงใต้ยอดรวมในหน้าขายเป็นราคาอ้างอิง (เช่น $12.50  ·  ฿450) ไม่เลือกเลย = ไม่แสดง</div>
       </div>
 
-      <button onClick={save} className="currency-save-btn" style={{
-        padding: '14px 0', borderRadius: RADIUS.lg,
-        border: `1px solid ${saved ? SUCCESS : GOLD}`,
-        backgroundColor: saved ? `${SUCCESS}14` : 'transparent',
-        color: saved ? SUCCESS : GOLD, fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
-      }}>
-        {saved ? '✓ Saved' : 'Save Settings'}
-      </button>
       <style>{`
-        .currency-section input:focus-visible,
-        .currency-section .currency-save-btn:focus-visible {
+        .currency-section input:focus-visible {
           outline: ${STATE_FOCUS_RING};
           outline-offset: 2px;
         }

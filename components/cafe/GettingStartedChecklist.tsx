@@ -196,7 +196,7 @@ function buildTasks(c: Counts) {
     { label: 'พิมพ์ใบเสร็จได้ (เครื่องนี้)',     done: c.printerSet,           href: '/pos',                    star: false },
     { label: 'เพิ่มเมนูครบ 10 รายการ',         done: c.recipeCount >= 10,   href: '/cafe/import',            star: false },
     { label: 'เพิ่มสต็อกวัตถุดิบ',             done: c.inventoryCount >= 1, href: '/cafe?tab=stock',         star: false },
-    { label: 'เพิ่มพนักงาน POS',               done: c.employeeCount >= 1,  href: '/shop/team/employees',    star: false },
+    { label: 'เพิ่มพนักงาน (PIN)',             done: c.employeeCount >= 1,  href: '/shop/team/employees',    star: false },
     { label: 'ตรวจสอบความพร้อมก่อนเปิดร้าน',   done: c.orderCount >= 1,     href: '/cafe/health-check',      star: true  },
     { label: 'ทดสอบออเดอร์แรก (Test Mode)',    done: c.orderCount >= 1,     href: '/pos',                    star: false },
   ]

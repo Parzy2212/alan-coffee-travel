@@ -140,7 +140,7 @@ export function ShopCostSection({ settings, onChange }: { settings: CostSettings
       const active = (data as StaffRow[]).filter(st => st.is_active !== false)
       const breakdown: SalaryBreakdownItem[] = active.map(st => {
         const amount = st.salary ?? 0
-        const displayName = st.name_th || st.name || '?'
+        const displayName = st.name || st.name_th || '?'
         if (st.salary_type === 'daily')  return { name: displayName, monthly: amount * 26, note: `${amount.toLocaleString()}×26วัน` }
         if (st.salary_type === 'hourly') {
           const hrs = st.hours_per_day ?? 8

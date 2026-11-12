@@ -29,7 +29,7 @@ export const APP_NAV: AppNavGroup[] = [
   ]},
   { label: 'ทีมงาน', items: [
     { href: '/shop/team',           label: 'บัญชีและสิทธิ์', icon: '👥', soloHidden: true },
-    { href: '/shop/team/employees', label: 'PIN หน้าขาย',   icon: '🏷️' },
+    { href: '/shop/team/employees', label: 'รายชื่อพนักงาน',  icon: '🏷️' },
   ]},
   { label: 'ตั้งค่า', items: [
     { href: '/cafe?tab=settings', label: 'ตั้งค่าร้าน',  icon: '⚙️' },

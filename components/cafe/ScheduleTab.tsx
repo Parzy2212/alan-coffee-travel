@@ -137,7 +137,7 @@ function StaffPickerPopup({
               }}>
                 <StaffAvatar name={s.name} avatarUrl={s.avatar_url} size={34} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{s.name_th ?? s.name}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{s.name}</div>
                   {conflictShift && (
                     <div style={{ fontSize: 11, color: ORANGE, marginTop: 2 }}>
                       ⚠️ {shiftLabel(conflictShift.shift)}
@@ -428,7 +428,7 @@ export default function ScheduleTab() {
                               <button
                                 key={schedId}
                                 onClick={() => setPicker({ date: ds, shift: shift.key })}
-                                title={`คลิกเพื่อแก้ไข — ${s.name_th ?? s.name}`}
+                                title={`คลิกเพื่อแก้ไข — ${s.name}`}
                                 style={{
                                   display: 'flex', alignItems: 'center', gap: 5,
                                   padding: '3px 9px 3px 5px', borderRadius: 99,
@@ -440,7 +440,7 @@ export default function ScheduleTab() {
                                 }}
                               >
                                 <StaffAvatar name={s.name} avatarUrl={s.avatar_url} size={18} />
-                                <span style={{ fontSize: 11, color: '#fff', fontWeight: 500 }}>{s.name_th ?? s.name}</span>
+                                <span style={{ fontSize: 11, color: '#fff', fontWeight: 500 }}>{s.name}</span>
                               </button>
                             ))}
                             <button

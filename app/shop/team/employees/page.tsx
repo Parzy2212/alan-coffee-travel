@@ -130,7 +130,7 @@ export default function EmployeesPage() {
             <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 10 }}>ลบพนักงาน?</div>
             <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
               &ldquo;{deleteConfirm.name}&rdquo; จะถูกลบออกจากระบบ<br />
-              หากมีออเดอร์ที่เชื่อมโยงอยู่ จะถูกปิดการใช้งานแทนการลบ
+              ถ้ามีประวัติขาย ลงเวลา หรือข้อมูล HR ผูกอยู่ จะถูกปิดการใช้งานแทนการลบ
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>ยกเลิก</button>
@@ -145,7 +145,7 @@ export default function EmployeesPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'white', marginBottom: 6 }}>พนักงาน POS</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'white', marginBottom: 6 }}>รายชื่อพนักงาน</div>
           <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>
             {totalActive} คน{totalWorking > 0 ? ` • ${totalWorking} กำลังทำงาน` : ''}
           </div>
@@ -182,7 +182,7 @@ export default function EmployeesPage() {
           >
             + เพิ่มพนักงานคนแรก
           </button>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginTop: 14 }}>พนักงานจะใช้ PIN 4 หลักเข้าสู่ระบบ POS</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginTop: 14 }}>พนักงานใช้ PIN 4 หลักเดียวกันทั้งหน้าขายและลงเวลา</div>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>

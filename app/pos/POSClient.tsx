@@ -27,11 +27,12 @@ import { formatSecondary } from '@/lib/currency'
 import {
   printReceipt as thermalPrint, testPrint as thermalTestPrint,
   setPrinterName as saveServerPrinterName, getPrinterName as getSavedPrinterName, getPrinterIp, setPrinterIp,
-  type ReceiptDesign,
+  getReceiptDesign,
   effectivePrintLang, hasDismissedFallbackWarning, dismissFallbackWarning,
   saveForReprint, getSavedReceipt,
 } from '@/lib/thermal-printer'
 import { buildReceiptHtml, type ReceiptLang } from '@/lib/receipt-print'
+import { applyShopSettingsToDevice } from '@/lib/shop-device-settings'
 import {
   BG_BASE, BG_SURFACE, BG_CARD_ALT,
   BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
@@ -1626,7 +1627,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
 const RETIRED_DEVICE_KEYS = [
   'receipt_shop_name', 'receipt_footer_text', 'receipt_phone', 'receipt_address',
   'receipt_show_qr', 'receipt_show_vat', 'pos_currency',
-  'pos_https_banner_dismissed', 'pos_always_use_http', 'pos_usb_printer',
+  'pos_https_banner_dismissed', 'pos_always_use_http', 'pos_usb_printer', 'receipt_staff_name',
 ]
 
 function SettingsPopup({ onClose, shop }: {
@@ -1639,16 +1640,6 @@ function SettingsPopup({ onClose, shop }: {
   const [paperWidth, setPaperWidth] = useState<'58' | '80'>(() => ls('pos_paper_width', '80') === '80' ? '80' : '58')
   const [autoPrint,  setAutoPrint]  = useState(() => ls('pos_auto_print', 'true') !== 'false')
 
-  // Receipt layout (this device)
-  const [showLogo,       setShowLogo]       = useState(() => ls('receipt_show_logo',       'true')  === 'true')
-  const [showReceiptNum, setShowReceiptNum] = useState(() => ls('receipt_show_receipt_num','true')  === 'true')
-  const [showStaff,      setShowStaff]      = useState(() => ls('receipt_show_staff',      'false') === 'true')
-  const [staffName,      setStaffName]      = useState(() => ls('receipt_staff_name'))
-  const [showQueueLarge, setShowQueueLarge] = useState(() => ls('receipt_show_queue_large','true')  === 'true')
-  const [showItemPrice,  setShowItemPrice]  = useState(() => ls('receipt_show_item_price', 'true')  === 'true')
-  const [extraLine1,     setExtraLine1]     = useState(() => ls('receipt_extra_line_1'))
-  const [extraLine2,     setExtraLine2]     = useState(() => ls('receipt_extra_line_2'))
-  const [blankLines,     setBlankLines]     = useState(() => parseInt(ls('receipt_blank_lines', '4'), 10) || 4)
   const [showPreview,    setShowPreview]    = useState(false)
   const [previewLang,    setPreviewLang]    = useState<ReceiptLang>('th')
 
@@ -1686,15 +1677,6 @@ function SettingsPopup({ onClose, shop }: {
       localStorage.setItem('pos_auto_print',  String(autoPrint))
       saveServerPrinterName('')
       setPrinterIp('')
-      localStorage.setItem('receipt_show_logo',        String(showLogo))
-      localStorage.setItem('receipt_show_receipt_num', String(showReceiptNum))
-      localStorage.setItem('receipt_show_staff',       String(showStaff))
-      localStorage.setItem('receipt_staff_name',       staffName)
-      localStorage.setItem('receipt_show_queue_large', String(showQueueLarge))
-      localStorage.setItem('receipt_show_item_price',  String(showItemPrice))
-      localStorage.setItem('receipt_extra_line_1',     extraLine1)
-      localStorage.setItem('receipt_extra_line_2',     extraLine2)
-      localStorage.setItem('receipt_blank_lines',      String(blankLines))
       RETIRED_DEVICE_KEYS.forEach(k => localStorage.removeItem(k))
     } catch { /* ignore */ }
     onClose()
@@ -1726,7 +1708,7 @@ function SettingsPopup({ onClose, shop }: {
 
           {/* Shop info lives in ตั้งค่าร้าน */}
           <div style={{ padding: '10px 12px', borderRadius: 8, border: `1px solid ${GOLD}33`, backgroundColor: `${GOLD}0d`, fontSize: 12, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
-            ชื่อร้าน ที่อยู่ เบอร์โทร ข้อความท้ายใบเสร็จ VAT และการรับเงิน ตั้งที่เดียวในหน้า ตั้งค่าร้าน (ใช้กับทุกเครื่อง)
+            ชื่อร้าน ที่อยู่ เบอร์โทร ข้อความท้ายใบเสร็จ รูปแบบใบเสร็จ VAT อัตราแลกเปลี่ยน และการรับเงิน ตั้งที่เดียวในหน้า ตั้งค่าร้าน (ใช้กับทุกเครื่อง)
             <div style={{ marginTop: 6 }}>
               <a href="/cafe?tab=settings" target="_blank" rel="noopener noreferrer" style={{ color: GOLD, fontWeight: 700, textDecoration: 'none' }}>⚙️ ไปหน้าตั้งค่าร้าน →</a>
             </div>
@@ -1813,83 +1795,22 @@ function SettingsPopup({ onClose, shop }: {
             )}
           </div>
 
-          {/* Receipt layout — this device */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={sectionLabel}>รูปแบบใบเสร็จ (เครื่องนี้)</div>
-              <button onClick={() => setShowPreview(true)} style={{
-                fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-                border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD,
-              }}>ดูตัวอย่าง</button>
-            </div>
-
-            {/* Toggle grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
-              {([
-                ['showLogo',       showLogo,       setShowLogo,       'ชื่อร้าน'],
-                ['showReceiptNum', showReceiptNum, setShowReceiptNum, 'เลขใบเสร็จ'],
-                ['showStaff',      showStaff,      setShowStaff,      'ชื่อพนักงาน'],
-                ['showQueueLarge', showQueueLarge, setShowQueueLarge, 'เลขคิวใหญ่'],
-                ['showItemPrice',  showItemPrice,  setShowItemPrice,  'ราคาต่อชิ้น'],
-              ] as [string, boolean, (v: boolean) => void, string][]).map(([key, val, setter, label]) => (
-                <button key={key} onClick={() => setter(!val)} style={{
-                  padding: '7px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11,
-                  fontWeight: val ? 700 : 400, textAlign: 'left',
-                  border: `1px solid ${val ? GOLD : 'rgba(255,255,255,0.1)'}`,
-                  backgroundColor: val ? `${GOLD}18` : 'transparent',
-                  color: val ? GOLD : 'rgba(255,255,255,0.4)',
-                }}>{val ? '✓ ' : '○ '}{label}</button>
-              ))}
-            </div>
-
-            {/* Staff name (shown when toggle is on) */}
-            {showStaff && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>ชื่อพนักงาน</div>
-                <input value={staffName} onChange={e => setStaffName(e.target.value)}
-                  style={popupInput} placeholder="เช่น Alan" />
-              </div>
-            )}
-
-            {/* Extra text lines */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-              <div>
-                <input value={extraLine1} onChange={e => setExtraLine1(e.target.value)}
-                  style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 1 (เว้นว่างเพื่อซ่อน)" />
-                {/[^\x00-\x7F]/.test(extraLine1) && (
-                  <div style={{ fontSize: 10, color: '#e07070', marginTop: 3 }}>⚠ ตัวอักษรที่ไม่ใช่ภาษาอังกฤษจะแสดงเป็น ?</div>
-                )}
-              </div>
-              <div>
-                <input value={extraLine2} onChange={e => setExtraLine2(e.target.value)}
-                  style={popupInput} placeholder="ข้อความพิเศษบรรทัดที่ 2" />
-                {/[^\x00-\x7F]/.test(extraLine2) && (
-                  <div style={{ fontSize: 10, color: '#e07070', marginTop: 3 }}>⚠ ตัวอักษรที่ไม่ใช่ภาษาอังกฤษจะแสดงเป็น ?</div>
-                )}
-              </div>
-            </div>
-
-            {/* Blank feed lines */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', whiteSpace: 'nowrap' }}>บรรทัดว่างท้ายบิล</div>
-              <input type="range" min={1} max={10} value={blankLines}
-                onChange={e => setBlankLines(parseInt(e.target.value, 10))}
-                style={{ flex: 1, accentColor: GOLD }} />
-              <div style={{ fontSize: 12, color: GOLD, minWidth: 20, textAlign: 'right' }}>{blankLines}</div>
-            </div>
+          {/* Receipt preview: shop layout (ตั้งค่าร้าน) on this device's paper width */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>รูปแบบใบเสร็จตั้งที่ ตั้งค่าร้าน</div>
+            <button onClick={() => setShowPreview(true)} style={{
+              fontSize: 12, padding: '8px 12px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+              border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD,
+            }}>ดูตัวอย่างใบเสร็จ</button>
           </div>
 
           {/* Preview modal (rendered inside the settings overlay) */}
           {showPreview && (() => {
-            const design: ReceiptDesign = {
-              showLogo, showReceiptNum, showStaff, staffName,
-              showQueueLarge, showItemPrice,
-              extraLine1, extraLine2, blankLines,
-            }
+            const design = getReceiptDesign()
             const sampleHtml = buildReceiptHtml({
               shopName: shopName || 'ALAN COFFEE & TRAVEL',
               queue: 42, receipt: '042',
-              table: 'A1', customer: 'ลูกค้าทดสอบ',
+              table: 'A1', customer: 'ลูกค้าทดสอบ', staffName: 'Owner',
               cartSnapshot: [
                 { qty: 2, recipe: { product_name: 'Lao Coffee', price_lak: 25000 }, customization: 'หวานน้อย · เย็น' },
                 { qty: 1, recipe: { product_name: 'Matcha Latte', price_lak: 35000 }, customization: '' },
@@ -2681,6 +2602,7 @@ export default function POSClient() {
         }
         setPosSettings(next)
         try { localStorage.setItem('pos_site_settings_cache', JSON.stringify(next)) } catch { /* ignore */ }
+        applyShopSettingsToDevice(data as Record<string, unknown>)
       }
     })
   }, [])
@@ -2911,6 +2833,7 @@ export default function POSClient() {
       received, change, vatPct: posSettings.vat_percent,
       footerText, phone, address,
       isTest: testMode, lang: receiptLang,
+      staffName: activeEmployee?.name,
       soldAt: new Date().toISOString(),
     }
 

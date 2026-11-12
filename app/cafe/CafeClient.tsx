@@ -8,6 +8,8 @@ import {
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/MoneyInput'
 import { CurrencySection } from '@/components/shop/CurrencySection'
+import { DEFAULT_RATES, parseRates, parseDisplayCurrencies } from '@/lib/currency'
+import { RECEIPT_LAYOUT_DEFAULTS, SHOP_DEVICE_KEYS, applyShopSettingsToDevice, readDeviceShopSetting } from '@/lib/shop-device-settings'
 import { COST_KEYS } from '@/components/cafe/ShopCostSection'
 import { AvatarDropdown } from '@/components/AvatarDropdown'
 import { useAuth } from '@/contexts/AuthContext'
@@ -167,6 +169,11 @@ type FullSettings = {
   telegram_notify_low_stock: string; telegram_notify_daily_report: string
   telegram_notify_large_order: string; telegram_large_order_threshold: string
   receipt_footer: string
+  // Shop-wide receipt layout + exchange rates (migration 056); each device keeps a copy
+  receipt_show_logo: string; receipt_show_receipt_num: string; receipt_show_staff: string
+  receipt_show_queue_large: string; receipt_show_item_price: string
+  receipt_extra_line_1: string; receipt_extra_line_2: string; receipt_blank_lines: string
+  exchange_rates: string; display_currencies: string
 }
 
 const DEFAULT_SETTINGS: FullSettings = {
@@ -190,6 +197,8 @@ const DEFAULT_SETTINGS: FullSettings = {
   telegram_notify_low_stock: 'true', telegram_notify_daily_report: 'true',
   telegram_notify_large_order: 'true', telegram_large_order_threshold: '500000',
   receipt_footer: '',
+  ...RECEIPT_LAYOUT_DEFAULTS,
+  exchange_rates: JSON.stringify(DEFAULT_RATES), display_currencies: '["USD","THB"]',
 }
 
 // This page runs as the anon role, so secrets must never be loaded into or saved from the browser.
@@ -1555,6 +1564,16 @@ function SettingsTab() {
         const cleaned = Object.fromEntries(
           Object.entries(data as Record<string, unknown>).filter(([k, v]) => v !== null && v !== undefined && isSavableKey(k))
         )
+        // Until the shop has saved a value, start from what this device was using
+        for (const k of Object.keys(SHOP_DEVICE_KEYS)) {
+          if (k in cleaned) continue
+          const v = readDeviceShopSetting(k)
+          if (v === null) continue
+          // VND = 1 kip was the old wrong built-in rate, not something the shop chose
+          cleaned[k] = k === 'exchange_rates'
+            ? JSON.stringify({ ...parseRates(v), ...(parseRates(v).VND === 1 ? { VND: DEFAULT_RATES.VND } : {}) })
+            : v
+        }
         setSettings(s => ({ ...s, ...cleaned }))
       }
       setLoading(false)
@@ -1584,6 +1603,7 @@ function SettingsTab() {
     try {
       const { failed, reason } = await writeSettings(SAVABLE_SETTING_KEYS.map(k => [k, String(settings[k] ?? '')]))
       if (failed.length) { setSaveError(`บันทึกไม่สำเร็จ ${failed.length} รายการ (${reason}): ${failed.join(', ')}`); return }
+      applyShopSettingsToDevice(settings)
       const { logAccountEvent } = await import('@/lib/account-events')
       await logAccountEvent('shop_settings_updated' as never, 'Shop settings updated').catch(() => {})
       setSaved(true)
@@ -1648,6 +1668,7 @@ function SettingsTab() {
       const { failed, reason } = await writeSettings(Object.entries(importPreview))
       const applied = Object.fromEntries(Object.entries(importPreview).filter(([k]) => !failed.includes(k) && isSavableKey(k)))
       setSettings(s => ({ ...s, ...(applied as Partial<FullSettings>) }))
+      applyShopSettingsToDevice(applied)
       setImportPreview(null)
       if (failed.length) { setImportError(`นำเข้าไม่สำเร็จ ${failed.length} รายการ (${reason}): ${failed.join(', ')}`); return }
       // The ต้นทุนเมนู tab holds the costs it loaded earlier; reload so it can't save them back over the import
@@ -1797,9 +1818,41 @@ function SettingsTab() {
             </Field>
           </div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>
-            VAT คิดรวมอยู่ในราคาแล้ว (ใบเสร็จแสดงยอด VAT แยกให้ดู ไม่บวกเพิ่ม) / เครื่องพิมพ์ ขนาดกระดาษ และพิมพ์อัตโนมัติ ตั้งแยกที่เครื่อง POS แต่ละเครื่อง: หน้าขาย → ⚙️
+            VAT คิดรวมอยู่ในราคาแล้ว (ใบเสร็จแสดงยอด VAT แยกให้ดู ไม่บวกเพิ่ม)
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginTop: 8 }}>รูปแบบใบเสร็จ (ใช้ทุกเครื่อง)</div>
+          <div>
+            <SettingsToggle value={isOn('receipt_show_logo')}        onChange={toggle('receipt_show_logo')}        label="ชื่อร้าน" sub="พิมพ์ชื่อร้านตัวใหญ่ที่หัวใบเสร็จ" />
+            <SettingsToggle value={isOn('receipt_show_receipt_num')} onChange={toggle('receipt_show_receipt_num')} label="เลขใบเสร็จ" />
+            <SettingsToggle value={isOn('receipt_show_staff')}       onChange={toggle('receipt_show_staff')}       label="ชื่อพนักงาน" sub="ชื่อคนที่เข้ากะอยู่ตอนขาย (จากรายชื่อพนักงาน)" />
+            <SettingsToggle value={isOn('receipt_show_queue_large')} onChange={toggle('receipt_show_queue_large')} label="เลขคิวตัวใหญ่" />
+            <SettingsToggle value={isOn('receipt_show_item_price')}  onChange={toggle('receipt_show_item_price')}  label="ราคาต่อรายการ" />
+          </div>
+          <Field label="ข้อความพิเศษบรรทัดที่ 1 (เว้นว่าง = ไม่พิมพ์)">
+            <input value={settings.receipt_extra_line_1} onChange={set('receipt_extra_line_1')} style={inputStyle} maxLength={48} />
+          </Field>
+          <Field label="ข้อความพิเศษบรรทัดที่ 2">
+            <input value={settings.receipt_extra_line_2} onChange={set('receipt_extra_line_2')} style={inputStyle} maxLength={48} />
+          </Field>
+          <Field label={`บรรทัดว่างท้ายใบเสร็จ: ${settings.receipt_blank_lines}`}>
+            <input type="range" min={1} max={10} value={parseInt(settings.receipt_blank_lines, 10) || 4}
+              onChange={set('receipt_blank_lines')} style={{ width: '100%', maxWidth: 320, accentColor: GOLD }} />
+          </Field>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>
+            เครื่อง POS แต่ละเครื่องจะใช้รูปแบบใหม่เมื่อเปิดหน้าขายครั้งถัดไป (ต้องต่ออินเทอร์เน็ต) / ดูตัวอย่างใบเสร็จ เครื่องพิมพ์ ขนาดกระดาษ และพิมพ์อัตโนมัติ ตั้งแยกที่แต่ละเครื่อง: หน้าขาย → ⚙️
           </div>
         </div>
+      </SettingSection>
+
+      {/* ── อัตราแลกเปลี่ยน ── */}
+      <SettingSection icon="💱" title="อัตราแลกเปลี่ยน">
+        <CurrencySection
+          rates={parseRates(settings.exchange_rates)}
+          display={parseDisplayCurrencies(settings.display_currencies)}
+          onRates={r => setSettings(s => ({ ...s, exchange_rates: JSON.stringify(r) }))}
+          onDisplay={d => setSettings(s => ({ ...s, display_currencies: JSON.stringify(d) }))}
+        />
       </SettingSection>
 
       {/* Not read by any screen yet (hours, email, Instagram, TH/LO names) — hidden, values kept */}
@@ -2086,16 +2139,6 @@ function SettingsTab() {
           <div role="alert" style={{ color: RED, fontSize: 13, fontWeight: 600 }}>{saveError}</div>
         )}
       </div>
-
-      {/* ── Per-device (localStorage) ── */}
-      <SettingSection icon="💻" title="ตั้งค่าเฉพาะเครื่องนี้">
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 16, lineHeight: 1.6 }}>
-          ส่วนนี้เก็บในเครื่องที่เปิดหน้านี้อยู่เท่านั้น ไม่ได้ใช้ปุ่ม &ldquo;บันทึกทั้งหมด&rdquo; ด้านบน —
-          ให้เปิดหน้านี้บนเครื่อง POS ที่ใช้ขายแล้วตั้งที่นั่น / เครื่องพิมพ์ใบเสร็จ: หน้าขาย → ⚙️
-        </div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 12 }}>อัตราแลกเปลี่ยน (แสดงใต้ยอดรวมในหน้าขาย)</div>
-        <CurrencySection />
-      </SettingSection>
 
       {/* ── Quick links ── */}
       <div style={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '20px 24px' }}>

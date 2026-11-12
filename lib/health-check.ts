@@ -98,7 +98,7 @@ export async function runHealthCheck(): Promise<HealthReport> {
     // ── STAFF ──────────────────────────────────────────────────────────────────
     {
       id: 'staff_count', section: 'พนักงาน',
-      label: 'มีพนักงาน POS',
+      label: 'มีพนักงานในรายชื่อ',
       detail: employeesFailed ? 'ตรวจไม่ได้ (โหลดข้อมูลพนักงานไม่สำเร็จ)' : employeeCount >= 1 ? `มี ${employeeCount} คน` : 'ยังไม่มีพนักงาน',
       status: employeesFailed ? 'warn' : employeeCount >= 1 ? 'ok' : 'error',
       href: '/shop/team/employees', actionLabel: 'เพิ่มพนักงาน',
