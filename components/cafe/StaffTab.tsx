@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 import { getFaceApi } from '@/lib/faceapi'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
@@ -403,7 +404,7 @@ function LeavesView() {
 
   useEffect(() => {
     void load()
-    supabase.rpc('get_all_staff').then(({ data }) => setStaffList((data ?? []) as StaffMember[]))
+    authClient.rpc('get_all_staff').then(({ data }) => setStaffList((data ?? []) as StaffMember[]))
   }, [load])
 
   async function approve(lv: LeaveRequest) {
@@ -628,7 +629,7 @@ function StaffCardGrid({ onProfile }: { onProfile: (s: StaffWithRole) => void })
   const load = useCallback(async () => {
     setLoading(true)
     const [staffRes, todayRes, perfRes] = await Promise.all([
-      supabase.rpc('get_all_staff'),
+      authClient.rpc('get_all_staff'),
       supabase.rpc('get_staff_today_status'),
       supabase.rpc('get_staff_analytics'),
     ])
@@ -1176,7 +1177,7 @@ export default function StaffTab() {
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               onClick={async () => {
-                const { data } = await supabase.rpc('get_all_staff')
+                const { data } = await authClient.rpc('get_all_staff')
                 const staff = (data ?? []) as StaffWithRole[]
                 const date  = new Date().toISOString().slice(0, 10)
                 const csvCell = (v: unknown) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s }

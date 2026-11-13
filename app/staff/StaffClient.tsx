@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 import { getFaceApi } from '@/lib/faceapi'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -676,7 +677,7 @@ export default function StaffClient() {
     setLoading(true)
     try {
       const [{ data: allStaff }, { data: todayData }, { data: settingsData }] = await Promise.all([
-        supabase.from('staff').select('id,name,name_th,avatar_url,scheduled_start_time,face_descriptor').eq('is_active', true),
+        authClient.from('staff').select('id,name,name_th,avatar_url,scheduled_start_time,face_descriptor').eq('is_active', true),
         supabase.rpc('get_staff_today_status'),
         supabase.rpc('get_site_settings'),
       ])
@@ -825,7 +826,7 @@ export default function StaffClient() {
   async function startAudit() {
     if (!selected) return
     setAuditLoading(true); setAuditMsg(''); setAuditDone(false)
-    const { data, error } = await supabase.rpc('start_stock_audit', { p_staff_id: selected.id })
+    const { data, error } = await authClient.rpc('start_stock_audit', { p_staff_id: selected.id })
     setAuditLoading(false)
     if (error || !data) { setAuditMsg(error?.message ?? 'เกิดข้อผิดพลาด'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -837,7 +838,7 @@ export default function StaffClient() {
     try {
       for (const item of auditItems) {
         if (item.counted === '') { setAuditMsg(`กรอกจำนวน: ${item.inventory_name}`); return }
-        await supabase.rpc('submit_stock_audit', { p_audit_id: item.audit_id, p_counted_qty: parseFloat(item.counted) })
+        await authClient.rpc('submit_stock_audit', { p_audit_id: item.audit_id, p_counted_qty: parseFloat(item.counted) })
       }
       setAuditDone(true); setAuditMsg('✓ บันทึกผลการนับสต็อกแล้ว')
       setTimeout(() => { setPhase('dashboard'); setAuditItems([]); setAuditMsg(''); setAuditDone(false) }, 2500)

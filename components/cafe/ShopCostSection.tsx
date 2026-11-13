@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import { GOLD, CARD, CARD2, BORDER, RED, GREEN, ORANGE, inputStyle, btnStyleSm } from '@/components/cafe/shared'
 
@@ -134,7 +135,7 @@ export function ShopCostSection({ settings, onChange }: { settings: CostSettings
 
   async function loadSalaries() {
     setLoadingSalary(true)
-    const { data } = await supabase.rpc('get_all_staff')
+    const { data } = await authClient.rpc('get_all_staff')
     if (data) {
       type StaffRow = { name?: string; name_th?: string | null; salary?: number | null; salary_type?: string | null; hours_per_day?: number | null; is_active?: boolean }
       const active = (data as StaffRow[]).filter(st => st.is_active !== false)
@@ -492,7 +493,6 @@ export function ShopCostPanel({ onSaved }: { onSaved: () => void }) {
   async function save() {
     setSaving(true); setSaved(false); setSaveError(null)
     try {
-      const { authClient } = await import('@/lib/supabase-auth')
       const results = await Promise.all(
         COST_KEYS.map(k => authClient.rpc('update_site_setting', { p_key: k, p_value: settings[k] }))
       )

@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import { CurrencySection } from '@/components/shop/CurrencySection'
 import { DEFAULT_RATES, parseRates, parseDisplayCurrencies } from '@/lib/currency'
@@ -1173,14 +1174,14 @@ function CatRow({ node, siblings, allFlat, depth, onReload, showMsg }: {
 
   async function toggleActive(e: React.MouseEvent) {
     e.stopPropagation()
-    await supabase.rpc('update_category', { p_id: node.id, p_is_active: !node.is_active })
+    await authClient.rpc('update_category', { p_id: node.id, p_is_active: !node.is_active })
     onReload()
   }
 
   async function saveEdit() {
     if (!editData.name.trim()) { showMsg('กรุณาระบุชื่อหมวด'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('update_category', {
+    const { error } = await authClient.rpc('update_category', {
       p_id:         node.id,
       p_name:       editData.name,
       p_name_th:    editData.name_th,
@@ -1198,7 +1199,7 @@ function CatRow({ node, siblings, allFlat, depth, onReload, showMsg }: {
   async function addChild() {
     if (!newChildData.name.trim()) { showMsg('กรุณาระบุชื่อหมวด'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('create_category', {
+    const { error } = await authClient.rpc('create_category', {
       p_name:       newChildData.name,
       p_name_th:    newChildData.name_th,
       p_name_lo:    newChildData.name_lo,
@@ -1214,13 +1215,13 @@ function CatRow({ node, siblings, allFlat, depth, onReload, showMsg }: {
 
   async function deleteCat() {
     if (!confirm(`ลบหมวด "${node.name}"?`)) return
-    const { data } = await supabase.rpc('delete_category', { p_id: node.id })
+    const { data } = await authClient.rpc('delete_category', { p_id: node.id })
     if (data?.ok) { showMsg('ลบสำเร็จ'); onReload() }
     else showMsg(data?.reason ?? 'ลบไม่ได้')
   }
 
   async function swapSort(other: CatNode) {
-    await supabase.rpc('swap_category_sort', { p_id_a: node.id, p_id_b: other.id })
+    await authClient.rpc('swap_category_sort', { p_id_a: node.id, p_id_b: other.id })
     onReload()
   }
 
@@ -1366,7 +1367,7 @@ function CategoriesTab() {
   async function createRoot() {
     if (!newData.name.trim()) { showMsg('กรุณาระบุชื่อหมวด'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('create_category', {
+    const { error } = await authClient.rpc('create_category', {
       p_name:       newData.name,
       p_name_th:    newData.name_th,
       p_name_lo:    newData.name_lo,
@@ -1585,7 +1586,6 @@ function SettingsTab() {
   // Writes the given keys as the signed-in user (both RPCs are owner-only); returns the keys that failed
   // and the first error message (an RPC error doesn't throw).
   async function writeSettings(entries: [string, string][]): Promise<{ failed: string[]; reason: string }> {
-    const { authClient } = await import('@/lib/supabase-auth')
     const results = await Promise.all(
       entries.map(([k, v]) => authClient.rpc(
         PAYMENT_SETTING_KEYS.includes(k) ? 'update_payment_setting' : 'update_site_setting',
@@ -2199,7 +2199,7 @@ function PurchaseTab() {
 
   async function act(id: string, approve: boolean) {
     setActingId(id)
-    await supabase.rpc('approve_purchase', { p_purchase_id: id, p_approve: approve })
+    await authClient.rpc('approve_purchase', { p_purchase_id: id, p_approve: approve })
     await Promise.all([loadPending(), loadHistory()])
     setActingId(null)
   }
@@ -2962,7 +2962,6 @@ function AISettingsSection() {
     if (saving) return
     setSaving(true); setToggleError('')
     try {
-      const { authClient } = await import('@/lib/supabase-auth')
       const { error } = await authClient.rpc('update_site_setting', { p_key: 'alan_insights_enabled', p_value: v ? 'true' : 'false' })
       if (error) setToggleError(`บันทึกไม่สำเร็จ (${error.message})`)
       else setEnabled(v)

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 import {
   GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
   inputStyle, btnStyle, btnStyleSm,
@@ -40,9 +41,9 @@ export default function RecipeCostTab() {
   }, [])
 
   const loadBases = useCallback(() => {
-    supabase.from('recipe_bases').select('id, name, unit, yield_qty').order('name')
+    authClient.from('recipe_bases').select('id, name, unit, yield_qty').order('name')
       .then(({ data }) => { if (data) setBaseRecipes(data as BaseRecipe[]) })
-    supabase.from('recipe_base_ingredients').select('base_id, inventory_id, qty')
+    authClient.from('recipe_base_ingredients').select('base_id, inventory_id, qty')
       .then(({ data }) => { if (data) setBaseIngs(data as BaseIng[]) })
   }, [])
 
@@ -152,7 +153,7 @@ export default function RecipeCostTab() {
 
     async function startEdit(b: BaseRecipe) {
       setEditId(b.id)
-      const { data } = await supabase.from('recipe_base_ingredients')
+      const { data } = await authClient.from('recipe_base_ingredients')
         .select('inventory_id, qty')
         .eq('base_id', b.id)
       setForm({
@@ -184,18 +185,18 @@ export default function RecipeCostTab() {
         let baseId: string
 
         if (editId === 'new') {
-          const { data, error } = await supabase.from('recipe_bases')
+          const { data, error } = await authClient.from('recipe_bases')
             .insert({ name: form.name, unit: form.unit, yield_qty: totalYield })
             .select('id').single()
           if (error) throw new Error('ไม่สามารถบันทึกได้: ' + error.message)
           baseId = (data as { id: string }).id
         } else {
           baseId = editId!
-          const { error } = await supabase.from('recipe_bases')
+          const { error } = await authClient.from('recipe_bases')
             .update({ name: form.name, unit: form.unit, yield_qty: totalYield })
             .eq('id', baseId)
           if (error) throw new Error('ไม่สามารถอัปเดตได้: ' + error.message)
-          await supabase.from('recipe_base_ingredients').delete().eq('base_id', baseId)
+          await authClient.from('recipe_base_ingredients').delete().eq('base_id', baseId)
         }
 
         if (form.items.length > 0) {
@@ -204,7 +205,7 @@ export default function RecipeCostTab() {
             inventory_id: i.inventory_id,
             qty: parseFloat(i.qty) || 0,
           }))
-          const { error } = await supabase.from('recipe_base_ingredients').insert(rows)
+          const { error } = await authClient.from('recipe_base_ingredients').insert(rows)
           if (error) throw new Error('ไม่สามารถบันทึกส่วนผสมได้: ' + error.message)
         }
 
@@ -217,8 +218,8 @@ export default function RecipeCostTab() {
     }
 
     async function deleteBase(id: string) {
-      await supabase.from('recipe_base_ingredients').delete().eq('base_id', id)
-      const { error } = await supabase.from('recipe_bases').delete().eq('id', id)
+      await authClient.from('recipe_base_ingredients').delete().eq('base_id', id)
+      const { error } = await authClient.from('recipe_bases').delete().eq('id', id)
       if (error) { setMsg('เกิดข้อผิดพลาด: ' + error.message); return }
       setBaseRecipes(prev => prev.filter(b => b.id !== id))
       setBaseIngs(prev => prev.filter(bi => bi.base_id !== id))
@@ -380,7 +381,7 @@ export default function RecipeCostTab() {
       if (!recipeId || !loaded) return
       const menu = menuItems.find(m => m.id === recipeId)
       setUsesIce(menu?.uses_ice ?? false)
-      supabase.from('recipe_ingredients')
+      authClient.from('recipe_ingredients')
         .select('id, inventory_id, base_id, qty_normal, qty_less, qty_more')
         .eq('recipe_id', recipeId)
         .then(({ data }) => {
@@ -430,29 +431,21 @@ export default function RecipeCostTab() {
       if (items.length === 0) { setMsg('กรุณาเพิ่มส่วนผสมอย่างน้อย 1 รายการก่อนบันทึก'); return }
       setSaving(true)
       try {
-        // Persist uses_ice
-        await supabase.from('recipes').update({ uses_ice: usesIce }).eq('id', recipeId)
-
-        // Replace all recipe_ingredients for this recipe
-        await supabase.from('recipe_ingredients').delete().eq('recipe_id', recipeId)
-
-        if (items.length > 0) {
-          const rows = items.map(item => ({
-            recipe_id:    recipeId,
+        const ingCost   = totalCost('qty_normal')
+        const fixedCost = packagingPerCup + (usesIce ? icePerCup : 0) + overheadPerCup
+        const { error } = await authClient.rpc('save_recipe_cost', {
+          p_recipe_id: recipeId,
+          p_uses_ice: usesIce,
+          p_cost_per_cup_lak: Math.round(ingCost + fixedCost),
+          p_items: items.map(item => ({
             inventory_id: item.inventory_id,
             base_id:      item.base_id,
             qty_normal:   parseFloat(item.qty_normal) || 0,
             qty_less:     parseFloat(item.qty_less)   || 0,
             qty_more:     parseFloat(item.qty_more)   || 0,
-          }))
-          const { error } = await supabase.from('recipe_ingredients').insert(rows)
-          if (error) throw new Error('ไม่สามารถบันทึกสูตรได้: ' + error.message)
-        }
-
-        // Update cost_per_cup_lak (normal sweetness)
-        const ingCost   = totalCost('qty_normal')
-        const fixedCost = packagingPerCup + (usesIce ? icePerCup : 0) + overheadPerCup
-        await supabase.from('recipes').update({ cost_per_cup_lak: Math.round(ingCost + fixedCost) }).eq('id', recipeId)
+          })),
+        })
+        if (error) throw new Error('ไม่สามารถบันทึกสูตรได้: ' + error.message)
 
         setMsg('บันทึกสูตรแล้ว')
       } catch (e: unknown) {

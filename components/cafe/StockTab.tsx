@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
@@ -107,7 +108,7 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
     const qty = parseFloat(addForm.qty)
     if (isNaN(qty) || qty <= 0) { showMsg('กรุณาระบุจำนวน'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('add_stock', {
+    const { error } = await authClient.rpc('add_stock', {
       p_inventory_id: item.id, p_qty: qty, p_cost_lak: parseFloat(addForm.cost) || 0,
       p_supplier: addForm.supplier || null,
       p_purchased_at: addForm.date ? new Date(addForm.date + 'T12:00:00+07:00').toISOString() : new Date().toISOString(),
@@ -125,7 +126,7 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
       showMsg('Reorder Point ต้องไม่เกินค่า Max Quantity'); return
     }
     setSaving(true)
-    const { error } = await supabase.rpc('update_inventory_item', {
+    const { error } = await authClient.rpc('update_inventory_item', {
       p_id:                       item.id,
       p_name:                     editData.name,
       p_name_th:                  editData.name_th,
@@ -437,7 +438,7 @@ export default function StockTab() {
 
   useEffect(() => {
     if (!deleteTarget) { setDeleteRecipeCount(0); return }
-    supabase.from('recipe_ingredients').select('id', { count: 'exact', head: true })
+    authClient.from('recipe_ingredients').select('id', { count: 'exact', head: true })
       .eq('inventory_id', deleteTarget.id)
       .then(({ count }) => setDeleteRecipeCount(count ?? 0))
   }, [deleteTarget])
@@ -450,7 +451,7 @@ export default function StockTab() {
       showMsg('Reorder Point ต้องไม่เกินค่า Max Quantity'); return
     }
     setSaving(true)
-    const { error } = await supabase.rpc('create_inventory_item', {
+    const { error } = await authClient.rpc('create_inventory_item', {
       p_name:                     newData.name,
       p_name_th:                  newData.name_th,
       p_name_lo:                  newData.name_lo,
@@ -474,7 +475,7 @@ export default function StockTab() {
 
   async function deleteItem(id: string) {
     setDeleting(true)
-    const { error } = await supabase.rpc('delete_inventory_item', { p_id: id })
+    const { error } = await authClient.rpc('delete_inventory_item', { p_id: id })
     if (!error) { setDeleteTarget(null); showMsg('ลบเรียบร้อย'); await load() }
     else showMsg('เกิดข้อผิดพลาด ลบไม่ได้: ' + error.message)
     setDeleting(false)

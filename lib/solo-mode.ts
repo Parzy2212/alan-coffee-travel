@@ -1,6 +1,7 @@
 'use client'
 
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 
 const SHOW_ADVANCED_KEY = 'alan_show_advanced_features'
 
@@ -17,7 +18,7 @@ export function setShowAdvancedFeatures(v: boolean): void {
 export async function detectSoloMode(): Promise<boolean> {
   if (isShowAdvancedFeatures()) return false
   try {
-    const { data, error } = await supabase.rpc('get_all_staff')
+    const { data, error } = await authClient.rpc('get_all_staff')
     if (error) return true
     return !data || (data as unknown[]).length === 0
   } catch {

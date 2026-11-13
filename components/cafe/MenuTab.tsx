@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
@@ -498,7 +499,7 @@ function RecipeCard({
 
   async function toggleActive(e: React.MouseEvent) {
     e.stopPropagation()
-    const { data } = await supabase.rpc('toggle_recipe_active', { p_recipe_id: r.id })
+    const { data } = await authClient.rpc('toggle_recipe_active', { p_recipe_id: r.id })
     if (data) onReload()
   }
 
@@ -506,7 +507,7 @@ function RecipeCard({
     const price = parseFloat(editData.price_str)
     if (isNaN(price) || price <= 0) { showMsg('ราคาต้องมากกว่า 0 ₭'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('update_recipe_full', {
+    const { error } = await authClient.rpc('update_recipe_full', {
       p_recipe_id:      r.id,
       p_product_name:   editData.product_name || editData.product_name_th,
       p_name_th:        editData.product_name_th,
@@ -532,7 +533,7 @@ function RecipeCard({
   async function archiveMenu(e: React.MouseEvent) {
     e.stopPropagation()
     setArchiving(true)
-    const { error } = await supabase
+    const { error } = await authClient
       .from('recipes')
       .update({ is_active: false, is_archived: true })
       .eq('id', r.id)
@@ -797,7 +798,7 @@ function ArchivedCard({
 
   async function restore() {
     setWorking(true)
-    const { error } = await supabase
+    const { error } = await authClient
       .from('recipes')
       .update({ is_archived: false, is_active: true })
       .eq('id', r.id)
@@ -815,7 +816,7 @@ function ArchivedCard({
     // Delete order_items first to satisfy FK, then delete recipe
     const { error: e1 } = await supabase.from('order_items').delete().eq('recipe_id', r.id)
     if (e1) { showMsg('ลบ order_items ล้มเหลว: ' + e1.message); setWorking(false); return }
-    const { data: deleted, error: e2 } = await supabase.from('recipes').delete().eq('id', r.id).select('id')
+    const { data: deleted, error: e2 } = await authClient.from('recipes').delete().eq('id', r.id).select('id')
     if (e2) { showMsg('ลบเมนูล้มเหลว: ' + e2.message); setWorking(false); return }
     if (!deleted || deleted.length === 0) { showMsg('ไม่มีสิทธิ์ลบ (RLS) — โปรดตรวจสอบ policy'); setWorking(false); return }
     onHardDelete(r.id)
@@ -954,7 +955,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
     const price = parseFloat(newData.price_str)
     if (isNaN(price) || price <= 0) { showMsg('ราคาต้องมากกว่า 0 ₭'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('create_recipe_full', {
+    const { error } = await authClient.rpc('create_recipe_full', {
       p_product_name:   name,
       p_name_th:        newData.product_name_th,
       p_name_lo:        newData.product_name_lo,
