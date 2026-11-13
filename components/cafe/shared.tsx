@@ -335,8 +335,9 @@ export function fmtDate(iso: string): string {
   })
 }
 
+// the shop's date (Laos time), not UTC: before 07:00 in Laos UTC is still yesterday
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayVientiane()
 }
 
 export function todayVientiane(): string {

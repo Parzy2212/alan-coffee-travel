@@ -45,8 +45,7 @@ const EXPENSE_CATS = ['วัตถุดิบ', 'ค่าแรง', 'ค่�
 const PAY_METHODS  = ['cash', 'transfer', 'card', 'QR']
 
 function monthStart(): string {
-  const t = new Date()
-  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-01`
+  return todayISO().slice(0, 8) + '01'
 }
 
 function lbl(text: string) {
@@ -199,11 +198,11 @@ function OverviewSection() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const now = new Date()
+    const [year, month] = todayISO().split('-').map(Number)
     const [{ data: bal }, { data: sum }, { data: dc }] = await Promise.all([
       authClient.rpc('get_current_cash_balance'),
       authClient.rpc('get_cash_flow_summary', { p_start: monthStart(), p_end: todayISO() }),
-      authClient.rpc('get_daily_cashflow', { p_year: now.getFullYear(), p_month: now.getMonth() + 1 }),
+      authClient.rpc('get_daily_cashflow', { p_year: year, p_month: month }),
     ])
     setBalance((bal as number | null) ?? 0)
     setSummary((sum as CFSummary[] | null)?.[0] ?? null)
@@ -353,7 +352,7 @@ function EntriesSection() {
     const today = todayISO()
     if (dateFilter === 'today') return { start: today, end: today }
     if (dateFilter === 'week') {
-      const d = new Date(); d.setDate(d.getDate() - 6)
+      const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 6)
       return { start: d.toISOString().slice(0, 10), end: today }
     }
     if (dateFilter === 'month') return { start: monthStart(), end: today }
@@ -449,8 +448,8 @@ function EntriesSection() {
                     </td>
                     <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.6)' }}>{r.category}</td>
                     <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.4)', fontSize: 12, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description || '—'}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right', color: r.type === 'income' ? GREEN : RED, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {r.type === 'income' ? '+' : '−'}{fmtLAK(r.amount_lak)}
+                    <td style={{ padding: '8px 10px', textAlign: 'right', color: (r.type === 'income') === (r.amount_lak >= 0) ? GREEN : RED, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {(r.type === 'income') === (r.amount_lak >= 0) ? '+' : '−'}{fmtLAK(Math.abs(r.amount_lak))}
                     </td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                       <button onClick={() => void deleteEntry(r.id)} disabled={deleting === r.id}

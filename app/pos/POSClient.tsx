@@ -230,6 +230,8 @@ function translateError(msg: string): string {
   if (msg.includes('menu item not available')) return 'มีเมนูในบิลที่ถูกปิดหรือลบไปแล้ว กด F5 โหลดหน้าใหม่'
   if (msg.includes('cash received is less')) return 'เงินที่รับมาไม่เพียงพอ'
   if (msg.includes('discount must be')) return 'ส่วนลดมากกว่ายอดบิล'
+  if (msg.includes('split payment is less')) return 'เงินสด + โอน ยังไม่ครบยอดบิล'
+  if (msg.includes('transfer part is more')) return 'ยอดโอนมากกว่ายอดบิล ส่วนที่เกินต้องเป็นเงินสด'
   if (msg.includes('employee is not an active')) return 'พนักงานที่เข้ากะอยู่ไม่ได้อยู่ในร้านนี้ ออกจากกะแล้วใส่ PIN ใหม่'
   if (msg.includes('Insufficient stock')) {
     const match = msg.match(/"([^"]+)"/)
@@ -1105,7 +1107,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     (method === 'cash' && received !== '' && receivedNum >= finalTotal) ||
     (method === 'qr') ||
     (method === 'transfer' && selectedBank !== null) ||
-    (method === 'split' && splitTotal >= finalTotal)
+    (method === 'split' && splitTotal >= finalTotal && splitXferNum <= finalTotal)
 
   // Keyboard shortcuts inside ChargePopup
   useEffect(() => {
@@ -1191,6 +1193,8 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
       p_staff_note:      [staffNote, slipRef ? `อ้างอิง: ${slipRef}` : null].filter(Boolean).join(' · ') || null,
       p_is_test:         !!isTestMode,
       p_expected_total:  subtotal - sentDiscount,
+      // each part of a split bill, as handed over; the change comes out of the cash part (059)
+      ...(method === 'split' ? { p_split_cash: splitCashNum, p_split_transfer: splitXferNum } : {}),
     }
 
     // ── Offline: save locally, send when back online ───────────────────────────
@@ -1468,9 +1472,11 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                     border: `1px solid ${splitTotal >= finalTotal ? GREEN : RED}33`,
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}>
-                    <span style={{ fontSize: 12, color: TEXT_2 }}>{splitTotal >= finalTotal ? 'รับรวม' : 'ขาดอีก'}</span>
-                    <span style={{ fontSize: 20, fontWeight: 600, fontFamily: FONT_MONO, color: splitTotal >= finalTotal ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
-                      {splitTotal >= finalTotal ? splitTotal.toLocaleString('en-US') + ' ₭' : `${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`}
+                    <span style={{ fontSize: 12, color: TEXT_2 }}>
+                      {splitXferNum > finalTotal ? 'ยอดโอนมากกว่ายอดบิล' : splitTotal > finalTotal ? `รับรวม ${splitTotal.toLocaleString('en-US')} ₭ · ทอนเงินสด` : splitTotal === finalTotal ? 'รับรวม' : 'ขาดอีก'}
+                    </span>
+                    <span style={{ fontSize: 20, fontWeight: 600, fontFamily: FONT_MONO, color: splitTotal >= finalTotal && splitXferNum <= finalTotal ? GREEN : RED, fontVariantNumeric: 'tabular-nums' }}>
+                      {splitTotal >= finalTotal ? (splitTotal - finalTotal > 0 ? splitTotal - finalTotal : splitTotal).toLocaleString('en-US') + ' ₭' : `${(finalTotal - splitTotal).toLocaleString('en-US')} ₭`}
                     </span>
                   </div>
                 )}
