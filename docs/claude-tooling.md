@@ -39,3 +39,49 @@ The profile holds a live login to the POS: don't copy it anywhere, and delete th
 
 Already present before 2026-11-10 (not changed): Playwright MCP `@playwright/mcp@0.0.79` (`.mcp.json`), `typescript-lsp`,
 `claude-code-setup`, `security-guidance` (installed, disabled), project skills in `.claude/skills/`.
+
+## Inventory 2026-11-13 (names only; no keys, no settings contents)
+
+Scope words: **all** = every project on this PC, **this** = this repo only, **hq** = the `D:\alan-hq` workspace only.
+
+### Skills
+
+| Name | Source | Scope |
+|---|---|---|
+| `safe-db-migration-test`, `done-means-proven`, `web-pos-receipt-printing`, `pos-offline-sales`, `non-technical-owner`, `reusable-code-catalogue` | written by Claude from this project's lessons, 2026-11-12 (`C:\Users\Pacy\.claude\skills`) | all |
+| `ponytail`, `security-audit` | personal skills folder; not written in this project, origin not recorded | all |
+| `built-in-browser`, `chrome-browser`, `computer-use`, `deep-research`, `docs`, `docx`, `google-workspace`, `import-memory`, `morning`, `pdf`, `pptx`, `skill-creator`, `xlsx` (shown as `anthropic-skills:*`) | Anthropic, synced from the Claude account (`skills\synced`) | all |
+| `adapt`, `animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`, `extract`, `frontend-design`, `harden`, `normalize`, `onboard`, `optimize`, `polish`, `quieter`, `teach-impeccable` | GitHub `pbakaus/impeccable` (see `skills-lock.json`), in `.claude/skills`, in git since 2026-03-18 | this |
+| `web-qa` | written for this repo, 2026-08-25 | this |
+| `edit-clip` | written for this repo, 2026-10-25 | this |
+| built into Claude Code: `code-review`, `simplify`, `security-review`, `init`, `run`, `loop`, `schedule`, `update-config`, `keybindings-help`, `fewer-permission-prompts`, `claude-api`, `claude-in-chrome`, `dataviz`, `artifact-design`, `artifact-diagramming`, `artifact-capabilities`, `plugin-authoring` | Anthropic, ships with Claude Code | all |
+| hq: 27 Phaser game skills (`scenes`, `sprites-and-images`, `tilemaps`, `physics-arcade`, ...) | generated from the Phaser source in an alan-hq session (`D:\alan-hq\skills-lock.json`) | hq |
+| hq: 12 `remotion-*` skills | GitHub `remotion-dev/skills` | hq |
+| hq: `hyperframes`, `hyperframes-cli`, `editing-videos` | in `D:\alan-hq\.claude\skills`, not in its lock file, origin not recorded | hq |
+
+Subagents: `quality-reviewer` (this repo, `.claude/agents`); hq has `dao-secretary`, `kham-builder`, `mali-hr`, `sunny-content`, plus 3 hook scripts in `D:\alan-hq\.claude\hooks`.
+
+### Plugins
+
+| Name | Source | Scope |
+|---|---|---|
+| `modern-web-guidance` | Google Chrome marketplace (`googlechrome`) | all |
+| `session-report`, `claude-md-management`, `hookify` | Anthropic `claude-plugins-official` | all |
+| `typescript-lsp`, `claude-code-setup`, `security-guidance` (disabled), `claude-security`, `pr-review-toolkit` | Anthropic `claude-plugins-official` | this |
+| `design` and `data` (skills `design:*`, `data:*`, and their connectors) | visible in the session but not in the local installed-plugins file; most likely enabled on the Claude account. Not verified | unknown |
+
+### MCP servers
+
+| Name | Source | Scope | State on 2026-11-13 |
+|---|---|---|---|
+| `chrome-devtools` | Google, npm `chrome-devtools-mcp` | all | working |
+| `pos-browser` | same program, own Chrome profile | this (local, not in git) | working |
+| `playwright` | Microsoft, npm `@playwright/mcp` (`.mcp.json`) | this | working |
+| `context7` | Upstash Context7 (`.mcp.json`) | this | working |
+| `supabase`, `github`, `cloudflare-builds` | official hosted servers (`.mcp.json`) | this | not signed in in this session |
+| `claude-in-chrome` | Anthropic Chrome extension | all | available |
+| Claude Docs, Gmail, Google Calendar, Google Drive | connectors of the Claude account | all | Docs working; the 3 Google ones not signed in |
+| `design` plugin: Figma, Intercom, Linear, Notion, Slack | come with the `design` plugin | unknown | not signed in |
+| `data` plugin: Amplitude, Amplitude EU, Atlassian, Hex, Definite | come with the `data` plugin | unknown | not signed in; Definite fails to connect |
+
+`/clarify` = the `clarify` skill in `.claude/skills/clarify`, one of the 18 skills from GitHub `pbakaus/impeccable`.
