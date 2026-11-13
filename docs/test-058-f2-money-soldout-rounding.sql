@@ -8,6 +8,8 @@
 --  message IS the report: every line should start with PASS or SKIP.
 --  No BEGIN/ROLLBACK needed (the SQL Editor does not keep a BEGIN open).
 --
+--  It adds one throw-away sign-in (auth.users row, no email or password)
+--  for the stranger / manager checks; it is rolled back too.
 --  T8 makes ONE test sale inside the block (rolled back) to prove a sale
 --  still posts to cash_flow. The Telegram "large order" trigger is
 --  switched off first inside the block, so nothing is sent.
@@ -34,6 +36,10 @@ BEGIN
   SELECT user_id INTO v_owner FROM public.shop_users
    WHERE shop_id = c_shop AND role = 'owner' AND active IS TRUE AND user_id IS NOT NULL ORDER BY user_id LIMIT 1;
   IF v_owner IS NULL THEN RAISE EXCEPTION '058 TEST: the real shop has no active owner account'; END IF;
+  -- a throw-away sign-in for the "stranger" / "manager" checks: no email, no
+  -- password, nobody can log in with it, and it is rolled back with the rest
+  INSERT INTO auth.users (instance_id, id, aud, role, created_at, updated_at)
+  VALUES ('00000000-0000-0000-0000-000000000000', v_stranger, 'authenticated', 'authenticated', now(), now());
   SELECT id, price_lak INTO v_recipe, v_price FROM public.recipes
    WHERE COALESCE(is_active, true) AND NOT COALESCE(is_archived, false) AND price_lak > 0
    ORDER BY created_at, id LIMIT 1;
