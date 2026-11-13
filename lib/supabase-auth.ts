@@ -14,3 +14,8 @@ export const authClient = createClient(url, key, {
     storageKey: 'alan_pos_session',
   },
 })
+
+// 42501 = the database refused the caller (not signed in as the shop owner / manager)
+export function dbErrorText(error: { code?: string; message: string }): string {
+  return error.code === '42501' ? 'บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้ (ต้องเข้าสู่ระบบด้วยบัญชีเจ้าของร้านหรือผู้จัดการ)' : error.message
+}

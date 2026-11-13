@@ -6,7 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
-import { authClient } from '@/lib/supabase-auth'
+import { authClient, dbErrorText } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import { CurrencySection } from '@/components/shop/CurrencySection'
 import { DEFAULT_RATES, parseRates, parseDisplayCurrencies } from '@/lib/currency'
@@ -1174,7 +1174,8 @@ function CatRow({ node, siblings, allFlat, depth, onReload, showMsg }: {
 
   async function toggleActive(e: React.MouseEvent) {
     e.stopPropagation()
-    await authClient.rpc('update_category', { p_id: node.id, p_is_active: !node.is_active })
+    const { error } = await authClient.rpc('update_category', { p_id: node.id, p_is_active: !node.is_active })
+    if (error) { showMsg(dbErrorText(error)); return }
     onReload()
   }
 
@@ -1215,13 +1216,14 @@ function CatRow({ node, siblings, allFlat, depth, onReload, showMsg }: {
 
   async function deleteCat() {
     if (!confirm(`ลบหมวด "${node.name}"?`)) return
-    const { data } = await authClient.rpc('delete_category', { p_id: node.id })
+    const { data, error } = await authClient.rpc('delete_category', { p_id: node.id })
     if (data?.ok) { showMsg('ลบสำเร็จ'); onReload() }
-    else showMsg(data?.reason ?? 'ลบไม่ได้')
+    else showMsg(error ? dbErrorText(error) : data?.reason ?? 'ลบไม่ได้')
   }
 
   async function swapSort(other: CatNode) {
-    await authClient.rpc('swap_category_sort', { p_id_a: node.id, p_id_b: other.id })
+    const { error } = await authClient.rpc('swap_category_sort', { p_id_a: node.id, p_id_b: other.id })
+    if (error) { showMsg(dbErrorText(error)); return }
     onReload()
   }
 
@@ -2199,7 +2201,8 @@ function PurchaseTab() {
 
   async function act(id: string, approve: boolean) {
     setActingId(id)
-    await authClient.rpc('approve_purchase', { p_purchase_id: id, p_approve: approve })
+    const { error } = await authClient.rpc('approve_purchase', { p_purchase_id: id, p_approve: approve })
+    if (error) alert(dbErrorText(error))
     await Promise.all([loadPending(), loadHistory()])
     setActingId(null)
   }

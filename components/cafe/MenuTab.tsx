@@ -6,7 +6,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
-import { authClient } from '@/lib/supabase-auth'
+import { authClient, dbErrorText } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
@@ -499,7 +499,8 @@ function RecipeCard({
 
   async function toggleActive(e: React.MouseEvent) {
     e.stopPropagation()
-    const { data } = await authClient.rpc('toggle_recipe_active', { p_recipe_id: r.id })
+    const { data, error } = await authClient.rpc('toggle_recipe_active', { p_recipe_id: r.id })
+    if (error) { showMsg(dbErrorText(error)); return }
     if (data) onReload()
   }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { authClient } from '@/lib/supabase-auth'
+import { authClient, dbErrorText } from '@/lib/supabase-auth'
 import { getFaceApi } from '@/lib/faceapi'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -828,7 +828,7 @@ export default function StaffClient() {
     setAuditLoading(true); setAuditMsg(''); setAuditDone(false)
     const { data, error } = await authClient.rpc('start_stock_audit', { p_staff_id: selected.id })
     setAuditLoading(false)
-    if (error || !data) { setAuditMsg(error?.message ?? 'เกิดข้อผิดพลาด'); return }
+    if (error || !data) { setAuditMsg(error ? dbErrorText(error) : 'เกิดข้อผิดพลาด'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setAuditItems((data as any[]).map((d: any) => ({ audit_id: d.audit_id, inventory_id: d.inventory_id, inventory_name: d.inventory_name, unit: d.unit, system_qty: d.system_qty ?? null, counted: '' })))
   }
@@ -838,7 +838,8 @@ export default function StaffClient() {
     try {
       for (const item of auditItems) {
         if (item.counted === '') { setAuditMsg(`กรอกจำนวน: ${item.inventory_name}`); return }
-        await authClient.rpc('submit_stock_audit', { p_audit_id: item.audit_id, p_counted_qty: parseFloat(item.counted) })
+        const { error } = await authClient.rpc('submit_stock_audit', { p_audit_id: item.audit_id, p_counted_qty: parseFloat(item.counted) })
+        if (error) { setAuditMsg(dbErrorText(error)); return }
       }
       setAuditDone(true); setAuditMsg('✓ บันทึกผลการนับสต็อกแล้ว')
       setTimeout(() => { setPhase('dashboard'); setAuditItems([]); setAuditMsg(''); setAuditDone(false) }, 2500)

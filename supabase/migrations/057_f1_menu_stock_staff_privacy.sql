@@ -198,8 +198,28 @@ CREATE POLICY f_staff_shop_read ON public.staff
   FOR SELECT TO authenticated
   USING (public.real_shop_role_in(ARRAY['owner', 'manager']));
 
+-- 5b) the older "owner / manager / staff" policies (52 of them, on recipes,
+--     inventory, staff, orders, customers ...) ask get_my_role(), which read
+--     the role from a staff row whose id is the caller's login id. Anon can
+--     still write the staff table until set 4, so any signed-up stranger
+--     could add such a row and become "owner". Only an account of the real
+--     shop may get a role from it now. (No real account has such a row
+--     today, so nothing that works now stops working.)
+CREATE OR REPLACE FUNCTION public.get_my_role()
+RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $fn$
+  SELECT s.role FROM public.staff s
+  WHERE s.id = auth.uid()
+    AND public.real_shop_role_in(ARRAY['owner', 'manager'])
+$fn$;
+
 -- 6) new tables / functions / sequences made from now on are closed to
 --    the public by default (they used to be born wide open)
+-- (objects made by role postgres, which is what the SQL Editor and these
+--  migrations use; new functions also start closed to signed-in users and
+--  must be granted on purpose)
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated;

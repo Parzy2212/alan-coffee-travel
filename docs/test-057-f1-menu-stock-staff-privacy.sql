@@ -242,8 +242,28 @@ BEGIN
     FOR SELECT TO authenticated
     USING (public.real_shop_role_in(ARRAY['owner', 'manager']));
 
+  -- 5b) the older "owner / manager / staff" policies (52 of them, on recipes,
+  --     inventory, staff, orders, customers ...) ask get_my_role(), which read
+  --     the role from a staff row whose id is the caller's login id. Anon can
+  --     still write the staff table until set 4, so any signed-up stranger
+  --     could add such a row and become "owner". Only an account of the real
+  --     shop may get a role from it now. (No real account has such a row
+  --     today, so nothing that works now stops working.)
+  CREATE OR REPLACE FUNCTION public.get_my_role()
+  RETURNS text
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public, pg_temp
+  AS $fn$
+    SELECT s.role FROM public.staff s
+    WHERE s.id = auth.uid()
+      AND public.real_shop_role_in(ARRAY['owner', 'manager'])
+  $fn$;
+
   -- 6) new tables / functions / sequences made from now on are closed to
   --    the public by default (they used to be born wide open)
+  -- (objects made by role postgres, which is what the SQL Editor and these
+  --  migrations use; new functions also start closed to signed-in users and
+  --  must be granted on purpose)
   ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon;
   ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon;
   ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated;
@@ -410,6 +430,22 @@ BEGIN
       report := report || CASE WHEN r = 'denied' AND r2 = 'ok:0' THEN 'PASS' ELSE 'FAIL' END
         || format(' T12 a switched-off account: add stock %s, staff pay rows %s', r, r2) || E'\n';
     END IF;
+  END IF;
+
+  -- T15 a signed-up stranger who writes himself into the old staff table as "owner"
+  --     (anon may still write that table until set 4) gains nothing
+  IF v_recipe IS NULL OR v_inv IS NULL THEN
+    report := report || 'SKIP T15 needs a menu item and a stock item' || E'\n';
+  ELSE
+    r  := pg_temp.t057_try('anon', NULL, format('INSERT INTO public.staff (id, name, role) VALUES (%L, $q$T057 intruder$q$, $q$owner$q$)', v_stranger));
+    r2 := pg_temp.t057_try('authenticated', v_stranger, format('UPDATE public.recipes SET price_lak = price_lak + 1 WHERE id = %L', v_recipe));
+    r3 := pg_temp.t057_try('authenticated', v_stranger, format('UPDATE public.inventory SET current_qty = 0 WHERE id = %L', v_inv));
+    r4 := pg_temp.t057_try('authenticated', v_stranger, 'SELECT salary, phone FROM public.staff');
+    r5 := pg_temp.t057_try('authenticated', v_stranger, 'SELECT id FROM public.orders WHERE status <> $q$paid$q$');
+    r6 := pg_temp.t057_try('authenticated', v_stranger, 'DELETE FROM public.order_items');
+    report := report || CASE WHEN r2 = 'ok:0' AND r3 = 'ok:0' AND r4 = 'ok:0' AND r5 = 'ok:0' AND r6 = 'ok:0' THEN 'PASS' ELSE 'FAIL' END
+      || format(' T15 a stranger posing as owner in the old staff table (row added: %s): price %s, stock %s, staff pay %s, test bills %s, delete bill lines %s',
+                r, r2, r3, r4, r5, r6) || E'\n';
   END IF;
 
   -- T13 things created from now on are closed to the public
