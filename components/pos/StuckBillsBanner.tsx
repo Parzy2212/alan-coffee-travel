@@ -12,22 +12,29 @@ type Args = { p_table_number?: string | null; p_customer_name?: string | null; p
 const PAY: Record<string, string> = { cash: 'เงินสด', qr: 'QR', transfer: 'โอนเงิน', split: 'แยกบิล' }
 
 function reasonText(msg: string): string {
-  if (!msg) return 'ยังไม่ได้คำตอบจากระบบ ตรวจอินเทอร์เน็ตก่อน ระบบจะลองส่งเองต่อเรื่อยๆ'
+  if (!msg) return 'ยังส่งไม่ถึงระบบ ตรวจอินเทอร์เน็ตของร้าน เครื่องจะส่งให้เองเมื่อเน็ตกลับมา'
   if (msg.includes('PRICE_CHANGED')) return 'ราคาเมนูเปลี่ยนหลังขาย ยอดบิลไม่ตรงกับราคาใหม่'
   if (msg.includes('Insufficient stock')) return 'วัตถุดิบในสต็อกไม่พอสำหรับบิลนี้'
   if (msg.includes('employee is not an active')) return 'พนักงานที่ขายบิลนี้ถูกปิดใช้งานแล้ว'
-  if (msg.includes('sale time out of range')) return 'บิลเก่าเกิน 30 วัน ระบบไม่รับย้อนหลัง'
-  if (msg.includes('menu item not available')) return 'มีเมนูในบิลที่ถูกลบออกจากระบบแล้ว'
+  if (msg.includes('sale time out of range')) return 'บิลนี้เก่าเกิน 30 วัน ส่งย้อนหลังไม่ได้ ต้องขายใหม่'
+  if (msg.includes('menu item not available')) return 'เมนูในบิลนี้ถูกลบหรือปิดขายไปแล้ว ต้องขายใหม่ด้วยเมนูที่ยังมี'
   if (msg.includes('cash received is less')) return 'ราคาเมนูขึ้นหลังขาย เงินที่รับไว้น้อยกว่ายอดใหม่'
   if (msg.includes('discount must be')) return 'ราคาเมนูลดหลังขาย ส่วนลดมากกว่ายอดใหม่'
-  if (msg.includes('shop not found')) return 'ไม่พบร้านนี้ในระบบ'
-  if (msg.includes('JWT') || msg.includes('permission') || msg.includes('Could not find the function')) return 'ระบบไม่อนุญาตให้บันทึก (ต้องให้ผู้ดูแลระบบตรวจ)'
-  return 'ระบบปฏิเสธบิลนี้'
+  if (msg.includes('shop not found')) return 'ระบบไม่ยอมบันทึกบิลนี้ ถ่ายรูปส่งเจ้าของร้าน'
+  if (msg.includes('JWT') || msg.includes('permission') || msg.includes('Could not find the function')) return 'ระบบไม่ยอมบันทึกบิลนี้ ถ่ายรูปส่งเจ้าของร้าน'
+  return 'ระบบไม่รับบิลนี้ ถ่ายรูปส่งเจ้าของร้าน'
+}
+
+// the server reports how long the PIN lock still lasts, in seconds
+function waitText(seconds: unknown): string {
+  const s = Math.ceil(Number(seconds))
+  if (!Number.isFinite(s) || s <= 0) return 'สักครู่'
+  return s < 60 ? `${s} วินาที` : `${Math.ceil(s / 60)} นาที`
 }
 
 const REMOVED_KEY = 'alan_removed_offline_bills'
 
-// "Re-keyed, remove" deletes the only copy of the bill, so keep a note of what was removed and by whom.
+// The remove button deletes the only copy of the bill, so keep a note of what was removed and by whom.
 function noteRemoved(o: OfflineOrder, by: string) {
   try {
     const list = JSON.parse(localStorage.getItem(REMOVED_KEY) ?? '[]') as unknown[]
@@ -69,7 +76,7 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
   if (stuck.length === 0) return null
 
   async function sendAgain(id: string) {
-    setMsg('กำลังส่ง... บิลที่เข้าระบบแล้วจะหายจากรายการนี้เอง บิลที่ยังอยู่คือยังไม่เข้า')
+    setMsg('กำลังส่ง... ถ้าเข้าระบบแล้ว บิลจะหายจากรายการนี้')
     try {
       await retryOrder(id)
       await refresh()
@@ -85,11 +92,13 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
       const { supabase } = await import('@/lib/supabase')
       const { data, error } = await supabase.rpc('verify_employee_pin', { p_shop_id: shopId, p_pin: pin })
       if (error) {
-        setMsg(error.message.includes('PIN_LOCKED') ? 'ใส่ PIN ผิดหลายครั้ง ระบบล็อกชั่วคราว รอสักครู่แล้วลองใหม่' : 'ตรวจ PIN ไม่ได้ ต้องต่ออินเทอร์เน็ต')
+        setMsg(error.message.includes('PIN_LOCKED') ? `ใส่ PIN ผิดหลายครั้ง รอ ${waitText(error.details)} แล้วลองใหม่`
+          : error.code ? `ตรวจ PIN ไม่ได้ ถ่ายรูปหน้านี้ส่งเจ้าของร้าน (${error.message})`   // the server answered: not a network fault
+          : 'ตรวจ PIN ไม่ได้เพราะเน็ตหลุด ต่อเน็ตแล้วลองใหม่')
         return
       }
       const manager = ((data ?? []) as { name: string; role: string }[]).find(e => e.role === 'manager' || e.role === 'owner')
-      if (!manager) { setMsg('PIN ไม่ถูก หรือไม่ใช่ PIN ผู้จัดการ'); return }
+      if (!manager) { setMsg('PIN ไม่ถูก ต้องใช้ PIN ของผู้จัดการ'); return }
       const target = stuck.find(o => o.id === id)
       if (target) noteRemoved(target, manager.name)
       await removeOrder(id)
@@ -97,7 +106,7 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
       await refresh()
       window.dispatchEvent(new Event('alan:queue-changed'))
     } catch {
-      setMsg('ตรวจ PIN ไม่ได้ ต้องต่ออินเทอร์เน็ต')
+      setMsg('ตรวจ PIN ไม่ได้เพราะเน็ตหลุด ต่อเน็ตแล้วลองใหม่')
     } finally { setBusy(false); setPin('') }
   }
 
@@ -110,7 +119,7 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
         padding: '10px 16px', border: 'none', borderBottom: `1px solid ${RED}`, backgroundColor: '#3a1414',
         color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
       }}>
-        มีบิล {stuck.length} ใบที่ขายตอนเน็ตหลุด แล้วยังไม่เข้าระบบ — กดเพื่อดูและจัดการ
+        มีบิล {stuck.length} ใบยังไม่เข้าระบบ (ขายตอนเน็ตหลุด) — กดที่นี่เพื่อจัดการ
       </button>
 
       {open && (
@@ -122,10 +131,11 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
             </div>
             <div style={{ padding: '14px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', lineHeight: 1.7, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '10px 14px' }}>
-                เงินของบิลเหล่านี้รับไปแล้ว แต่ยอดยังไม่อยู่ในรายงาน วิธีจัดการ:<br />
-                1. กด &ldquo;ส่งอีกครั้ง&rdquo;<br />
-                2. ถ้ายังไม่เข้า ให้ถ่ายรูปบิลนี้ส่งเจ้าของร้าน แล้วคีย์บิลใหม่ในหน้าขายตามรายการ (ไม่ต้องเก็บเงินลูกค้าซ้ำ)<br />
-                3. คีย์ใหม่แล้ว ให้ผู้จัดการกด &ldquo;คีย์ใหม่แล้ว เอาออก&rdquo; ทันที และห้ามกด &ldquo;ส่งอีกครั้ง&rdquo; กับบิลนั้นอีก ไม่งั้นยอดจะซ้ำ
+                บิลเหล่านี้เก็บเงินลูกค้าแล้ว แต่ยอดยังไม่ขึ้นในรายงาน ทำตามนี้:<br />
+                1. กด &ldquo;ส่งอีกครั้ง&rdquo; แล้วรอสักครู่ ถ้าบิลหายจากรายการ แปลว่าเข้าระบบแล้ว จบ<br />
+                2. ถ้าบิลยังอยู่ ถ่ายรูปหน้านี้ส่งเจ้าของร้าน<br />
+                3. ขายบิลนี้ใหม่ในหน้าขายตามรายการด้านล่าง ไม่ต้องเก็บเงินลูกค้าอีก<br />
+                4. ให้ผู้จัดการกด &ldquo;ขายใหม่แล้ว ลบบิลค้างนี้&rdquo; ทันที อย่ากด &ldquo;ส่งอีกครั้ง&rdquo; กับบิลนี้อีก ยอดจะซ้ำ
               </div>
               {msg && <div role="alert" style={{ color: '#ffd28a', fontSize: 13 }}>{msg}</div>}
 
@@ -149,7 +159,7 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
                     <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 6, lineHeight: 1.6 }}>
                       {sum.items?.length
                         ? sum.items.map((i, n) => <div key={n}>{i.qty} x {i.name || '(ไม่มีชื่อ)'} @ {i.price.toLocaleString('en-US')}{i.note ? ` (${i.note})` : ''}</div>)
-                        : <div>{args.p_cart?.length ?? 0} รายการ ({oldFormat ? 'บิลทดสอบจากระบบรุ่นเก่า ไม่ใช่ยอดขายจริง ให้ผู้จัดการเอาออกได้เลย' : 'ไม่มีรายละเอียดเมนูเก็บไว้'})</div>}
+                        : <div>{args.p_cart?.length ?? 0} รายการ ({oldFormat ? 'บิลทดสอบเก่า ไม่ใช่ยอดขายจริง ผู้จัดการลบได้เลย' : 'ไม่มีรายละเอียดเมนูเก็บไว้'})</div>}
                       {extra && <div>{extra}</div>}
                       {typeof sum.received === 'number' && <div>รับเงินมา {sum.received.toLocaleString('en-US')} LAK</div>}
                     </div>
@@ -161,13 +171,13 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
                           onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                           onKeyDown={e => { if (e.key === 'Enter') void confirmRemove(o.id) }}
                           style={{ width: 150, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', backgroundColor: '#0c0c0c', color: '#fff', fontSize: 15, minHeight: 44 }} />
-                        <button onClick={() => void confirmRemove(o.id)} disabled={busy} style={{ ...btn, border: 'none', backgroundColor: RED, color: '#fff', opacity: busy ? 0.6 : 1 }}>{busy ? 'กำลังตรวจ...' : 'ยืนยันเอาออก'}</button>
+                        <button onClick={() => void confirmRemove(o.id)} disabled={busy} style={{ ...btn, border: 'none', backgroundColor: RED, color: '#fff', opacity: busy ? 0.6 : 1 }}>{busy ? 'กำลังตรวจ...' : 'ลบบิลค้างนี้'}</button>
                         <button onClick={() => { setRemoving(null); setPin(''); setMsg('') }} style={{ ...btn, border: '1px solid rgba(255,255,255,0.15)', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.7)' }}>ยกเลิก</button>
                       </div>
                     ) : (
                       <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <button onClick={() => void sendAgain(o.id)} style={{ ...btn, border: `1px solid ${GOLD}`, backgroundColor: `${GOLD}1a`, color: GOLD }}>ส่งอีกครั้ง</button>
-                        <button onClick={() => { setRemoving(o.id); setPin(''); setMsg('') }} style={{ ...btn, border: `1px solid ${RED}88`, backgroundColor: 'transparent', color: '#ff9a9a' }}>คีย์ใหม่แล้ว เอาออก</button>
+                        <button onClick={() => { setRemoving(o.id); setPin(''); setMsg('') }} style={{ ...btn, border: `1px solid ${RED}88`, backgroundColor: 'transparent', color: '#ff9a9a' }}>ขายใหม่แล้ว ลบบิลค้างนี้</button>
                       </div>
                     )}
                   </div>
