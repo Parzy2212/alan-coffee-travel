@@ -14,6 +14,7 @@ import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner } from '@/components/pos/TestModeBanner'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
+import { roundedDiscount, parseDiscountRoundStep, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
 import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
 import { StuckBillsBanner } from '@/components/pos/StuckBillsBanner'
 import { useNetworkStatus } from '@/lib/network-status'
@@ -88,6 +89,7 @@ type ChargeStatus = 'idle' | 'loading' | 'success' | 'error'
 type PosSettings = {
   shop_name: string
   vat_percent: number
+  discount_round_step: number
   qr_payment_number: string
   shop_line: string
   shop_facebook: string
@@ -2542,7 +2544,7 @@ export default function POSClient() {
   const [activeL2,     setActiveL2]     = useState<string | null>(null)
 
   const [successData,  setSuccessData]  = useState<SuccessData | null>(null)
-  const [posSettings,  setPosSettings]  = useState<PosSettings>({ shop_name: '', vat_percent: 0, qr_payment_number: '', shop_line: '', shop_facebook: '', shop_address: '', shop_phone: '', receipt_footer: '' })
+  const [posSettings,  setPosSettings]  = useState<PosSettings>({ shop_name: '', vat_percent: 0, discount_round_step: DEFAULT_DISCOUNT_ROUND_STEP, qr_payment_number: '', shop_line: '', shop_facebook: '', shop_address: '', shop_phone: '', receipt_footer: '' })
   const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null)
   const [editingCartKey, setEditingCartKey] = useState<string | null>(null)
   const [discountPreset,      setDiscountPreset]      = useState<DiscountKey | ''>('')
@@ -2615,6 +2617,7 @@ export default function POSClient() {
         const next = {
           shop_name:         (data.shop_name as string)         || '',
           vat_percent:       parseFloat((data.vat_percent as string) || '0') || 0,
+          discount_round_step: parseDiscountRoundStep(data.discount_round_step),
           qr_payment_number: (data.qr_payment_number as string) || '',
           shop_line:         (data.shop_line as string)         || '',
           shop_facebook:     (data.shop_facebook as string)     || '',
@@ -2762,7 +2765,8 @@ export default function POSClient() {
     : discountPreset === 'other'   ? (parseInt(discountOtherAmt, 10) || 0)
     : 0
   const vipDiscountAmt = selectedCustomer ? computeVipDiscount(subtotal, selectedCustomer.vip_tier) : 0
-  const discountAmt = baseDiscountAmt + vipDiscountAmt
+  const discountRoundStep = parseDiscountRoundStep(posSettings.discount_round_step)
+  const discountAmt = roundedDiscount(subtotal, baseDiscountAmt + vipDiscountAmt, discountRoundStep)
   const discountLabel = discountPreset === 'employee' ? 'บัตรพนักงาน'
     : discountPreset === 'promo'   ? 'โปรโมชัน'
     : discountPreset === 'regular' ? 'ลูกค้าประจำ'
@@ -3496,6 +3500,12 @@ export default function POSClient() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
                 <span style={{ fontSize: 11, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase' }}>ยอดสุทธิ</span>
                 <span style={{ fontSize: 22, fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>{fmtLak(finalTotal)}</span>
+              </div>
+            )}
+            {mounted && discountAmt > 0 && (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textAlign: 'right', marginTop: -6, marginBottom: 10 }}>
+                ส่วนลดรวม −{fmtLak(discountAmt)}
+                {discountAmt !== Math.min(baseDiscountAmt + vipDiscountAmt, subtotal) && ` · ปัดยอดลงหลัก ${discountRoundStep.toLocaleString('en-US')}`}
               </div>
             )}
             {mounted && cart.length > 0 && (() => {

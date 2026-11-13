@@ -5,6 +5,7 @@ import {
   BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
+import { authClient, dbErrorText } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, CARD, BORDER, RED, GREEN, ORANGE,
@@ -68,10 +69,10 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
     const n = parseFloat(amount)
     if (isNaN(n) || n < 0) { setErr('กรุณากรอกยอดทุนเริ่มต้น (0 หรือมากกว่า)'); return }
     setSaving(true)
-    const { error } = await supabase.from('initial_capital').insert({
+    const { error } = await authClient.from('initial_capital').insert({
       amount_lak: n, as_of_date: todayISO(), notes: notes.trim() || null,
     })
-    if (error) { setErr(error.message); setSaving(false); return }
+    if (error) { setErr(dbErrorText(error)); setSaving(false); return }
     onDone()
   }
 
@@ -118,14 +119,14 @@ function AddEntryModal({ type, onSave, onClose }: {
     const amt = parseFloat(form.amount)
     if (isNaN(amt) || amt <= 0) { setErr('กรุณากรอกจำนวนเงินที่ถูกต้อง (> 0)'); return }
     setSaving(true)
-    const { error } = await supabase.from('cash_flow').insert({
+    const { error } = await authClient.from('cash_flow').insert({
       type, category: form.category, amount_lak: amt,
       description: form.description.trim() || null,
       payment_method: form.payment_method,
       date: form.date,
       notes: form.notes.trim() || null,
     })
-    if (error) { setErr(error.message); setSaving(false); return }
+    if (error) { setErr(dbErrorText(error)); setSaving(false); return }
     onSave()
   }
 
@@ -200,9 +201,9 @@ function OverviewSection() {
     setLoading(true)
     const now = new Date()
     const [{ data: bal }, { data: sum }, { data: dc }] = await Promise.all([
-      supabase.rpc('get_current_cash_balance'),
-      supabase.rpc('get_cash_flow_summary', { p_start: monthStart(), p_end: todayISO() }),
-      supabase.rpc('get_daily_cashflow', { p_year: now.getFullYear(), p_month: now.getMonth() + 1 }),
+      authClient.rpc('get_current_cash_balance'),
+      authClient.rpc('get_cash_flow_summary', { p_start: monthStart(), p_end: todayISO() }),
+      authClient.rpc('get_daily_cashflow', { p_year: now.getFullYear(), p_month: now.getMonth() + 1 }),
     ])
     setBalance((bal as number | null) ?? 0)
     setSummary((sum as CFSummary[] | null)?.[0] ?? null)
@@ -346,6 +347,7 @@ function EntriesSection() {
   const [dateFilter, setDateFilter] = useState<DateFilter>('month')
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all')
   const [deleting,   setDeleting]   = useState<string | null>(null)
+  const [err,        setErr]        = useState('')
 
   function getRange(): { start: string | null; end: string | null } {
     const today = todayISO()
@@ -361,7 +363,7 @@ function EntriesSection() {
   const load = useCallback(async () => {
     setLoading(true)
     const { start, end } = getRange()
-    const { data } = await supabase.rpc('get_cash_flow_entries', {
+    const { data } = await authClient.rpc('get_cash_flow_entries', {
       p_start:  start,
       p_end:    end,
       p_type:   typeFilter === 'all' ? null : typeFilter,
@@ -377,13 +379,19 @@ function EntriesSection() {
 
   async function deleteEntry(id: string) {
     setDeleting(id)
-    await supabase.from('cash_flow').delete().eq('id', id)
-    setEntries(e => e.filter(r => r.id !== id))
+    setErr('')
+    const { data, error } = await authClient.from('cash_flow').delete().eq('id', id).select('id')
+    if (error || !data?.length) {
+      setErr(error ? dbErrorText(error) : 'ลบไม่ได้: บัญชีนี้ไม่มีสิทธิ์ (ต้องเป็นบัญชีเจ้าของร้าน)')
+    } else {
+      setEntries(e => e.filter(r => r.id !== id))
+    }
     setDeleting(null)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {err && <div style={{ color: RED, fontSize: 13 }}>{err}</div>}
       {addType && (
         <AddEntryModal type={addType} onClose={() => setAddType(null)} onSave={() => { setAddType(null); void load() }} />
       )}
@@ -472,10 +480,11 @@ function BudgetSection() {
   const [saving,  setSaving]  = useState(false)
   const [editId,  setEditId]  = useState<string | null>(null)
   const [editAmt, setEditAmt] = useState('')
+  const [err,     setErr]     = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.rpc('get_budget_summary')
+    const { data } = await authClient.rpc('get_budget_summary')
     setRows((data as BudgetRow[] | null) ?? [])
     setLoading(false)
   }, [])
@@ -486,28 +495,35 @@ function BudgetSection() {
     const amt = parseFloat(newAmt)
     if (!newCat.trim() || isNaN(amt) || amt <= 0) return
     setSaving(true)
-    await supabase.from('budgets').insert({ category: newCat.trim(), monthly_budget_lak: amt })
-    setNewCat(''); setNewAmt(''); setAddOpen(false); setSaving(false)
+    setErr('')
+    const { error } = await authClient.from('budgets').insert({ category: newCat.trim(), monthly_budget_lak: amt })
+    setSaving(false)
+    if (error) { setErr(dbErrorText(error)); return }
+    setNewCat(''); setNewAmt(''); setAddOpen(false)
     void load()
   }
 
   async function saveEdit(id: string) {
     const amt = parseFloat(editAmt)
     if (isNaN(amt) || amt <= 0) { setEditId(null); return }
-    await supabase.from('budgets').update({ monthly_budget_lak: amt }).eq('id', id)
+    setErr('')
+    const { data, error } = await authClient.from('budgets').update({ monthly_budget_lak: amt }).eq('id', id).select('id')
+    if (error || !data?.length) setErr(error ? dbErrorText(error) : 'แก้ไม่ได้: บัญชีนี้ไม่มีสิทธิ์ (ต้องเป็นบัญชีเจ้าของร้าน)')
     setEditId(null)
     void load()
   }
 
   async function deleteBudget(id: string) {
-    await supabase.from('budgets').delete().eq('id', id)
+    setErr('')
+    const { data, error } = await authClient.from('budgets').delete().eq('id', id).select('id')
+    if (error || !data?.length) { setErr(error ? dbErrorText(error) : 'ลบไม่ได้: บัญชีนี้ไม่มีสิทธิ์ (ต้องเป็นบัญชีเจ้าของร้าน)'); return }
     setRows(r => r.filter(b => b.id !== id))
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>งบประมาณรายเดือน — ใช้จ่ายจริงอ้างอิงจาก cash_flow</div>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>งบประมาณรายเดือน — ใช้จ่ายจริงอ้างอิงจาก cash_flow{err && <span style={{ color: RED, marginLeft: 8 }}>{err}</span>}</div>
         <button onClick={() => setAddOpen(o => !o)}
           style={{ padding: '7px 16px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           + เพิ่มหมวด
@@ -620,8 +636,8 @@ function PlanningSection() {
 
   useEffect(() => {
     Promise.all([
-      supabase.rpc('get_cash_flow_summary', { p_start: monthStart(), p_end: todayISO() }),
-      supabase.rpc('get_current_cash_balance'),
+      authClient.rpc('get_cash_flow_summary', { p_start: monthStart(), p_end: todayISO() }),
+      authClient.rpc('get_current_cash_balance'),
     ]).then(([{ data: sum }, { data: bal }]) => {
       setMonthlyNet((sum as CFSummary[] | null)?.[0]?.net ?? 0)
       setCashBal((bal as number | null) ?? 0)
@@ -746,14 +762,27 @@ type SubTab = (typeof TABS)[number]['key']
 
 export default function FinanceTab() {
   const [hasCapital, setHasCapital] = useState<boolean | null>(null)
+  const [isOwner,    setIsOwner]    = useState<boolean | null>(null)
   const [subTab,     setSubTab]     = useState<SubTab>('overview')
 
   const checkCapital = useCallback(async () => {
-    const { count } = await supabase.from('initial_capital').select('id', { count: 'exact', head: true })
+    const { data: owner, error } = await authClient.rpc('real_shop_role_in', { p_roles: ['owner'] })
+    if (error || owner !== true) { setIsOwner(false); return }
+    setIsOwner(true)
+    const { count } = await authClient.from('initial_capital').select('id', { count: 'exact', head: true })
     setHasCapital((count ?? 0) > 0)
   }, [])
 
   useEffect(() => { void checkCapital() }, [checkCapital])
+
+  if (isOwner === false) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.55)', lineHeight: 1.7 }}>
+        หน้าการเงินดูได้เฉพาะบัญชีเจ้าของร้าน<br />
+        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>ออกจากระบบแล้วเข้าใหม่ด้วยบัญชีเจ้าของร้าน</span>
+      </div>
+    )
+  }
 
   if (hasCapital === null) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>กำลังโหลด...</div>

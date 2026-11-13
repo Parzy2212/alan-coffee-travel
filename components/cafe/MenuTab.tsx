@@ -534,14 +534,15 @@ function RecipeCard({
   async function archiveMenu(e: React.MouseEvent) {
     e.stopPropagation()
     setArchiving(true)
-    const { error } = await authClient
+    const { data, error } = await authClient
       .from('recipes')
       .update({ is_active: false, is_archived: true })
       .eq('id', r.id)
-    if (!error) {
+      .select('id')
+    if (!error && data?.length) {
       onArchive(r.id)
     } else {
-      showMsg('เกิดข้อผิดพลาด: ' + error.message)
+      showMsg(error ? dbErrorText(error) : 'ซ่อนเมนูได้เฉพาะบัญชีเจ้าของร้าน')
       setArchiving(false)
     }
   }
@@ -771,65 +772,38 @@ function RecipeCard({
 // ─── ArchivedCard ────────────────────────────────────────────────────────────
 
 function ArchivedCard({
-  r, onRestore, onHardDelete,
+  r, onRestore,
 }: {
   r: RecipeFull
   onRestore: (id: string) => void
-  onHardDelete: (id: string) => void
 }) {
-  const [step,         setStep]         = useState<0 | 1 | 2>(0)
-  const [nameInput,    setNameInput]    = useState('')
-  const [orderCount,   setOrderCount]   = useState<number | null>(null)
-  const [working,      setWorking]      = useState(false)
-  const [msg,          setMsg]          = useState<string | null>(null)
+  const [working, setWorking] = useState(false)
+  const [msg,     setMsg]     = useState<string | null>(null)
 
-  const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
   const displayName = r.product_name_th || r.product_name
-
-  async function startHardDelete() {
-    setWorking(true)
-    const { count } = await supabase
-      .from('order_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('recipe_id', r.id)
-    setOrderCount(count ?? 0)
-    setStep(1)
-    setWorking(false)
-  }
 
   async function restore() {
     setWorking(true)
-    const { error } = await authClient
+    const { data, error } = await authClient
       .from('recipes')
       .update({ is_archived: false, is_active: true })
       .eq('id', r.id)
-    if (!error) {
+      .select('id')
+    if (!error && data?.length) {
       onRestore(r.id)
     } else {
-      showMsg('เกิดข้อผิดพลาด: ' + error.message)
+      setMsg(error ? dbErrorText(error) : 'คืนค่าเมนูได้เฉพาะบัญชีเจ้าของร้าน')
+      setTimeout(() => setMsg(null), 3500)
       setWorking(false)
     }
-  }
-
-  async function confirmHardDelete() {
-    if (nameInput.trim() !== displayName.trim()) { showMsg('ชื่อไม่ตรงกัน'); return }
-    setWorking(true)
-    // Delete order_items first to satisfy FK, then delete recipe
-    const { error: e1 } = await supabase.from('order_items').delete().eq('recipe_id', r.id)
-    if (e1) { showMsg('ลบ order_items ล้มเหลว: ' + e1.message); setWorking(false); return }
-    const { data: deleted, error: e2 } = await authClient.from('recipes').delete().eq('id', r.id).select('id')
-    if (e2) { showMsg('ลบเมนูล้มเหลว: ' + e2.message); setWorking(false); return }
-    if (!deleted || deleted.length === 0) { showMsg('ไม่มีสิทธิ์ลบ (RLS) — โปรดตรวจสอบ policy'); setWorking(false); return }
-    onHardDelete(r.id)
   }
 
   return (
     <div style={{
       backgroundColor: CARD,
-      border: `1px solid ${step >= 1 ? RED + '44' : BORDER}`,
+      border: `1px solid ${BORDER}`,
       borderRadius: 10, overflow: 'hidden', opacity: 0.75,
     }}>
-      {/* Row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
         {r.image_url && (
           <img src={r.image_url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
@@ -848,75 +822,8 @@ function ArchivedCard({
         >
           ♻️ คืนค่า
         </button>
-        <button
-          onClick={startHardDelete}
-          disabled={working || step >= 1}
-          style={{ ...btnStyleSm(RED + '15', RED), fontSize: 12, flexShrink: 0 }}
-        >
-          🗑️ ลบถาวร
-        </button>
       </div>
-
-      {/* Step 1: warning + order count */}
-      {step === 1 && (
-        <div style={{ borderTop: `1px solid ${RED}33`, padding: '12px 14px', backgroundColor: RED + '0a' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: RED, marginBottom: 6 }}>
-            ⚠️ ยืนยันการลบถาวร
-          </div>
-          {(orderCount ?? 0) > 0 ? (
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 10, lineHeight: 1.6 }}>
-              เมนูนี้มีประวัติการขาย <span style={{ color: ORANGE, fontWeight: 700 }}>{orderCount} รายการ</span>
-              <br />การลบถาวรจะทำให้รายงานไม่สมบูรณ์และข้อมูลหายถาวร
-            </div>
-          ) : (
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginBottom: 10 }}>
-              ไม่มีประวัติการขาย — การลบจะไม่กระทบรายงาน
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setStep(2)} style={{ ...btnStyleSm(RED + '22', RED), fontWeight: 700 }}>
-              ยืนยัน ลบถาวร →
-            </button>
-            <button onClick={() => setStep(0)} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.4)')}>
-              ยกเลิก
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: type name to confirm */}
-      {step === 2 && (
-        <div style={{ borderTop: `1px solid ${RED}44`, padding: '12px 14px', backgroundColor: RED + '0f' }}>
-          {msg && <div style={{ marginBottom: 8 }}><Toast msg={msg} /></div>}
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 8 }}>
-            พิมพ์ <span style={{ color: RED, fontWeight: 700 }}>{displayName}</span> เพื่อยืนยัน
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={nameInput}
-              onChange={e => setNameInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && confirmHardDelete()}
-              style={{ ...inputStyle, flex: 1, fontSize: 13, borderColor: RED + '55' }}
-              placeholder="ชื่อเมนู..."
-              autoFocus
-            />
-            <button
-              onClick={confirmHardDelete}
-              disabled={working || nameInput.trim() !== displayName.trim()}
-              style={{
-                ...btnStyleSm(RED, '#000'),
-                fontWeight: 800, fontSize: 13,
-                opacity: (working || nameInput.trim() !== displayName.trim()) ? 0.35 : 1,
-              }}
-            >
-              {working ? '...' : 'ลบเดี๋ยวนี้'}
-            </button>
-            <button onClick={() => { setStep(0); setNameInput('') }} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.4)')}>
-              ยกเลิก
-            </button>
-          </div>
-        </div>
-      )}
+      {msg && <div style={{ padding: '0 14px 10px' }}><Toast msg={msg} /></div>}
     </div>
   )
 }
@@ -1136,7 +1043,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
               {archivedRecipes.length}
             </span>
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
-              สามารถคืนค่าหรือลบถาวรได้
+              กดคืนค่าเพื่อนำกลับมาขาย
             </span>
           </button>
 
@@ -1149,10 +1056,6 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
                   onRestore={(id) => {
                     setRecipes(prev => prev.map(x => x.id === id ? { ...x, is_archived: false, is_active: true } : x))
                     showMsg('คืนค่าเมนูเรียบร้อยแล้ว')
-                  }}
-                  onHardDelete={(id) => {
-                    setRecipes(prev => prev.filter(x => x.id !== id))
-                    showMsg('ลบเมนูถาวรเรียบร้อยแล้ว')
                   }}
                 />
               ))}

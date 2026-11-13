@@ -155,6 +155,7 @@ type FullSettings = {
   open_time: string; close_time: string; open_days: string
   currency_primary: string; currency_secondary: string
   vat_percent: string; service_charge_percent: string; receipt_auto_print: string
+  discount_round_step: string
   ticker_text: string; queue_ticker_text: string; queue_display_mode: string
   low_stock_alert_line_token: string; daily_report_line_token: string
   low_stock_alert_enabled: string; daily_report_enabled: string
@@ -184,6 +185,7 @@ const DEFAULT_SETTINGS: FullSettings = {
   open_time: '07:00', close_time: '22:00', open_days: '["mon","tue","wed","thu","fri","sat","sun"]',
   currency_primary: 'LAK', currency_secondary: 'THB',
   vat_percent: '0', service_charge_percent: '0', receipt_auto_print: 'false',
+  discount_round_step: '1000',
   ticker_text: '', queue_ticker_text: '', queue_display_mode: 'standard',
   low_stock_alert_line_token: '', daily_report_line_token: '',
   low_stock_alert_enabled: 'false', daily_report_enabled: 'false',
@@ -1822,6 +1824,12 @@ function SettingsTab() {
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>
             VAT คิดรวมอยู่ในราคาแล้ว (ใบเสร็จแสดงยอด VAT แยกให้ดู ไม่บวกเพิ่ม)
           </div>
+          <Field label="บิลที่มีส่วนลด: ปัดยอดสุทธิลงเป็นหลัก">
+            <select value={settings.discount_round_step} onChange={set('discount_round_step')} style={{ ...inputStyle, cursor: 'pointer', maxWidth: 340 }}>
+              <option value="1000">1,000 กีบ (105,000 ลด 5% = 99,000)</option>
+              <option value="500">500 กีบ (105,000 ลด 5% = 99,500)</option>
+            </select>
+          </Field>
 
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginTop: 8 }}>รูปแบบใบเสร็จ (ใช้ทุกเครื่อง)</div>
           <div>
@@ -3077,10 +3085,10 @@ function ChatSection() {
         supabase.rpc('get_stock_detail'),
         supabase.rpc('get_staff_today_status'),
         supabase.rpc('get_staff_analytics'),
-        supabase.rpc('get_cashflow_summary', { p_days: 30 }),
+        authClient.rpc('get_cashflow_summary', { p_days: 30 }),
         supabase.rpc('get_queue_performance', { p_days: 1 }),
-        supabase.rpc('get_current_cash_balance'),
-        supabase.rpc('get_budget_summary'),
+        authClient.rpc('get_current_cash_balance'),
+        authClient.rpc('get_budget_summary'),
       ])
 
       const stats      = sRes.data  as ExtDashStats   | null
