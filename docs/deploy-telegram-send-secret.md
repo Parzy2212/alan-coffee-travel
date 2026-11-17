@@ -5,27 +5,23 @@
 - ฐานข้อมูล: แจ้งเตือนบิลใหญ่ / ของใกล้หมด / ลิ้นชักเงิน โดยแนบรหัสลับที่เก็บใน Vault
 - คนที่ล็อกอินและเป็นสมาชิกของร้าน: หน้าขอลาใน `/cafe`
 
+**SQL ทุกขั้นอยู่ในไฟล์ `.sql` ให้ก๊อปทั้งไฟล์ไปวาง ห้ามก๊อปจากหน้านี้** (ถ้าติดบรรทัด ```` ``` ```` ไปด้วยจะ error)
+
 **ทำขั้น 1-6 ต่อกันในรอบเดียว** ระหว่างขั้น 4 ถึงขั้น 5 แจ้งเตือนจากฐานข้อมูลจะส่งไม่ออก อย่าทิ้งไว้นาน
 
 ---
 
 ## ขั้น 1: สร้างรหัสลับ (SQL Editor)
 
-Supabase Dashboard → **SQL Editor** → New query → วางข้อความนี้ → **Run**
-
-```sql
-SELECT vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'),
-                           'telegram_send_secret',
-                           'telegram-send: messages from the database');
-SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'telegram_send_secret';
-```
+เปิดไฟล์ `D:lan-coffee-travel\docs	elegram-step1-create-secret.sql` ด้วย Notepad → `Ctrl+A` → `Ctrl+C`
+→ Supabase Dashboard → **SQL Editor** → New query → `Ctrl+V` → **Run**
 
 ผลด้านล่างคือตัวอักษรและตัวเลข 64 ตัว ดับเบิลคลิกที่ช่องผลแล้วก๊อปไว้สำหรับขั้น 2
 
 > **ห้ามวางรหัสนี้ในแชท (รวมทั้งแชทกับ Claude) ห้ามแคปหน้าจอ ห้ามจดลงไฟล์
 > ให้ก๊อปจากหน้า SQL Editor ไปวางในหน้า Secrets (ขั้น 2) ตรงๆ เท่านั้น**
 
-ถ้าบรรทัดแรกขึ้นว่าชื่อนี้มีอยู่แล้ว (`already exists`) ไม่เป็นไร ให้รันเฉพาะบรรทัดที่ 2 (`SELECT decrypted_secret ...`) แล้วก๊อปผล
+ถ้าขึ้นว่าชื่อนี้มีอยู่แล้ว (`already exists`) ไม่เป็นไร แปลว่าเคยสร้างไว้แล้ว ให้ลบทุกบรรทัดในช่อง SQL เหลือแค่บรรทัดสุดท้าย (`SELECT decrypted_secret ...`) แล้ว Run ใหม่ แล้วก๊อปผล
 
 ## ขั้น 2: ใส่รหัสลับให้ function (หน้า Secrets)
 
@@ -84,16 +80,10 @@ SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'telegram_send
 
 **ข. ฐานข้อมูลส่งได้ (บอสรันใน SQL Editor)**
 
-```sql
-SELECT public.notify_telegram('ทดสอบระบบ: ข้อความจากฐานข้อมูล', 'test');
-```
+เปิด `D:lan-coffee-travel\docs	elegram-step6-db-send-test.sql` → ก๊อปทั้งไฟล์ → SQL Editor → วาง → **Run**
 
 ผลที่ถูก: มีข้อความ "ทดสอบระบบ: ข้อความจากฐานข้อมูล" เข้าแชท Telegram ของร้านภายในไม่กี่วินาที
-ถ้าไม่เข้า ให้รันคำสั่งข้างล่างแล้วส่งผลให้ Claude (ผลนี้ไม่มีรหัสลับ ส่งได้)
-
-```sql
-SELECT status_code, content FROM net._http_response ORDER BY created DESC LIMIT 1;
-```
+ถ้าไม่เข้า ให้รัน `D:lan-coffee-travel\docs	elegram-step6-last-response.sql` แบบเดียวกัน แล้วส่งผลให้ Claude (ผลนี้ไม่มีรหัสลับ ส่งได้)
 
 - `200` และ `"ok":true` = ส่งสำเร็จแล้ว (อาจแค่ช้า)
 - `401` = รหัสในขั้น 1 กับขั้น 2 ไม่ตรงกัน หรือยังไม่ได้ปิดสวิตช์ JWT (ขั้น 5.2)
