@@ -17,3 +17,9 @@ export function roundedDiscount(subtotal: number, rawDiscount: number, step: num
   const net = Math.floor((subtotal - raw) / step) * step
   return subtotal - Math.max(net, 0)
 }
+
+// Largest discount without a manager PIN (owner, 2026-11-17): 15% + the customer's VIP %,
+// rounded like the POS rounds. checkout_order (061) checks the same with step 1,000.
+export function discountCap(subtotal: number, vipPct: number): number {
+  return roundedDiscount(subtotal, Math.round(subtotal * (15 + vipPct) / 100), 1000)
+}

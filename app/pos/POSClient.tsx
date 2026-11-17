@@ -14,8 +14,8 @@ import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner, TestModePinDialog } from '@/components/pos/TestModeBanner'
 import type { Customer } from '@/lib/customers'
-import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
-import { roundedDiscount, parseDiscountRoundStep, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
+import { computeVipDiscount, getVipDiscountPct, isBirthdayToday, TIER_META } from '@/lib/loyalty'
+import { roundedDiscount, parseDiscountRoundStep, discountCap, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
 import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
 import { StuckBillsBanner } from '@/components/pos/StuckBillsBanner'
 import { useNetworkStatus } from '@/lib/network-status'
@@ -229,6 +229,7 @@ function offlineCheckoutArgs(payload: Record<string, unknown>, order: OfflineOrd
 }
 
 function translateError(msg: string): string {
+  if (msg.includes('DISCOUNT_NEEDS_PIN')) return 'ส่วนลดเกินเพดาน ต้องใช้ PIN ผู้จัดการ'
   if (msg.includes('TEST_MODE_OFF')) return 'โหมดทดสอบหมดเวลาหรือถูกปิดแล้ว กดคิดเงินอีกครั้ง บิลนี้จะเป็นบิลจริง'
   if (msg.includes('PRICE_CHANGED')) return 'ราคาเมนูเปลี่ยนแล้ว กด F5 โหลดหน้าใหม่ แล้วคิดเงินอีกครั้ง'
   if (msg.includes('menu item not available')) return 'มีเมนูในบิลที่ถูกปิดหรือลบไปแล้ว กด F5 โหลดหน้าใหม่'
@@ -1064,7 +1065,7 @@ function DigitalReceiptPopup({
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, onTestModeOff, defaultLang, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, onTestModeOff, defaultLang, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null; name?: string }[]
   discount: string
@@ -1074,6 +1075,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   selectedCustomer?: Customer | null
   isTestMode?: boolean
   onTestModeOff?: () => void
+  discountCapLak: number
   defaultLang?: Lang
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string, receiptLang: Lang, splitTransfer: number) => void
   onClose: () => void
@@ -1100,8 +1102,13 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   const overlayRef = useRef<HTMLDivElement>(null)
   // one id per checkout: a double tap or a retry after a lost reply returns the same bill
   const clientUuid = useRef(crypto.randomUUID())
+  const [mgrPin, setMgrPin] = useState('')
+  const approvedDiscount = useRef(0)
 
   const discountAmt   = parseFloat(discount) || 0
+  // the server may count a lower VIP tier than the one this screen loaded: then it asks for the PIN
+  const [serverWantsPin, setServerWantsPin] = useState(false)
+  const needsMgrPin   = serverWantsPin || Math.min(discountAmt, subtotal) > discountCapLak
   const finalTotal    = Math.max(subtotal - discountAmt, 0)
   const receivedNum   = received ? (parseInt(received, 10) || 0) : 0
   const splitCashNum  = parseInt(splitCash, 10)  || 0
@@ -1186,6 +1193,23 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     if (!shopId) { setErrMsg('ยังโหลดข้อมูลร้านไม่เสร็จ ลองใหม่อีกครั้ง'); setLoading(false); return }
 
     const sentDiscount = Math.min(discountAmt, subtotal)
+    // above the cap the manager approves this bill id first (061); a replay of it later still passes
+    if (needsMgrPin && approvedDiscount.current < sentDiscount) {
+      if (mgrPin.length !== 4) { setErrMsg('ส่วนลดเกินเพดาน ใส่ PIN ผู้จัดการ 4 หลัก'); setLoading(false); return }
+      const { data: ap, error: apErr } = await supabase.rpc('pos_discount_approve', {
+        p_shop_id: shopId, p_client_uuid: clientUuid.current, p_discount_lak: sentDiscount, p_manager_pin: mgrPin,
+      }).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
+      if (apErr) {
+        setErrMsg(apErr.code ? translateError(apErr.message) : 'ตรวจ PIN ไม่ได้ ต่ออินเทอร์เน็ตไม่ได้ ส่วนลดเกินเพดานต้องออนไลน์ ลองใหม่หรือลดส่วนลด')
+        setLoading(false); return
+      }
+      const r = ap as { ok: boolean; error?: string; wait?: number }
+      if (!r.ok) {
+        setErrMsg(r.error === 'locked' ? `ใส่ PIN ผิดหลายครั้ง รอ ${r.wait ?? 60} วินาที` : 'PIN ผู้จัดการไม่ถูกต้อง')
+        setMgrPin(''); setLoading(false); return
+      }
+      approvedDiscount.current = sentDiscount
+    }
     const args = {
       p_client_uuid:     clientUuid.current,
       p_shop_id:         shopId,
@@ -1240,6 +1264,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     if (error && (status === 0 || status === 502 || status === 503 || status === 504)) { await saveOffline(); return }
     if (error) {
       if (error.message.includes('TEST_MODE_OFF')) onTestModeOff?.()
+      if (error.message.includes('DISCOUNT_NEEDS_PIN')) { setServerWantsPin(true); approvedDiscount.current = 0 }
       setErrMsg(translateError(error.message)); setLoading(false); return
     }
 
@@ -1620,6 +1645,18 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
                 <div style={{ ...overlineV2, marginBottom: 7 }}>เลขอ้างอิงสลิป (ไม่บังคับ)</div>
                 <input value={slipRef} onChange={e => setSlipRef(e.target.value)} placeholder="เช่น 4 ตัวท้ายของเลขอ้างอิง"
                   style={{ ...inputStyleV2, fontFamily: FONT_MONO }} />
+              </div>
+            )}
+
+            {needsMgrPin && approvedDiscount.current < Math.min(discountAmt, subtotal) && (
+              <div>
+                <div style={{ ...overlineV2, marginBottom: 7, color: '#ffb36b' }}>
+                  ส่วนลด {fmtLak(Math.min(discountAmt, subtotal))} เกินเพดาน {fmtLak(discountCapLak)} · ต้องใช้ PIN ผู้จัดการ
+                </div>
+                <input value={mgrPin} onChange={e => setMgrPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="PIN ผู้จัดการ" type="password" inputMode="numeric" autoComplete="off" disabled={loading}
+                  aria-label="PIN ผู้จัดการสำหรับส่วนลด"
+                  style={{ ...inputStyleV2, fontFamily: FONT_MONO, letterSpacing: mgrPin ? '0.4em' : undefined }} />
               </div>
             )}
 
@@ -2624,6 +2661,7 @@ export default function POSClient() {
   const vipDiscountAmt = selectedCustomer ? computeVipDiscount(subtotal, selectedCustomer.vip_tier) : 0
   const discountRoundStep = parseDiscountRoundStep(posSettings.discount_round_step)
   const discountAmt = roundedDiscount(subtotal, baseDiscountAmt + vipDiscountAmt, discountRoundStep)
+  const discountCapLak = discountCap(subtotal, selectedCustomer ? getVipDiscountPct(selectedCustomer.vip_tier) : 0)
   const discountLabel = discountPreset === 'employee' ? 'บัตรพนักงาน'
     : discountPreset === 'promo'   ? 'โปรโมชัน'
     : discountPreset === 'regular' ? 'ลูกค้าประจำ'
@@ -2964,6 +3002,7 @@ export default function POSClient() {
       {showCharge && (
         <ChargePopup subtotal={subtotal} cartPayload={cartPayload}
           discount={String(discountAmt)} discountReason={discountLabel}
+          discountCapLak={discountCapLak}
           activeEmployeeId={activeEmployee?.id ?? null}
           shopId={shopId}
           selectedCustomer={selectedCustomer}
@@ -3367,6 +3406,7 @@ export default function POSClient() {
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textAlign: 'right', marginTop: -6, marginBottom: 10 }}>
                 ส่วนลดรวม −{fmtLak(discountAmt)}
                 {discountAmt !== Math.min(baseDiscountAmt + vipDiscountAmt, subtotal) && ` · ปัดยอดลงหลัก ${discountRoundStep.toLocaleString('en-US')}`}
+                {discountAmt > discountCapLak && <div style={{ color: '#ffb36b', marginTop: 2 }}>เกินเพดาน {fmtLak(discountCapLak)} · ต้องใช้ PIN ผู้จัดการตอนคิดเงิน</div>}
               </div>
             )}
             {mounted && cart.length > 0 && (() => {

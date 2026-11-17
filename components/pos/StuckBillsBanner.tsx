@@ -13,6 +13,7 @@ const PAY: Record<string, string> = { cash: 'เงินสด', qr: 'QR', tran
 
 function reasonText(msg: string): string {
   if (!msg) return 'ยังส่งไม่ถึงระบบ ตรวจอินเทอร์เน็ตของร้าน เครื่องจะส่งให้เองเมื่อเน็ตกลับมา'
+  if (msg.includes('DISCOUNT_NEEDS_PIN')) return 'ส่วนลดเกินเพดานและไม่มี PIN ผู้จัดการอนุมัติ ต้องขายใหม่'
   if (msg.includes('TEST_MODE_OFF')) return 'บิลทดสอบ ส่งไม่ได้เพราะโหมดทดสอบปิดอยู่ ไม่ใช่ยอดขายจริง ผู้จัดการลบได้เลย'
   if (msg.includes('PRICE_CHANGED')) return 'ราคาเมนูเปลี่ยนหลังขาย ยอดบิลไม่ตรงกับราคาใหม่'
   if (msg.includes('Insufficient stock')) return 'วัตถุดิบในสต็อกไม่พอสำหรับบิลนี้'
