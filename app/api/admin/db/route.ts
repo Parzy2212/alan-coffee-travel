@@ -84,6 +84,18 @@ export async function POST(request: Request) {
     const safeTable = table as AllowedTable
     const safeAction = action as AllowedAction
 
+    // The shared admin password must not reach the shop's payment details or any other shop
+    // setting: those are owner-only through update_payment_setting / update_site_setting (051/052).
+    if (safeTable === 'site_settings') {
+      const d = data as Record<string, unknown> | null
+      const heroOnly = safeAction === 'upsert' && !!d && typeof d === 'object' && !Array.isArray(d)
+        && Object.keys(d).every(k => k === 'key' || k === 'value')
+        && d.key === 'hero_image_url' && typeof d.value === 'string'
+      if (!heroOnly) {
+        return NextResponse.json({ error: 'Only hero_image_url can be changed here.' }, { status: 403 })
+      }
+    }
+
     // 3. Execute with service-role client (bypasses RLS)
     const supabase = getServiceClient()
     let result: unknown = { ok: true }
