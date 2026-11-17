@@ -90,6 +90,9 @@ function buildSummaryHtml(s: Summary, shopName: string, paperMm: 58 | 80): strin
   out.push(row(`รวมขาย (${s.sales.bills})`, fmt(s.sales.total), 'b'))
   if (s.sales.void_bills > 0) out.push(row(`ยกเลิกบิล (${s.sales.void_bills})`, fmt(s.sales.void_total)))
   if ((s.sales.refund_bills ?? 0) > 0) out.push(`<div class="sub">(คืนเงินบิลกะก่อน ${s.sales.refund_bills} บิล ${esc(fmt(s.sales.refund_cash))} หักในขายเงินสดแล้ว)</div>`)
+  out.push('<hr class="d">', row('ยอดโอนรวมของกะนี้', `${fmt(bm.transfer?.amount)} (${bm.transfer?.bills ?? 0} บิล)`, 'b'))
+  if (bm.qr) out.push(row('ยอด QR รวมของกะนี้', `${fmt(bm.qr.amount)} (${bm.qr.bills} บิล)`, 'b'))
+  out.push('<div class="sub">เทียบกับยอดเข้าในแอปธนาคาร</div>')
   out.push('<hr>', row('เงินเปิดกะ', fmt(s.opening_cash)))
   if (s.carried_over !== null && s.carried_over !== s.opening_cash) {
     out.push(`<div class="sub">(ยกมา ${esc(fmt(s.carried_over))}${s.opening_reason ? `: ${esc(s.opening_reason)}` : ''})</div>`)
