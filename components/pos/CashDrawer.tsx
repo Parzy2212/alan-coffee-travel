@@ -1,9 +1,6 @@
 'use client'
 
-// Cash drawer for one shop (migration 059): open with the carried-over cash,
-// paid-outs / paid-ins during the shift, blind count, result, two-person close,
-// printed summary with two signature lines. Every write needs a PIN; the
-// database checks it (same attempt limits as voiding a bill).
+// PINs are checked by the 059 database functions, not here (same attempt limits as voiding a bill).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -259,13 +256,10 @@ export function CashDrawer({ shopId, onClose }: { shopId: string | null; onClose
   async function printSummary(s: Summary) {
     setPrintMsg('กำลังพิมพ์...')
     try {
-      let shopName = 'ALAN COFFEE & TRAVEL'
-      try {
-        const { data } = await supabase.rpc('get_site_settings')
-        shopName = ((data as Record<string, string> | null)?.shop_name) || shopName
-      } catch { /* print with the default name */ }
+      const { data, error } = await supabase.rpc('get_site_settings')
+      const shopName = (data as Record<string, string> | null)?.shop_name || 'ALAN COFFEE & TRAVEL'
       await printHtmlViaBrowser(buildSummaryHtml(s, shopName, getPaperWidth()))
-      setPrintMsg('ส่งไปพิมพ์แล้ว')
+      setPrintMsg(error ? 'ส่งไปพิมพ์แล้ว (โหลดชื่อร้านไม่ได้ ใช้ชื่อตั้งต้น)' : 'ส่งไปพิมพ์แล้ว')
     } catch (e) {
       setPrintMsg(`พิมพ์ไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)} — กดพิมพ์อีกครั้งได้`)
     }
