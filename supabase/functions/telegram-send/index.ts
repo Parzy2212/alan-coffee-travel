@@ -1,7 +1,26 @@
+// Sends a message to the shop's Telegram chat. Only two callers are accepted:
+//   * the database (notify_telegram, migration 062), with the x-notify-secret header
+//     = the TELEGRAM_SEND_SECRET function secret (same value as Vault "telegram_send_secret")
+//   * a signed-in user who is an active member of the shop (shop_users), with their
+//     own session token. The public anon key alone is refused (401/403).
+// Deployed with --no-verify-jwt: the database call carries no JWT, and this code
+// does the checking itself.
+
+const SHOP_ID = '9afdd9eb-728d-4e36-8077-492c92dbef30'
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+}
+
+function sameSecret(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a)
+  const y = new TextEncoder().encode(b)
+  if (x.length !== y.length) return false
+  let diff = 0
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i]
+  return diff === 0
 }
 
 Deno.serve(async (req) => {
@@ -19,6 +38,32 @@ Deno.serve(async (req) => {
       headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
     })
 
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+  const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const anonKey     = Deno.env.get('SUPABASE_ANON_KEY')!
+
+  // ---- who is calling ----
+  const secret = Deno.env.get('TELEGRAM_SEND_SECRET') ?? ''
+  const given  = req.headers.get('x-notify-secret') ?? ''
+  let allowed = secret.length >= 32 && given !== '' && sameSecret(given, secret)
+
+  if (!allowed) {
+    const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
+    if (!token) return json({ ok: false, error: 'sign in required' }, 401)
+    // the anon key is a valid JWT but has no user: /auth/v1/user refuses it
+    const u = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: `Bearer ${token}` } })
+    if (!u.ok) return json({ ok: false, error: 'sign in required' }, 401)
+    const user = await u.json() as { id?: string }
+    if (!user.id) return json({ ok: false, error: 'sign in required' }, 401)
+    const m = await fetch(
+      `${supabaseUrl}/rest/v1/shop_users?shop_id=eq.${SHOP_ID}&user_id=eq.${user.id}&active=is.true&select=user_id&limit=1`,
+      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+    )
+    if (!m.ok) return json({ ok: false, error: `member check failed: ${m.status}` }, 500)
+    allowed = ((await m.json()) as unknown[]).length > 0
+    if (!allowed) return json({ ok: false, error: 'not a member of the shop' }, 403)
+  }
+
   try {
     const body = await req.json() as { message: string; type?: string }
     if (typeof body.message !== 'string' || !body.message.trim()) {
@@ -27,9 +72,6 @@ Deno.serve(async (req) => {
 
     // The token is hidden from the public key, so it is read with the
     // project's own service key (provided to Edge Functions by Supabase).
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
     const res = await fetch(
       `${supabaseUrl}/rest/v1/site_settings?key=in.(telegram_bot_token,telegram_chat_id,telegram_enabled)&select=key,value`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }

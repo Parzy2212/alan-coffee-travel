@@ -7,7 +7,6 @@ import { getFaceApi } from '@/lib/faceapi'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
-  SUPABASE_URL, SUPABASE_ANON_KEY,
   StaffMember, StaffToday, StaffAnalytics, LeaveRequest, StaffForm,
   Badge, LoadingSpinner,
   inputStyle, btnStyle,
@@ -390,6 +389,15 @@ function LeavesView() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [formErr,    setFormErr]    = useState('')
+  const [notifyErr,  setNotifyErr]  = useState('')
+
+  // telegram-send accepts a signed-in shop member's session, never the public key
+  async function notifyTelegram(message: string) {
+    const { data, error } = await authClient.functions.invoke('telegram-send', { body: { message, type: 'leave' } })
+    const r = data as { ok?: boolean; reason?: string } | null
+    if (error || !r?.ok) setNotifyErr(r?.reason === 'disabled' ? '' : 'บันทึกแล้ว แต่ส่งแจ้งเตือน Telegram ไม่สำเร็จ')
+    else setNotifyErr('')
+  }
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -423,14 +431,7 @@ function LeavesView() {
     }
 
     // Telegram notification to manager
-    await fetch(`${SUPABASE_URL}/functions/v1/telegram-send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({
-        message: `✅ <b>อนุมัติลาแล้ว</b>\n${lv.staff?.name ?? 'พนักงาน'} — ${leaveLabel(lv.leave_type)}\n${lv.start_date} ถึง ${lv.end_date} (${daysBetween(lv.start_date, lv.end_date)} วัน)`,
-        type: 'leave',
-      }),
-    }).catch(() => null)
+    await notifyTelegram(`✅ <b>อนุมัติลาแล้ว</b>\n${lv.staff?.name ?? 'พนักงาน'} — ${leaveLabel(lv.leave_type)}\n${lv.start_date} ถึง ${lv.end_date} (${daysBetween(lv.start_date, lv.end_date)} วัน)`)
 
     await load()
     setActingId(null)
@@ -438,6 +439,7 @@ function LeavesView() {
 
   async function reject(id: string) {
     setActingId(id)
+    setNotifyErr('')
     await supabase.from('leave_requests').update({ status: 'rejected' }).eq('id', id)
     await load()
     setActingId(null)
@@ -476,14 +478,7 @@ function LeavesView() {
     if (error) { setFormErr(error.message); setSubmitting(false); return }
 
     const staffName = staffList.find(s => s.id === form.staff_id)?.name ?? 'พนักงาน'
-    await fetch(`${SUPABASE_URL}/functions/v1/telegram-send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({
-        message: `📋 <b>คำขอลาใหม่</b>\n${staffName} — ${leaveLabel(form.leave_type)}\n${form.start_date} ถึง ${form.end_date} (${requestedDays} วัน)${form.reason ? '\nเหตุผล: ' + form.reason : ''}`,
-        type: 'leave',
-      }),
-    }).catch(() => null)
+    await notifyTelegram(`📋 <b>คำขอลาใหม่</b>\n${staffName} — ${leaveLabel(form.leave_type)}\n${form.start_date} ถึง ${form.end_date} (${requestedDays} วัน)${form.reason ? '\nเหตุผล: ' + form.reason : ''}`)
 
     setShowModal(false)
     setForm({ staff_id: '', leave_type: 'sick', start_date: '', end_date: '', reason: '' })
@@ -578,6 +573,7 @@ function LeavesView() {
             + ขอลาใหม่
           </button>
         </div>
+        {notifyErr && <div role="alert" style={{ fontSize: 12, color: ORANGE }}>{notifyErr}</div>}
 
         {loading ? <LoadingSpinner /> : leaves.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>ไม่มีคำขอลา</div>
