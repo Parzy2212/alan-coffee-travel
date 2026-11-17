@@ -40,13 +40,15 @@ export type PrintStatus = 'off' | 'printing' | 'sent' | 'error'
 export interface OrderSuccessProps {
   queue: number
   total: number
+  change?: number
+  splitParts?: { cash: number; transfer: number }
   onDismiss: () => void
   printStatus?: PrintStatus
   printError?: string
   onRetryPrint?: () => void
 }
 
-export function OrderSuccess({ queue, total, onDismiss, printStatus = 'off', printError, onRetryPrint }: OrderSuccessProps) {
+export function OrderSuccess({ queue, total, change = 0, splitParts, onDismiss, printStatus = 'off', printError, onRetryPrint }: OrderSuccessProps) {
   const [count, setCount] = useState(3)
   const particles = useRef(mkParticles(52)).current
   // Hold the screen while printing and on a print error, so a failed receipt is never skipped unseen
@@ -149,6 +151,16 @@ export function OrderSuccess({ queue, total, onDismiss, printStatus = 'off', pri
         }}>
           {total.toLocaleString('en-US')} ₭
         </div>
+        {splitParts && (
+          <div style={{ marginTop: 8, fontSize: 16, color: 'rgba(255,255,255,0.6)', fontVariantNumeric: 'tabular-nums' }}>
+            เงินสด {splitParts.cash.toLocaleString('en-US')} · โอน {splitParts.transfer.toLocaleString('en-US')}
+          </div>
+        )}
+        {change > 0 && (
+          <div style={{ marginTop: 10, fontSize: 30, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
+            ทอน {change.toLocaleString('en-US')} ₭
+          </div>
+        )}
         {printStatus !== 'error' && (
           <div style={{ marginTop: 18, fontSize: 15, color: 'rgba(255,255,255,0.6)' }}>
             {printStatus === 'printing' ? '🖨 กำลังส่งพิมพ์ใบเสร็จ...'

@@ -24,6 +24,7 @@ export type PrintReceiptData = {
   method:         string
   received:       number
   change:         number
+  splitTransfer?:  number   // split bill: the transfer part; `received` is then the cash part
   vatPct:         number
   footerText?:    string
   phone?:         string
@@ -164,7 +165,7 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign,
     return ' '.repeat(Math.floor((W - bl) / 2)) + s
   }
   const tc  = (l: string, r: string) => twoCol(l, r, W)
-  const pay = data.method === 'cash' ? 'CASH' : data.method === 'qr' ? 'QR CODE' : 'TRANSFER'
+  const pay = data.method === 'cash' ? 'CASH' : data.method === 'qr' ? 'QR CODE' : data.method === 'split' ? 'CASH + TRANSFER' : 'TRANSFER'
 
   const lines: string[] = []
   const L = (...ss: string[]) => lines.push(...ss)
@@ -206,6 +207,8 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign,
   L(tc(lbl.payment, pay))
   if (data.method === 'cash' && data.received > 0) {
     L(tc(lbl.received, fmtLak(data.received)), tc(lbl.change, fmtLak(data.change)))
+  } else if (data.method === 'split') {
+    L(tc('CASH', fmtLak(data.received)), tc('TRANSFER', fmtLak(data.splitTransfer ?? 0)), tc(lbl.change, fmtLak(data.change)))
   }
   L(sep1)
   if (data.isBirthday) L(ctr(lbl.birthday))
@@ -477,7 +480,8 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   const sep1     = '='.repeat(W)
   const sep2     = '-'.repeat(W)
   const payLabel = data.method === 'cash' ? 'CASH'
-                 : data.method === 'qr'   ? 'QR CODE' : 'TRANSFER'
+                 : data.method === 'qr'   ? 'QR CODE'
+                 : data.method === 'split' ? 'CASH + TRANSFER' : 'TRANSFER'
 
   const parts: Uint8Array[] = []
   const p = (...s: (number[] | Uint8Array)[]) => parts.push(concat(...s))
@@ -542,6 +546,10 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   p(line(twoCol('PAYMENT:', payLabel, W)))
   if (data.method === 'cash' && data.received > 0) {
     p(line(twoCol('RECEIVED:', fmtLak(data.received), W)))
+    p(line(twoCol('CHANGE:', fmtLak(data.change), W)))
+  } else if (data.method === 'split') {
+    p(line(twoCol('CASH:', fmtLak(data.received), W)))
+    p(line(twoCol('TRANSFER:', fmtLak(data.splitTransfer ?? 0), W)))
     p(line(twoCol('CHANGE:', fmtLak(data.change), W)))
   }
 

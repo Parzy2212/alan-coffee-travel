@@ -34,7 +34,7 @@ export function translateCustomization(s: string, lang: ReceiptLang): string {
   return s.split(' · ').map(part => part.split(', ').map(t => OPTION_TEXT[t.trim()]?.[lang] ?? t).join(', ')).join(' · ')
 }
 
-const esc = (s: string) => s
+export const esc = (s: string) => s
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
@@ -46,7 +46,7 @@ export function buildReceiptHtml(data: PrintReceiptData, lang: ReceiptLang, desi
   const now = data.soldAt ? new Date(data.soldAt) : new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   const when = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`
-  const pay  = data.method === 'cash' ? ex.cash : data.method === 'qr' ? ex.qr : ex.transfer
+  const pay  = data.method === 'cash' ? ex.cash : data.method === 'qr' ? ex.qr : data.method === 'split' ? `${ex.cash} + ${ex.transfer}` : ex.transfer
   const row  = (l: string, r: string, cls = '') => `<div class="r ${cls}"><span>${esc(l)}</span><span>${esc(r)}</span></div>`
   const c    = (s: string, cls = '') => `<div class="c ${cls}">${esc(s)}</div>`
   const out: string[] = []
@@ -77,6 +77,8 @@ export function buildReceiptHtml(data: PrintReceiptData, lang: ReceiptLang, desi
   out.push(row(lbl.total, lak(data.finalTotal), 'b big'), '<hr class="d">', row(lbl.payment, pay))
   if (data.method === 'cash' && data.received > 0) {
     out.push(row(lbl.received, lak(data.received)), row(lbl.change, lak(data.change)))
+  } else if (data.method === 'split') {
+    out.push(row(ex.cash, lak(data.received)), row(ex.transfer, lak(data.splitTransfer ?? 0)), row(lbl.change, lak(data.change)))
   }
   out.push('<hr class="d">')
   if (data.isBirthday) out.push(c(lbl.birthday.replace(/\*/g, '').trim(), 'b'))
@@ -114,11 +116,16 @@ let printing = false
 /** Prints via the browser. Resolves once the job is handed to the OS (kiosk
  *  printing) or the print dialog is closed. */
 export async function printReceiptViaBrowser(data: PrintReceiptData, lang: ReceiptLang): Promise<void> {
+  await printHtmlViaBrowser(buildReceiptHtml(data, lang))
+}
+
+/** Prints one `.rcpt` block (receipt-sized HTML) the same way as a receipt. */
+export async function printHtmlViaBrowser(html: string): Promise<void> {
   if (printing) throw new Error('กำลังพิมพ์ใบเสร็จอีกใบอยู่ — รอสักครู่แล้วกดใหม่')
   printing = true
   const host = document.createElement('div')
   host.id = 'print-receipt'
-  host.innerHTML = buildReceiptHtml(data, lang)
+  host.innerHTML = html
   const page = document.createElement('style')
   document.body.appendChild(host)
   document.head.appendChild(page)

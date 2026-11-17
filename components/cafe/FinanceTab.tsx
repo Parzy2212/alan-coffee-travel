@@ -1,10 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { supabase } from '@/lib/supabase'
 import { authClient, dbErrorText } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
@@ -191,10 +190,6 @@ function OverviewSection() {
   const [summary,  setSummary]  = useState<CFSummary | null>(null)
   const [daily,    setDaily]    = useState<DailyBar[]>([])
   const [loading,  setLoading]  = useState(true)
-  const [shiftOpen, setShiftOpen] = useState(false)
-  const [shiftForm, setShiftForm] = useState({ shift: 'morning', opening_cash: '', actual_cash: '' })
-  const [shiftSaving, setShiftSaving] = useState(false)
-  const [shiftMsg, setShiftMsg] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -213,23 +208,6 @@ function OverviewSection() {
   }, [])
 
   useEffect(() => { void load() }, [load])
-
-  async function closeShift() {
-    const opening = parseFloat(shiftForm.opening_cash), actual = parseFloat(shiftForm.actual_cash)
-    if (isNaN(opening) || isNaN(actual)) { setShiftMsg('กรุณากรอกยอดเงินให้ถูกต้อง'); return }
-    setShiftSaving(true); setShiftMsg('')
-    const { data: stats } = await supabase.rpc('get_dashboard_stats')
-    const systemSales = (stats as { today_sales?: number } | null)?.today_sales ?? 0
-    const { error } = await supabase.rpc('close_shift', {
-      p_staff_id: null, p_shift: shiftForm.shift,
-      p_opening_cash: opening, p_actual_cash: actual, p_system_sales: systemSales,
-    })
-    if (error) { setShiftMsg(error.message) } else {
-      setShiftForm(f => ({ ...f, opening_cash: '', actual_cash: '' }))
-      setShiftOpen(false)
-    }
-    setShiftSaving(false)
-  }
 
   const kpis = [
     { label: 'ยอดเงินสด (ปัจจุบัน)',  val: balance ?? 0,           color: GOLD  },
@@ -281,50 +259,147 @@ function OverviewSection() {
         )}
       </div>
 
-      {/* Shift close (collapsible) */}
-      <div style={{ borderRadius: 14, border: `1px solid ${GOLD}33`, backgroundColor: CARD, overflow: 'hidden' }}>
-        <button onClick={() => setShiftOpen(o => !o)}
-          style={{ width: '100%', padding: '14px 22px', backgroundColor: 'transparent', border: 'none', color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 14, transform: shiftOpen ? 'rotate(90deg)' : 'none', transition: 'transform .2s', display: 'inline-block' }}>▶</span>
-          ปิดกะ (Shift Close)
-        </button>
-        {shiftOpen && (
-          <div style={{ padding: '0 22px 22px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-              <div>
-                {lbl('กะ')}
-                <select value={shiftForm.shift} onChange={e => setShiftForm(f => ({ ...f, shift: e.target.value }))} style={inputStyle}>
-                  <option value="morning">เช้า</option>
-                  <option value="afternoon">บ่าย</option>
-                  <option value="evening">เย็น</option>
-                </select>
-              </div>
-              {(['opening_cash', 'actual_cash'] as const).map(k => (
-                <div key={k}>
-                  {lbl(k === 'opening_cash' ? 'เงินเปิดกะ (LAK)' : 'เงินที่นับได้ (LAK)')}
-                  <MoneyInput value={shiftForm[k]} onChange={v => setShiftForm(f => ({ ...f, [k]: v }))} placeholder="0" style={inputStyle} />
-                </div>
-              ))}
-            </div>
-            {shiftForm.opening_cash && shiftForm.actual_cash && (() => {
-              const v = parseFloat(shiftForm.actual_cash) - parseFloat(shiftForm.opening_cash)
-              const ok = Math.abs(v) <= 5000
-              return (
-                <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, backgroundColor: `${ok ? GREEN : RED}10`, border: `1px solid ${ok ? GREEN : RED}33` }}>
-                  <span style={{ fontSize: 13, color: ok ? GREEN : RED, fontWeight: 600 }}>
-                    ผลต่าง: {v >= 0 ? '+' : ''}{v.toLocaleString()} LAK
-                  </span>
-                </div>
-              )
-            })()}
-            {shiftMsg && <div style={{ color: RED, fontSize: 13, marginTop: 8 }}>{shiftMsg}</div>}
-            <button onClick={() => void closeShift()} disabled={shiftSaving}
-              style={{ marginTop: 12, padding: '10px 26px', borderRadius: 8, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 700, cursor: 'pointer', opacity: shiftSaving ? 0.6 : 1 }}>
-              {shiftSaving ? 'กำลังบันทึก...' : 'บันทึกปิดกะ'}
-            </button>
-          </div>
-        )}
+      <ShiftReport />
+    </div>
+  )
+}
+
+// ─── ShiftReport: short / over per cash drawer close (migration 059) ─────────
+
+type ShiftRow = {
+  id: string; opened_at: string; counted_at: string; closed_at: string
+  counted_by: string | null; checked_by: string | null; no_checker: boolean
+  opening_cash: number; carried_over: number | null; opening_reason: string | null
+  cash_sales: number; paid_out: number; paid_in: number
+  expected: number; counted: number; difference: number; diff_reason: string | null; recounts: number
+  movements: { kind: 'paid_out' | 'paid_in'; amount: number; category: string; note: string | null; voided: boolean }[]
+}
+
+const signed = (n: number) => (n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(Math.round(n)).toLocaleString('en-US')
+const shiftTime = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Vientiane' }).replace(',', '')
+
+function weekOf(offset: number): { from: string; to: string } {
+  const d = new Date(todayISO() + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + offset * 7)
+  const from = d.toISOString().slice(0, 10)
+  d.setUTCDate(d.getUTCDate() + 6)
+  return { from, to: d.toISOString().slice(0, 10) }
+}
+
+function ShiftReport() {
+  const [offset,  setOffset]  = useState(0)
+  const [rows,    setRows]    = useState<ShiftRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err,     setErr]     = useState('')
+  const [open,    setOpen]    = useState<string | null>(null)
+  const { from, to } = weekOf(offset)
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true); setErr(''); setOpen(null)
+    authClient.rpc('cash_session_report', { p_from: from, p_to: to }).then(({ data, error }) => {
+      if (!alive) return
+      if (error) { setErr(dbErrorText(error)); setRows([]) } else setRows((data as ShiftRow[] | null) ?? [])
+      setLoading(false)
+    })
+    return () => { alive = false }
+  }, [from, to])
+
+  const people = new Map<string, ShiftRow[]>()
+  for (const r of rows) {
+    const k = r.counted_by ?? '?'
+    people.set(k, [...(people.get(k) ?? []), r])
+  }
+  const sumShort = (list: ShiftRow[]) => list.reduce((a, r) => a + Math.min(r.difference, 0), 0)
+  const sumOver  = (list: ShiftRow[]) => list.reduce((a, r) => a + Math.max(r.difference, 0), 0)
+  const cell: React.CSSProperties = { padding: '8px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+  const color = (n: number) => (n < 0 ? RED : n > 0 ? GREEN : 'rgba(255,255,255,0.6)')
+  const noChecker = rows.filter(r => r.no_checker).length
+  const navBtn: React.CSSProperties = { padding: '5px 12px', borderRadius: 7, border: `1px solid ${BORDER}`, background: 'transparent', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }
+
+  return (
+    <div style={{ padding: 22, borderRadius: 14, backgroundColor: CARD, border: `1px solid ${BORDER}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>
+          เงินขาด/เกิน ตอนปิดกะ · {from.slice(8)}/{from.slice(5, 7)} - {to.slice(8)}/{to.slice(5, 7)}
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => setOffset(o => o - 1)} style={navBtn}>‹ สัปดาห์ก่อน</button>
+          <button onClick={() => setOffset(o => Math.min(o + 1, 0))} disabled={offset === 0}
+            style={{ ...navBtn, cursor: offset === 0 ? 'default' : 'pointer', opacity: offset === 0 ? 0.35 : 1 }}>ถัดไป ›</button>
+        </div>
       </div>
+      {loading ? (
+        <div style={{ height: 80, borderRadius: 10, backgroundColor: '#0f0f0f', animation: 'pulse 1.5s infinite' }} />
+      ) : err ? (
+        <div style={{ color: RED, fontSize: 13 }}>{err}</div>
+      ) : rows.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 24, color: 'rgba(255,255,255,0.3)' }}>ยังไม่มีการปิดกะในสัปดาห์นี้</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 420 }}>
+            <thead>
+              <tr style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>
+                <th style={{ ...cell, textAlign: 'left' }}>คนนับ</th><th style={cell}>ปิดกะ</th><th style={cell}>ขาด</th><th style={cell}>เกิน</th><th style={cell}>สุทธิ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...people.entries()].map(([name, list]) => (
+                <React.Fragment key={name}>
+                  <tr onClick={() => setOpen(o => (o === name ? null : name))} style={{ cursor: 'pointer', borderTop: `1px solid ${BORDER}22` }}>
+                    <td style={{ ...cell, textAlign: 'left', color: GOLD }}>{open === name ? '▾' : '▸'} {name}</td>
+                    <td style={cell}>{list.length}</td>
+                    <td style={{ ...cell, color: color(sumShort(list)) }}>{signed(sumShort(list))}</td>
+                    <td style={{ ...cell, color: color(sumOver(list)) }}>{signed(sumOver(list))}</td>
+                    <td style={{ ...cell, fontWeight: 700, color: color(sumShort(list) + sumOver(list)) }}>{signed(sumShort(list) + sumOver(list))}</td>
+                  </tr>
+                  {open === name && list.map(r => (
+                    <tr key={r.id} style={{ backgroundColor: '#0f0f0f' }}>
+                      <td colSpan={5} style={{ padding: '8px 12px', fontSize: 12, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
+                        <div>
+                          <b style={{ color: '#fff' }}>{shiftTime(r.opened_at)} - {shiftTime(r.counted_at)}</b>
+                          {' · '}ควรมี {fmtLAK(r.expected)} · นับได้ {fmtLAK(r.counted)} ·{' '}
+                          <b style={{ color: color(r.difference) }}>{r.difference < 0 ? 'ขาด' : r.difference > 0 ? 'เกิน' : 'ตรง'} {signed(r.difference)}</b>
+                        </div>
+                        <div>
+                          เงินเปิด {fmtLAK(r.opening_cash)}
+                          {r.carried_over !== null && r.carried_over !== r.opening_cash ? ` (ยกมา ${fmtLAK(r.carried_over)}: ${r.opening_reason ?? '-'})` : ''}
+                          {' · '}ขายเงินสด {fmtLAK(r.cash_sales)}
+                          {r.paid_out > 0 ? ` · จ่ายออก ${fmtLAK(r.paid_out)}` : ''}
+                          {r.paid_in > 0 ? ` · ใส่เข้า ${fmtLAK(r.paid_in)}` : ''}
+                        </div>
+                        {r.diff_reason && <div>เหตุผล: {r.diff_reason}</div>}
+                        <div style={{ color: r.no_checker ? ORANGE : 'rgba(255,255,255,0.5)' }}>
+                          {r.no_checker ? 'ไม่มีผู้ตรวจ' : `ผู้ตรวจ: ${r.checked_by ?? '-'}`}
+                          {r.recounts > 0 ? ` · ผู้จัดการนับซ้ำ ${r.recounts} ครั้ง` : ''}
+                        </div>
+                        {r.movements.length > 0 && (
+                          <div style={{ color: 'rgba(255,255,255,0.5)' }}>
+                            {r.movements.map((m, i) => (
+                              <span key={i} style={{ textDecoration: m.voided ? 'line-through' : 'none', marginRight: 10 }}>
+                                {m.kind === 'paid_out' ? '−' : '+'}{Math.round(m.amount).toLocaleString('en-US')} {m.category}{m.note ? ` (${m.note})` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+              <tr style={{ borderTop: `1px solid ${BORDER}`, fontWeight: 700 }}>
+                <td style={{ ...cell, textAlign: 'left' }}>รวม</td>
+                <td style={cell}>{rows.length}</td>
+                <td style={{ ...cell, color: color(sumShort(rows)) }}>{signed(sumShort(rows))}</td>
+                <td style={{ ...cell, color: color(sumOver(rows)) }}>{signed(sumOver(rows))}</td>
+                <td style={{ ...cell, color: color(sumShort(rows) + sumOver(rows)) }}>{signed(sumShort(rows) + sumOver(rows))}</td>
+              </tr>
+            </tbody>
+          </table>
+          {noChecker > 0 && <div style={{ marginTop: 8, fontSize: 12, color: ORANGE }}>ไม่มีผู้ตรวจ {noChecker} กะ</div>}
+          <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>กดที่ชื่อเพื่อดูทีละกะ · นับตามวันที่ปิดกะ (เวลาลาว)</div>
+        </div>
+      )}
     </div>
   )
 }
