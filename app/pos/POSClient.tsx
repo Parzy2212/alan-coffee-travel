@@ -12,7 +12,7 @@ import { KeyboardShortcuts } from '@/components/pos/KeyboardShortcuts'
 import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
-import { TestModeBanner } from '@/components/pos/TestModeBanner'
+import { TestModeBanner, TestModePinDialog } from '@/components/pos/TestModeBanner'
 import type { Customer } from '@/lib/customers'
 import { computeVipDiscount, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { roundedDiscount, parseDiscountRoundStep, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
@@ -209,7 +209,8 @@ function nextOfflineQueueNumber(): number {
 }
 
 // Bills saved before 055 were {p_cart, p_customer_id, _meta} and never synced (the old replay sent _meta to the RPC).
-// The shop had not sold for real yet, so they go in as TEST bills, dated now.
+// The shop had not sold for real yet, so they are sent as TEST bills, dated now: accepted only inside an
+// open test window (060), otherwise refused and shown as stuck for the manager to delete.
 function offlineCheckoutArgs(payload: Record<string, unknown>, order: OfflineOrder, shopId: string | null): Record<string, unknown> {
   if (payload.fn === 'checkout_order') return payload.args as Record<string, unknown>
   const cart = (payload.p_cart ?? []) as { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null }[]
@@ -228,6 +229,7 @@ function offlineCheckoutArgs(payload: Record<string, unknown>, order: OfflineOrd
 }
 
 function translateError(msg: string): string {
+  if (msg.includes('TEST_MODE_OFF')) return 'โหมดทดสอบหมดเวลาหรือถูกปิดแล้ว กดคิดเงินอีกครั้ง บิลนี้จะเป็นบิลจริง'
   if (msg.includes('PRICE_CHANGED')) return 'ราคาเมนูเปลี่ยนแล้ว กด F5 โหลดหน้าใหม่ แล้วคิดเงินอีกครั้ง'
   if (msg.includes('menu item not available')) return 'มีเมนูในบิลที่ถูกปิดหรือลบไปแล้ว กด F5 โหลดหน้าใหม่'
   if (msg.includes('cash received is less')) return 'เงินที่รับมาไม่เพียงพอ'
@@ -1062,7 +1064,7 @@ function DigitalReceiptPopup({
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, defaultLang, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, onTestModeOff, defaultLang, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null; name?: string }[]
   discount: string
@@ -1071,6 +1073,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
   shopId: string | null
   selectedCustomer?: Customer | null
   isTestMode?: boolean
+  onTestModeOff?: () => void
   defaultLang?: Lang
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string, receiptLang: Lang, splitTransfer: number) => void
   onClose: () => void
@@ -1235,7 +1238,10 @@ function ChargePopup({ subtotal, cartPayload, discount, discountReason, activeEm
     const { data, error, status } = await supabase.rpc('checkout_order', args).abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
     // status 0 = no reply (network down or timed out); 502-504 = gateway down. Not a rejected checkout.
     if (error && (status === 0 || status === 502 || status === 503 || status === 504)) { await saveOffline(); return }
-    if (error) { setErrMsg(translateError(error.message)); setLoading(false); return }
+    if (error) {
+      if (error.message.includes('TEST_MODE_OFF')) onTestModeOff?.()
+      setErrMsg(translateError(error.message)); setLoading(false); return
+    }
 
     const result = data as { queue_number: number; change_lak: number | null; discount_lak: number }
     onSuccess(result.queue_number, String(result.queue_number).padStart(3, '0'), Math.max(result.change_lak ?? 0, 0), method, customerName, table, Number(result.discount_lak) || 0, cashIn, discountReason, receiptLang, xferIn)
@@ -2418,7 +2424,8 @@ export default function POSClient() {
   const [showCustomerSelector, setShowCustomerSelector] = useState(false)
   const printFnRef = useRef<(() => Promise<void>) | null>(null)
   const online = useNetworkStatus()
-  const { enabled: testMode, toggle: toggleTestMode, disable: disableTestMode } = useTestMode()
+  const { enabled: testMode, until: testUntil, start: startTestMode, stop: stopTestMode, off: testModeOff } = useTestMode(shopId)
+  const [showTestPin, setShowTestPin] = useState(false)
   const { lang } = useLang()
   const [pwaPrompt,         setPwaPrompt]         = useState<BeforeInstallPromptEvent | null>(null)
   const [printFallbackLang, setPrintFallbackLang] = useState<'lo' | 'th' | null>(null)
@@ -2961,6 +2968,7 @@ export default function POSClient() {
           shopId={shopId}
           selectedCustomer={selectedCustomer}
           isTestMode={testMode}
+          onTestModeOff={testModeOff}
           defaultLang={lang}
           onSuccess={handleChargeSuccess} onClose={() => setShowCharge(false)} />
       )}
@@ -3095,7 +3103,7 @@ export default function POSClient() {
             backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, fontWeight: 700, cursor: 'pointer',
           }}>เปิด/ปิดกะ</button>
           <button
-            onClick={toggleTestMode}
+            onClick={() => { if (testMode) void stopTestMode(); else setShowTestPin(true) }}
             title={testMode ? 'ปิดโหมดทดสอบ' : 'เปิดโหมดทดสอบ'}
             style={{
               padding: '0 12px', height: 36, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
@@ -3129,7 +3137,8 @@ export default function POSClient() {
       </header>
 
       {/* ── TEST MODE BANNER */}
-      {testMode && <TestModeBanner onDisable={disableTestMode} />}
+      {testMode && <TestModeBanner until={testUntil} onDisable={() => void stopTestMode()} />}
+      {showTestPin && <TestModePinDialog onStart={startTestMode} onClose={() => setShowTestPin(false)} />}
 
       <StuckBillsBanner shopId={shopId} />
 

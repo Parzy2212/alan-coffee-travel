@@ -12,6 +12,7 @@ const BLACK = '#0f0f0f'
 const GREEN = '#4cba7f'
 const RED   = '#e05555'
 const BLUE  = '#6aa9ff'
+const ORANGE = '#f59e0b'
 const MUTED = 'rgba(255,255,255,0.45)'
 const PANEL = '#1a1a1a'
 const LINE  = 'rgba(255,255,255,0.08)'
@@ -26,6 +27,7 @@ type MethodSum = { bills: number; amount?: number }
 type Sales = {
   bills: number; void_bills: number; refund_bills?: number; by_method: Record<string, MethodSum>
   total?: number; cash?: number; cash_sold?: number; refund_cash?: number; void_total?: number
+  test_bills?: number; test_total?: number
 }
 type Session = {
   id: string; status: 'open' | 'counted'; opened_at: string; opened_by: string | null
@@ -89,6 +91,7 @@ function buildSummaryHtml(s: Summary, shopName: string, paperMm: 58 | 80): strin
   }
   out.push(row(`รวมขาย (${s.sales.bills})`, fmt(s.sales.total), 'b'))
   if (s.sales.void_bills > 0) out.push(row(`ยกเลิกบิล (${s.sales.void_bills})`, fmt(s.sales.void_total)))
+  if ((s.sales.test_bills ?? 0) > 0) out.push(row(`บิลทดสอบ (${s.sales.test_bills}) ไม่นับ`, fmt(s.sales.test_total), 'b'))
   if ((s.sales.refund_bills ?? 0) > 0) out.push(`<div class="sub">(คืนเงินบิลกะก่อน ${s.sales.refund_bills} บิล ${esc(fmt(s.sales.refund_cash))} หักในขายเงินสดแล้ว)</div>`)
   out.push('<hr class="d">', row('ยอดโอนรวมของกะนี้', `${fmt(bm.transfer?.amount)} (${bm.transfer?.bills ?? 0} บิล)`, 'b'))
   if (bm.qr) out.push(row('ยอด QR รวมของกะนี้', `${fmt(bm.qr.amount)} (${bm.qr.bills} บิล)`, 'b'))
@@ -455,6 +458,7 @@ export function CashDrawer({ shopId, onClose }: { shopId: string | null; onClose
           {line('เงินเปิดกะ', fmt(session.opening_cash))}
           {line('ขายเงินสด (หักเงินทอนแล้ว)', `${result.cash_sales < 0 ? '−' : '+'}${fmt(Math.abs(result.cash_sales))}`)}
           {(sales?.refund_bills ?? 0) > 0 && <div style={{ fontSize: 11, color: MUTED }}>หักคืนเงินบิลกะก่อน {sales?.refund_bills} บิลแล้ว ({fmt(sales?.refund_cash)})</div>}
+          {(sales?.test_bills ?? 0) > 0 && <div style={{ fontSize: 12, color: ORANGE, margin: '2px 0' }}>บิลทดสอบ {sales?.test_bills} บิล {fmt(sales?.test_total)} ₭ ไม่นับในเงินสดที่ควรมี ถ้ารับเงินจริงไว้ เงินจะเกิน</div>}
           {result.paid_out > 0 && line(`− จ่ายออก ${moves.filter(m => m.kind === 'paid_out').length} รายการ`, fmt(result.paid_out))}
           {result.paid_in > 0 && line(`+ ใส่เงินเข้า ${moves.filter(m => m.kind === 'paid_in').length} รายการ`, fmt(result.paid_in))}
           <div style={{ borderTop: `1px solid ${LINE}`, margin: '6px 0' }} />
@@ -492,6 +496,7 @@ export function CashDrawer({ shopId, onClose }: { shopId: string | null; onClose
           {line(`รวมขาย · ${sales?.bills ?? 0} บิล`, 'แสดงหลังนับเงิน', MUTED)}
           {(sales?.void_bills ?? 0) > 0 && line(`ยกเลิกบิล · ${sales?.void_bills} บิล (ไม่นับในยอดขาย)`, '')}
           {(sales?.refund_bills ?? 0) > 0 && line(`คืนเงินบิลกะก่อน · ${sales?.refund_bills} บิล (หักจากลิ้นชักนี้)`, '')}
+          {(sales?.test_bills ?? 0) > 0 && line(`บิลทดสอบ · ${sales?.test_bills} บิล (ไม่นับในเงินสด)`, fmt(sales?.test_total), ORANGE)}
           <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>ไม่นับบิลทดสอบ · โอนและ QR ไม่ต้องนับเงิน ใช้ยอดนี้เทียบกับแอปธนาคาร</div>
         </>)}
         {card(<>

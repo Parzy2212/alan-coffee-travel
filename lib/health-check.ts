@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { testModeLocallyOn } from './test-mode'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'loading'
 
@@ -49,7 +50,7 @@ export async function runHealthCheck(): Promise<HealthReport> {
   let testModeOn  = false
   if (typeof window !== 'undefined') {
     try { lastPrint = JSON.parse(localStorage.getItem('pos_last_print_info') || 'null') } catch { /* corrupt: treat as never printed */ }
-    testModeOn  = localStorage.getItem('pos_test_mode') === 'true'
+    testModeOn  = testModeLocallyOn()
   }
 
   const shopName = settings.shop_name ?? ''
