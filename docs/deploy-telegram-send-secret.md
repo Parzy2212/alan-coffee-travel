@@ -1,19 +1,17 @@
-# Deploy: telegram-send accepts only the database and signed-in shop members
+# วิธี deploy: telegram-send รับเฉพาะฐานข้อมูลและสมาชิกร้านที่ล็อกอิน
 
-After this, the public key every browser has can no longer post into the shop's
-Telegram chat. Two callers still work:
+หลังทำเสร็จ คนที่มีแค่กุญแจสาธารณะ (ทุกเบราว์เซอร์มี) จะส่งข้อความเข้าแชท Telegram ของร้านไม่ได้อีก
+ที่ยังส่งได้มี 2 ทาง:
+- ฐานข้อมูล: แจ้งเตือนบิลใหญ่ / ของใกล้หมด / ลิ้นชักเงิน โดยแนบรหัสลับที่เก็บใน Vault
+- คนที่ล็อกอินและเป็นสมาชิกของร้าน: หน้าขอลาใน `/cafe`
 
-- the database (`notify_telegram`, used by the large-order / low-stock alerts and
-  the cash drawer messages), which sends a secret that is kept in Vault
-- someone signed in whose account is an active member of the shop (`shop_users`);
-  this is the leave-request page in `/cafe`
+**ทำขั้น 1-6 ต่อกันในรอบเดียว** ระหว่างขั้น 4 ถึงขั้น 5 แจ้งเตือนจากฐานข้อมูลจะส่งไม่ออก อย่าทิ้งไว้นาน
 
-Do steps 1 to 5 in order, in one sitting. Between step 4 and step 5, alerts from
-the database are refused, so don't leave a long gap there.
+---
 
-## 1. Create the secret (SQL Editor)
+## ขั้น 1: สร้างรหัสลับ (SQL Editor)
 
-Paste and Run:
+Supabase Dashboard → **SQL Editor** → New query → วางข้อความนี้ → **Run**
 
 ```sql
 SELECT vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'),
@@ -22,113 +20,101 @@ SELECT vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'),
 SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'telegram_send_secret';
 ```
 
-The second result is 64 letters and digits. Copy it for step 2. Don't paste it in
-chat, a file or a screenshot.
-If the first line says the name already exists, skip it and just run the second line.
+ผลด้านล่างคือตัวอักษรและตัวเลข 64 ตัว ดับเบิลคลิกที่ช่องผลแล้วก๊อปไว้สำหรับขั้น 2
 
-## 2. Give the same secret to the function
+> **ห้ามวางรหัสนี้ในแชท (รวมทั้งแชทกับ Claude) ห้ามแคปหน้าจอ ห้ามจดลงไฟล์
+> ให้ก๊อปจากหน้า SQL Editor ไปวางในหน้า Secrets (ขั้น 2) ตรงๆ เท่านั้น**
 
-Supabase Dashboard → Edge Functions → **Secrets** → Add new secret:
+ถ้าบรรทัดแรกขึ้นว่าชื่อนี้มีอยู่แล้ว (`already exists`) ไม่เป็นไร ให้รันเฉพาะบรรทัดที่ 2 (`SELECT decrypted_secret ...`) แล้วก๊อปผล
 
-- Name: `TELEGRAM_SEND_SECRET`
-- Value: the 64 characters from step 1
+## ขั้น 2: ใส่รหัสลับให้ function (หน้า Secrets)
 
-Save.
+1. แท็บใหม่: Supabase Dashboard → เมนูซ้าย **Edge Functions** → **Secrets**
+2. ช่อง **Key** (หรือ **Name**): พิมพ์ `TELEGRAM_SEND_SECRET` ตัวพิมพ์ใหญ่ทั้งหมด ตามนี้ทุกตัวอักษร
+3. ช่อง **Value**: วางรหัสที่ก๊อปจากขั้น 1
+4. กด **Save**
+5. ในรายการต้องเห็นชื่อ `TELEGRAM_SEND_SECRET` (หน้าเว็บจะไม่แสดงค่าเต็ม ถูกต้องแล้ว)
 
-## 3. Test the migration (SQL Editor)
+## ขั้น 3: ทดสอบ migration (SQL Editor)
 
-Paste the whole of `docs/test-062-notify-telegram-secret.sql` and Run. The result is an
-error message that begins `062 TEST RESULTS`, followed by 4 lines. Every line must start
-with PASS. It sends nothing. If any line says FAIL, stop and send the message to Claude.
+เปิดไฟล์ `D:\alan-coffee-travel\docs\test-062-notify-telegram-secret.sql` ก๊อปทั้งไฟล์
+→ SQL Editor → New query → วาง → **Run**
 
-## 4. Run the migration (SQL Editor)
+ผลที่ถูก: ขึ้นเป็นข้อความ error ที่ขึ้นต้นด้วย `062 TEST RESULTS` ตามด้วย 4 บรรทัด **ทุกบรรทัดขึ้นต้นด้วย PASS**
+ไฟล์นี้ไม่ส่งข้อความและไม่เปลี่ยนข้อมูล
+ถ้ามีบรรทัดไหนขึ้น FAIL: หยุด แล้วส่งข้อความนั้นให้ Claude
 
-Paste the whole of `supabase/migrations/062_notify_telegram_secret.sql` and Run.
+## ขั้น 4: รัน migration (SQL Editor)
 
-## 5. Deploy the new function
+เปิดไฟล์ `D:\alan-coffee-travel\supabase\migrations\062_notify_telegram_secret.sql` ก๊อปทั้งไฟล์
+→ SQL Editor → New query → วาง → **Run** → ต้องขึ้น `Success`
 
-In a terminal, in `D:\alan-coffee-travel`:
+## ขั้น 5: Deploy function ในหน้าเว็บ
 
-```
-npx supabase functions deploy telegram-send --no-verify-jwt --project-ref fmsdfcsqdpdlppucuptn
-```
+**5.1 วางโค้ดใหม่**
+1. Supabase Dashboard → **Edge Functions** → **Functions** → กดที่ **telegram-send**
+2. ไปที่แท็บ **Code**
+3. ทางซ้ายเลือกไฟล์ `index.ts`
+4. คลิกในช่องโค้ด → กด `Ctrl+A` (เลือกทั้งหมด) → กด `Delete`
+5. เปิดไฟล์ `D:\alan-coffee-travel\supabase\functions\telegram-send\index.ts` (เปิดด้วย Notepad ได้) → `Ctrl+A` → `Ctrl+C`
+6. กลับมาที่ช่องโค้ดในหน้าเว็บ → `Ctrl+V`
+7. เช็กว่าบรรทัดแรกของโค้ดคือ `// Sends a message to the shop's Telegram chat. Only two callers are accepted:`
+8. กดปุ่ม Deploy มุมขวาล่าง (ชื่อปุ่ม **Deploy updates** หรือ **Deploy**) แล้วรอจนขึ้นว่าสำเร็จ
 
-(If it asks you to log in, run `npx supabase login` first.)
+**5.2 ปิดสวิตช์ตรวจ JWT** (ต้องทำ ไม่อย่างนั้นแจ้งเตือนจากฐานข้อมูลจะถูกปฏิเสธ)
+1. ในหน้า function `telegram-send` ไปที่แท็บ **Details** (บางรุ่นของหน้าเว็บชื่อ **Settings**)
+2. หาส่วน **Function Configuration** จะมีสวิตช์เรื่อง JWT 1 ตัว
+   - หน้าเว็บรุ่นใหม่ชื่อ **Verify JWT with legacy secret**
+   - หน้าเว็บรุ่นเก่าชื่อ **Enforce JWT Verification**
+3. **ปิด** สวิตช์นั้น (เลื่อนให้เป็นสีเทา) แล้วกด **Save changes**
 
-`--no-verify-jwt` is required. The database call carries the secret, not a login,
-and the function does the checking itself. Without this flag, alerts from the
-database are refused.
+> ชื่อสวิตช์มาจากคู่มือของ Supabase **Claude ยังไม่เคยเห็นหน้าจอจริงของบอส** ถ้าในหน้าเว็บไม่มีชื่อตรงกับ 2 ชื่อนี้
+> ให้หาสวิตช์ที่มีคำว่า **JWT** ในส่วนตั้งค่าของ function แล้วปิดตัวนั้น ถ้าไม่แน่ใจ ส่งรูปหน้า Details ให้ Claude ดูได้
+> (รูปหน้านี้ไม่มีรหัสลับ) ถ้าลืมปิด การทดสอบขั้น 6 ข้อ ข. จะไม่ผ่าน และจะรู้ทันที
 
-Dashboard alternative: Edge Functions → telegram-send → Code → paste the whole of
-`supabase/functions/telegram-send/index.ts` → Deploy. Then in the function's
-Details/Settings, switch **off** "Enforce JWT Verification".
+## ขั้น 6: ทดสอบ
 
-## 6. Test
+**ก. บอกให้ Claude ทดสอบว่า anon ส่งไม่ได้**
+พิมพ์บอก Claude ว่า "deploy telegram-send เสร็จแล้ว" Claude จะทดสอบเอง 3 แบบ:
+- ไม่ล็อกอิน
+- ใช้กุญแจสาธารณะ
+- รหัสลับมั่ว
 
-**A. The public key is refused (the main check).** Run this in this session as
-`! <command>`, or ask Claude to run it. It uses only the public key:
+ทั้ง 3 แบบต้องถูกปฏิเสธ และไม่มีข้อความเข้าแชท บอสไม่ต้องพิมพ์คำสั่งอะไร
 
-```
-curl -s -i -X POST https://fmsdfcsqdpdlppucuptn.supabase.co/functions/v1/telegram-send \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <NEXT_PUBLIC_SUPABASE_ANON_KEY from .env.local>" \
-  -d '{"message":"TEST anon — this must NOT arrive"}'
-```
-
-Expected:
-- `HTTP/2 401` and `{"ok":false,"error":"sign in required"}`
-- nothing arrives in the shop's Telegram chat
-
-Also try it without the `Authorization` line. That must also give 401.
-
-Then try a made-up secret, as someone guessing it would. This must also give 401,
-and nothing may arrive:
-
-```
-curl -s -i -X POST https://fmsdfcsqdpdlppucuptn.supabase.co/functions/v1/telegram-send   -H "Content-Type: application/json"   -H "x-notify-secret: 0000000000000000000000000000000000000000000000000000000000000000"   -d '{"message":"TEST wrong secret — this must NOT arrive"}'
-```
-
-**B. The database can send (SQL Editor):**
+**ข. ฐานข้อมูลส่งได้ (บอสรันใน SQL Editor)**
 
 ```sql
 SELECT public.notify_telegram('ทดสอบระบบ: ข้อความจากฐานข้อมูล', 'test');
 ```
 
-Expected:
-- the message arrives in the shop's Telegram chat within a few seconds
-- if it does not, run the next query and send the result to Claude:
+ผลที่ถูก: มีข้อความ "ทดสอบระบบ: ข้อความจากฐานข้อมูล" เข้าแชท Telegram ของร้านภายในไม่กี่วินาที
+ถ้าไม่เข้า ให้รันคำสั่งข้างล่างแล้วส่งผลให้ Claude (ผลนี้ไม่มีรหัสลับ ส่งได้)
 
 ```sql
 SELECT status_code, content FROM net._http_response ORDER BY created DESC LIMIT 1;
 ```
 
-`200` with `"ok":true` = sent. `401` = steps 1 and 2 hold different values, or
-`--no-verify-jwt` was not used.
+- `200` และ `"ok":true` = ส่งสำเร็จแล้ว (อาจแค่ช้า)
+- `401` = รหัสในขั้น 1 กับขั้น 2 ไม่ตรงกัน หรือยังไม่ได้ปิดสวิตช์ JWT (ขั้น 5.2)
 
-**C. A signed-in shop member can send (the leave page):**
+**ค. คนที่ล็อกอินส่งได้ (หน้าขอลา)**
+1. เข้า `/cafe` ด้วยบัญชีเจ้าของร้าน
+2. พนักงาน → ลา → กด **+ ขอลาใหม่**
+3. เลือกพนักงานคนไหนก็ได้ เหตุผล: `ทดสอบ Telegram` แล้วกดบันทึก
 
-1. Sign in to `/cafe` with the owner account.
-2. Go to พนักงาน → ลา → "+ ขอลาใหม่".
-3. Choose any employee, set reason "ทดสอบ Telegram ลบได้", and save.
+ผลที่ถูก:
+- มีข้อความ "คำขอลาใหม่" เข้าแชท Telegram
+- ไม่มีบรรทัดสีส้ม "ส่งแจ้งเตือน Telegram ไม่สำเร็จ"
+- คำขอลาทดสอบนี้เก็บไว้ได้ ไม่ต้องลบ
 
-Expected:
-- a "คำขอลาใหม่" message arrives in Telegram
-- no orange "ส่งแจ้งเตือน Telegram ไม่สำเร็จ" line appears
-- then press ปฏิเสธ on that request (this one sends no message)
+---
 
-Note: this test adds one leave-request row to the real database.
+## สิ่งที่เปลี่ยนไปด้วย
+- AI 3 ตัว (`alan-insights`, `alan-quests`, `anomaly-detector`) ส่ง Telegram ด้วยกุญแจสาธารณะ หลัง deploy จะส่งไม่ได้แล้ว
+  ตั้งใจให้เป็นแบบนี้ (ตัวพวกนี้มองไม่เห็นข้อมูลจริงอยู่แล้ว เรื่องจะเอาออกหรือไม่ จะถามตอนเริ่มชุด 6)
+- ถ้ารหัสลับใน Vault หาย ฐานข้อมูลจะไม่ส่งข้อความ แต่การขายและการปิดกะยังทำได้ตามปกติ
 
-## What else changes
-
-- The three AI functions (`alan-insights`, `alan-quests`, `anomaly-detector`) sent
-  with the public key, so their Telegram messages are now refused. They read data
-  with the public key and can't see real data anyway (set 6, question 1 suggests
-  undeploying them).
-- If the Vault secret is missing, the database sends nothing and writes a WARNING
-  to the Postgres log. A sale or shift close is never blocked by Telegram.
-
-## Undo
-
-Redeploy the previous function from git (`git show 9383a18:supabase/functions/telegram-send/index.ts`).
-The anon hole then comes back. Leave 062 in place: it keeps working with either function
-version as long as `--no-verify-jwt` is set.
+## ถ้าต้องย้อนกลับ
+วางโค้ด function รุ่นก่อนในหน้า Code แล้ว Deploy (Claude เตรียมไฟล์ให้ได้ เอามาจาก commit `9383a18`)
+ช่องโหว่ anon จะกลับมาด้วย migration 062 ไม่ต้องถอย ใช้ได้กับ function ทั้งสองรุ่น
