@@ -42,7 +42,7 @@ export function useShop() {
         .maybeSingle()
 
       if (cancelled) return
-      if (suErr) { setError(`โหลดข้อมูลร้านไม่ได้: ${suErr.message}`); setLoading(false); return }
+      if (suErr) { setError(`โหลดข้อมูลร้านไม่ได้ ตรวจอินเทอร์เน็ตแล้วโหลดหน้าใหม่ (${suErr.message})`); setLoading(false); return }
       if (!su?.shop_id) { setLoading(false); return }
 
       setShopId(su.shop_id)
@@ -54,7 +54,7 @@ export function useShop() {
         .maybeSingle()
 
       if (!cancelled) {
-        if (shopErr) setError(`โหลดข้อมูลร้านไม่ได้: ${shopErr.message}`)
+        if (shopErr) setError(`โหลดข้อมูลร้านไม่ได้ ตรวจอินเทอร์เน็ตแล้วโหลดหน้าใหม่ (${shopErr.message})`)
         setShop((s as Shop) ?? null)
         setLoading(false)
       }

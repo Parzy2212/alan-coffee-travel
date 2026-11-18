@@ -111,7 +111,7 @@ export async function getLoyaltySettings(shopId: string): Promise<LoyaltySetting
     .select('*')
     .eq('shop_id', shopId)
     .maybeSingle()
-  if (error) throw new Error(`โหลดการตั้งค่าสะสมแต้มไม่ได้: ${error.message}`)
+  if (error) throw new Error(`โหลดส่วนลด VIP ไม่ได้ ตรวจอินเทอร์เน็ตแล้วโหลดหน้าใหม่ (${error.message})`)
   return data as LoyaltySettings | null
 }
 
@@ -126,8 +126,8 @@ export async function saveLoyaltySettings(shopId: string, s: LoyaltySettings): P
   }
   const { data, error } = await authClient.rpc('update_loyalty_settings', { p_shop_id: shopId, p_settings })
   if (error) {
-    if (error.code === '42501') throw new Error('เฉพาะเจ้าของร้านเท่านั้นที่แก้การตั้งค่าสะสมแต้มได้')
-    if (error.message.includes('INVALID_LOYALTY_SETTINGS')) throw new Error('ค่าไม่ถูกต้อง: ส่วนลดเป็นจำนวนเต็ม 0-100%, เกณฑ์แต้ม Silver < Gold < Platinum')
+    if (error.code === '42501') throw new Error('บันทึกไม่ได้: แก้ส่วนลด VIP ได้เฉพาะบัญชีเจ้าของร้าน')
+    if (error.message.includes('INVALID_LOYALTY_SETTINGS')) throw new Error('บันทึกไม่ได้: ใส่ส่วนลดเป็นเลขจำนวนเต็ม 0 ถึง 100 เช่น 5')
     throw new Error(error.message)
   }
   return { shop_id: shopId, ...(data as Omit<LoyaltySettings, 'shop_id'>) }

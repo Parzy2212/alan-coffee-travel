@@ -20,7 +20,7 @@ function reasonText(msg: string): string {
   if (msg.includes('Insufficient stock')) return 'วัตถุดิบในสต็อกไม่พอสำหรับบิลนี้'
   if (msg.includes('employee is not an active')) return 'พนักงานที่ขายบิลนี้ถูกปิดใช้งานแล้ว'
   // 'sale time out of range' = the 30-day limit before migration 071
-  if (msg.includes('SALE_TOO_OLD') || msg.includes('sale time out of range')) return 'บิลนี้ขายนานเกิน 24 ชั่วโมง หรือขายก่อนเปิดกะที่เปิดอยู่ ระบบไม่รับย้อนเวลา กด "ส่งอีกครั้ง" ก็ไม่เข้า ผู้จัดการตัดสิน: ถ้าเก็บเงินลูกค้าแล้ว ให้ขายใหม่ในกะนี้แล้วกด "ขายใหม่แล้ว ลบบิลค้างนี้"'
+  if (msg.includes('SALE_TOO_OLD') || msg.includes('sale time out of range')) return 'บิลนี้ขายไปนานกว่า 24 ชั่วโมง หรือขายก่อนเปิดกะนี้ ระบบจึงไม่รับ (กด "ส่งอีกครั้ง" ก็ไม่เข้า) ให้ผู้จัดการตัดสิน: ถ้าเก็บเงินลูกค้าแล้ว ให้ขายบิลนี้ใหม่ในกะนี้ แล้วกด "ขายใหม่แล้ว ลบบิลค้างนี้"'
   if (msg.includes('menu item not available')) return 'เมนูในบิลนี้ถูกลบหรือปิดขายไปแล้ว ต้องขายใหม่ด้วยเมนูที่ยังมี'
   if (msg.includes('cash received is less')) return 'ราคาเมนูขึ้นหลังขาย เงินที่รับไว้น้อยกว่ายอดใหม่'
   if (msg.includes('discount must be')) return 'ราคาเมนูลดหลังขาย ส่วนลดมากกว่ายอดใหม่'

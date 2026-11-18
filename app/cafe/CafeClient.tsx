@@ -1676,7 +1676,7 @@ function SettingsTab() {
       {/* ── ส่วนลด VIP: its own page and save button (owner only, 070) ── */}
       <SettingSection icon="👑" title="ส่วนลด VIP">
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6 }}>% ส่วนลดอัตโนมัติของลูกค้า Silver / Gold / Platinum (แก้ได้เฉพาะเจ้าของร้าน)</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6 }}>ส่วนลดที่ลูกค้า Silver / Gold / Platinum ได้อัตโนมัติตอนคิดเงิน (แก้ได้เฉพาะเจ้าของร้าน)</div>
           <Link href="/shop/settings/loyalty" style={{ padding: '10px 18px', borderRadius: 10, border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD, fontSize: 14, fontWeight: 600, textDecoration: 'none' }}>ตั้งส่วนลด VIP →</Link>
         </div>
       </SettingSection>

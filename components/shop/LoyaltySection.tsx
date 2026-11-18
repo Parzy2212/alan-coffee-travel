@@ -77,7 +77,7 @@ export function LoyaltySection() {
 
   // useShop only finds shops where this account is the owner
   if (!shopLoading && !shopId) {
-    return <div role="alert" style={notice(DANGER)}>เฉพาะเจ้าของร้านเท่านั้นที่ดูและแก้ส่วนลด VIP ได้</div>
+    return <div role="alert" style={notice(DANGER)}>หน้านี้แก้ได้เฉพาะเจ้าของร้าน ออกจากระบบแล้วเข้าด้วยบัญชีเจ้าของร้าน</div>
   }
 
   if (shopLoading || loading) {
@@ -91,12 +91,12 @@ export function LoyaltySection() {
   return (
     <div className="font-plex-thai loyalty-section" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {!s.enabled && (
-        <div style={notice(WARNING)}>ระบบสะสมแต้มของร้านปิดอยู่ ตอนนี้ลูกค้า VIP จึงไม่ได้ส่วนลด ค่าด้านล่างจะใช้เมื่อเปิดระบบสะสมแต้ม</div>
+        <div style={notice(WARNING)}>ระบบสะสมแต้มของร้านปิดอยู่ ลูกค้า VIP จึงยังไม่ได้ส่วนลด ตั้ง % ไว้ก่อนได้ จะเริ่มใช้เมื่อเปิดระบบสะสมแต้ม (ตอนนี้ยังเปิดในแอปไม่ได้ ต้องให้ผู้ดูแลระบบเปิดให้)</div>
       )}
 
       <div style={{ backgroundColor: BG_CARD_ALT, border: `1px solid ${BORDER_SUBTLE}`, borderRadius: RADIUS['3xl'], padding: '16px 18px' }}>
-        <div style={{ fontSize: 11, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>ส่วนลด VIP (%)</div>
-        <div style={{ fontSize: 12, color: TEXT_2, lineHeight: 1.6 }}>ลูกค้าแต่ละระดับได้ส่วนลดนี้อัตโนมัติที่หน้าขาย (เพดานส่วนลดที่ไม่ต้องใช้ PIN = 15% + % นี้)</div>
+        <div style={{ fontSize: 11, color: GOLD, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>ส่วนลด (%) ของลูกค้าแต่ละระดับ</div>
+        <div style={{ fontSize: 12, color: TEXT_2, lineHeight: 1.6 }}>ลดให้อัตโนมัติตอนคิดเงินเมื่อเลือกลูกค้า แคชเชียร์ยังให้ส่วนลดเพิ่มได้อีกไม่เกิน 15% โดยไม่ต้องใช้ PIN ผู้จัดการ หน้าขายจะใช้ค่าใหม่หลังโหลดหน้าขายใหม่</div>
         {([
           ['silver_discount_percent',   '⭐ Silver'],
           ['gold_discount_percent',     '👑 Gold'],
@@ -104,7 +104,7 @@ export function LoyaltySection() {
         ] as const).map(([key, label]) => (
           <FieldRow key={key} label={label}>
             <input
-              type="number" min="0" max="100" aria-label={`ส่วนลด ${label} %`}
+              type="number" min="0" max="100" aria-label={`ส่วนลดลูกค้า ${label} (%)`}
               value={s[key]}
               onChange={e => update(key, parseInt(e.target.value, 10) || 0)}
               style={{ ...inputStyle, textAlign: 'right' }}
