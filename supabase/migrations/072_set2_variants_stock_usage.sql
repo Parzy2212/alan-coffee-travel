@@ -21,6 +21,8 @@
 
 -- 0) checkout_order / void_order_with_approval must still be the versions this file was
 --    written against (061 + 070 + 071 / 053); a second run sees the 072 versions and goes on.
+--    checkout_order's hash is the one read on production on 2026-11-19 (CR removed, blank lines
+--    at both ends dropped; docs/check-072-checkout-live-diff.sql shows the same number).
 --    The void check is the exact one step 6 needs, so a mismatch stops here before anything
 --    changes (the SQL Editor may not run the file as one transaction). This file itself may be
 --    saved with CRLF on Windows, so every text compared here has CR removed.
@@ -37,7 +39,9 @@ DECLARE
 BEGIN
   SELECT prosrc INTO v_src FROM pg_proc
   WHERE pronamespace = 'public'::regnamespace AND proname = 'checkout_order';
-  IF position('order_stock_usage' IN v_src) = 0 AND md5(replace(v_src, E'\r', '')) <> '827846d3feeb3d58fc8d1c2d7f4b3560' THEN
+  IF position('order_stock_usage' IN v_src) = 0
+     AND md5(regexp_replace(regexp_replace(replace(v_src, E'\r', ''), '^([ ]*\n)+', ''), '(\n[ ]*)+$', ''))
+         <> '7f4c53bb1152d1b00c6d3ccfd8ea087c' THEN
     RAISE EXCEPTION '072: checkout_order is not the 071 version, nothing changed';
   END IF;
   SELECT replace(prosrc, E'\r', '') INTO v_src FROM pg_proc
@@ -417,9 +421,10 @@ BEGIN
     RAISE EXCEPTION 'cart is empty' USING ERRCODE = '22023';
   END IF;
   -- an offline bill keeps its real sale time only within 24 hours and inside the open
-  -- drawer session (071); an older one waits on the POS for a manager
+  -- drawer session, with 5 minutes of slack for a slow tablet clock (071); an older one
+  -- waits on the POS for a manager
   IF v_replay AND (v_created < now() - interval '24 hours' OR v_created < COALESCE(
-       (SELECT s.opened_at FROM public.cash_sessions s WHERE s.shop_id = p_shop_id AND s.status <> 'closed'),
+       (SELECT s.opened_at - interval '5 minutes' FROM public.cash_sessions s WHERE s.shop_id = p_shop_id AND s.status <> 'closed'),
        '-infinity'::timestamptz)) THEN
     RAISE EXCEPTION 'SALE_TOO_OLD: sold %, more than 24 hours ago or before the open drawer session',
       to_char(v_created AT TIME ZONE 'Asia/Vientiane', 'YYYY-MM-DD HH24:MI') USING ERRCODE = '22023';

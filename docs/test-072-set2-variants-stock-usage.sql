@@ -56,6 +56,8 @@ BEGIN
 
 -- 0) checkout_order / void_order_with_approval must still be the versions this file was
 --    written against (061 + 070 + 071 / 053); a second run sees the 072 versions and goes on.
+--    checkout_order's hash is the one read on production on 2026-11-19 (CR removed, blank lines
+--    at both ends dropped; docs/check-072-checkout-live-diff.sql shows the same number).
 --    The void check is the exact one step 6 needs, so a mismatch stops here before anything
 --    changes (the SQL Editor may not run the file as one transaction). This file itself may be
 --    saved with CRLF on Windows, so every text compared here has CR removed.
@@ -72,7 +74,9 @@ DECLARE
 BEGIN
   SELECT prosrc INTO v_src FROM pg_proc
   WHERE pronamespace = 'public'::regnamespace AND proname = 'checkout_order';
-  IF position('order_stock_usage' IN v_src) = 0 AND md5(replace(v_src, E'\r', '')) <> '827846d3feeb3d58fc8d1c2d7f4b3560' THEN
+  IF position('order_stock_usage' IN v_src) = 0
+     AND md5(regexp_replace(regexp_replace(replace(v_src, E'\r', ''), '^([ ]*\n)+', ''), '(\n[ ]*)+$', ''))
+         <> '7f4c53bb1152d1b00c6d3ccfd8ea087c' THEN
     RAISE EXCEPTION '072: checkout_order is not the 071 version, nothing changed';
   END IF;
   SELECT replace(prosrc, E'\r', '') INTO v_src FROM pg_proc
@@ -452,9 +456,10 @@ BEGIN
     RAISE EXCEPTION 'cart is empty' USING ERRCODE = '22023';
   END IF;
   -- an offline bill keeps its real sale time only within 24 hours and inside the open
-  -- drawer session (071); an older one waits on the POS for a manager
+  -- drawer session, with 5 minutes of slack for a slow tablet clock (071); an older one
+  -- waits on the POS for a manager
   IF v_replay AND (v_created < now() - interval '24 hours' OR v_created < COALESCE(
-       (SELECT s.opened_at FROM public.cash_sessions s WHERE s.shop_id = p_shop_id AND s.status <> 'closed'),
+       (SELECT s.opened_at - interval '5 minutes' FROM public.cash_sessions s WHERE s.shop_id = p_shop_id AND s.status <> 'closed'),
        '-infinity'::timestamptz)) THEN
     RAISE EXCEPTION 'SALE_TOO_OLD: sold %, more than 24 hours ago or before the open drawer session',
       to_char(v_created AT TIME ZONE 'Asia/Vientiane', 'YYYY-MM-DD HH24:MI') USING ERRCODE = '22023';
@@ -940,6 +945,28 @@ $body$;
   EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'TEST_MODE_OFF%' THEN v_n := v_n + 1; END IF; END;
   report := report || CASE WHEN v_n = 4 THEN E'\nPASS T18 wrong total / switched-off variant / big discount / test mode off still refused'
     ELSE E'\nFAIL T18 only ' || v_n || ' of 4 refused' END;
+
+  -- T23 offline bill and the open drawer session (071 kept): 3 minutes before it opened
+  -- (slow tablet clock) accepted, 10 minutes before refused
+  UPDATE public.cash_sessions SET opened_at = now() - interval '30 minutes' WHERE shop_id = c_shop AND status <> 'closed';
+  IF NOT FOUND THEN
+    INSERT INTO public.cash_sessions (shop_id, status, opened_at, opening_cash_lak, window_start)
+    VALUES (c_shop, 'open', now() - interval '30 minutes', 0, now() - interval '30 minutes');
+  END IF;
+  v_n := 0;
+  BEGIN
+    v_res := public.checkout_order(gen_random_uuid(), c_shop, v_cashier, jsonb_build_array(jsonb_build_object('recipe_id', v_latte, 'variant_id', v_hot, 'qty', 1)),
+               NULL, 'cash', 35000, 0, NULL, NULL, NULL, NULL, false, 35000, now() - interval '33 minutes', 931);
+    IF v_res ? 'order_id' THEN v_n := v_n + 1; END IF;
+  EXCEPTION WHEN OTHERS THEN report := report || E'\nFAIL T23 3 minutes early refused: ' || SQLERRM;
+  END;
+  BEGIN
+    PERFORM public.checkout_order(gen_random_uuid(), c_shop, v_cashier, jsonb_build_array(jsonb_build_object('recipe_id', v_latte, 'variant_id', v_hot, 'qty', 1)),
+               NULL, 'cash', 35000, 0, NULL, NULL, NULL, NULL, false, 35000, now() - interval '40 minutes', 932);
+  EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'SALE_TOO_OLD%' THEN v_n := v_n + 1; END IF;
+  END;
+  report := report || CASE WHEN v_n = 2 THEN E'\nPASS T23 offline bill 3 min before the session opened accepted, 10 min before refused'
+    ELSE E'\nFAIL T23 ' || v_n || ' of 2' END;
 
   -- T21 realtime: hot/iced price changes reach the POS whenever menu changes do
   report := report || CASE WHEN EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'recipes')

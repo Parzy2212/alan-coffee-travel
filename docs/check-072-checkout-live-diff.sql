@@ -80,7 +80,7 @@ BEGIN
   -- an offline bill keeps its real sale time only within 24 hours and inside the open
   -- drawer session (071); an older one waits on the POS for a manager
   IF v_replay AND (v_created < now() - interval '24 hours' OR v_created < COALESCE(
-       (SELECT s.opened_at FROM public.cash_sessions s WHERE s.shop_id = p_shop_id AND s.status <> 'closed'),
+       (SELECT s.opened_at - interval '5 minutes' FROM public.cash_sessions s WHERE s.shop_id = p_shop_id AND s.status <> 'closed'),
        '-infinity'::timestamptz)) THEN
     RAISE EXCEPTION 'SALE_TOO_OLD: sold %, more than 24 hours ago or before the open drawer session',
       to_char(v_created AT TIME ZONE 'Asia/Vientiane', 'YYYY-MM-DD HH24:MI') USING ERRCODE = '22023';

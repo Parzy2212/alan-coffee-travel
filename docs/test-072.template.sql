@@ -268,6 +268,28 @@ $body$;
   report := report || CASE WHEN v_n = 4 THEN E'\nPASS T18 wrong total / switched-off variant / big discount / test mode off still refused'
     ELSE E'\nFAIL T18 only ' || v_n || ' of 4 refused' END;
 
+  -- T23 offline bill and the open drawer session (071 kept): 3 minutes before it opened
+  -- (slow tablet clock) accepted, 10 minutes before refused
+  UPDATE public.cash_sessions SET opened_at = now() - interval '30 minutes' WHERE shop_id = c_shop AND status <> 'closed';
+  IF NOT FOUND THEN
+    INSERT INTO public.cash_sessions (shop_id, status, opened_at, opening_cash_lak, window_start)
+    VALUES (c_shop, 'open', now() - interval '30 minutes', 0, now() - interval '30 minutes');
+  END IF;
+  v_n := 0;
+  BEGIN
+    v_res := public.checkout_order(gen_random_uuid(), c_shop, v_cashier, jsonb_build_array(jsonb_build_object('recipe_id', v_latte, 'variant_id', v_hot, 'qty', 1)),
+               NULL, 'cash', 35000, 0, NULL, NULL, NULL, NULL, false, 35000, now() - interval '33 minutes', 931);
+    IF v_res ? 'order_id' THEN v_n := v_n + 1; END IF;
+  EXCEPTION WHEN OTHERS THEN report := report || E'\nFAIL T23 3 minutes early refused: ' || SQLERRM;
+  END;
+  BEGIN
+    PERFORM public.checkout_order(gen_random_uuid(), c_shop, v_cashier, jsonb_build_array(jsonb_build_object('recipe_id', v_latte, 'variant_id', v_hot, 'qty', 1)),
+               NULL, 'cash', 35000, 0, NULL, NULL, NULL, NULL, false, 35000, now() - interval '40 minutes', 932);
+  EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'SALE_TOO_OLD%' THEN v_n := v_n + 1; END IF;
+  END;
+  report := report || CASE WHEN v_n = 2 THEN E'\nPASS T23 offline bill 3 min before the session opened accepted, 10 min before refused'
+    ELSE E'\nFAIL T23 ' || v_n || ' of 2' END;
+
   -- T21 realtime: hot/iced price changes reach the POS whenever menu changes do
   report := report || CASE WHEN EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'recipes')
                             = EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'menu_variants')
