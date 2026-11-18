@@ -61,21 +61,26 @@ export function CustomerDetailModal({ customer: init, shopId, onClose, onUpdated
   const [orders,  setOrders]  = useState<Order[]>([])
   const [txns,    setTxns]    = useState<LoyaltyTransaction[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadErr, setLoadErr] = useState('')
 
   const birthday = isBirthdayToday(c.birthday)
   const { color: tierColor } = TIER_META[c.vip_tier]
 
   const loadTab = useCallback(async (t: typeof tab) => {
-    if (t === 'orders' && orders.length === 0) {
-      setLoading(true)
-      setOrders((await getCustomerOrders(c.id, 10)) as Order[])
-      setLoading(false)
+    setLoadErr('')
+    try {
+      if (t === 'orders' && orders.length === 0) {
+        setLoading(true)
+        setOrders((await getCustomerOrders(c.id, 10)) as Order[])
+      }
+      if (t === 'loyalty' && txns.length === 0) {
+        setLoading(true)
+        setTxns(await getLoyaltyTransactions(c.id, 20))
+      }
+    } catch (e) {
+      setLoadErr(`โหลดข้อมูลไม่ได้: ${e instanceof Error ? e.message : String(e)}`)
     }
-    if (t === 'loyalty' && txns.length === 0) {
-      setLoading(true)
-      setTxns(await getLoyaltyTransactions(c.id, 20))
-      setLoading(false)
-    }
+    setLoading(false)
   }, [c.id, orders.length, txns.length])
 
   useEffect(() => { void loadTab(tab) }, [tab, loadTab])
@@ -90,11 +95,9 @@ export function CustomerDetailModal({ customer: init, shopId, onClose, onUpdated
         notes:    form.notes || null,
         phone:    form.phone || null,
       })
-      if (updated) {
-        setC(updated)
-        onUpdated(updated)
-        setEditing(false)
-      }
+      setC(updated)
+      onUpdated(updated)
+      setEditing(false)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
     }
@@ -185,6 +188,7 @@ export function CustomerDetailModal({ customer: init, shopId, onClose, onUpdated
 
         {/* ── Tab content ── */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 24px' }}>
+          {loadErr && tab !== 'profile' && <div role="alert" style={{ fontSize: 12, color: RED, marginBottom: 10 }}>{loadErr}</div>}
 
           {tab === 'profile' && (
             editing ? (

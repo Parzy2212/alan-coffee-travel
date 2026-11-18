@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { authClient } from './supabase-auth'
 
 export type VipTier = 'regular' | 'silver' | 'gold' | 'platinum'
 
@@ -22,6 +23,11 @@ export type Customer = {
   created_at: string
   updated_at: string
 }
+
+// What the POS gets back from a phone lookup (pos_find_customer): no email, notes or spend;
+// birthday only when it is today.
+export type PosCustomer = Pick<Customer,
+  'id' | 'name' | 'phone' | 'vip_tier' | 'loyalty_points' | 'visit_count' | 'last_visit' | 'birthday'>
 
 export type LoyaltyTransaction = {
   id: string
@@ -49,44 +55,49 @@ export type LoyaltySettings = {
 
 // ── Queries ────────────────────────────────────────────────────────────────────
 
-export async function searchCustomers(q: string, limit = 40): Promise<Customer[]> {
-  let query = supabase
-    .from('customers')
-    .select('*')
-    .order('visit_count', { ascending: false })
-    .limit(limit)
+function customerError(e: { code?: string; message: string }): Error {
+  if (e.code === '42501') return new Error('ต้องล็อกอินเป็นเจ้าของหรือผู้จัดการร้าน ลองออกจากระบบแล้วเข้าใหม่')
+  if (e.message.includes('CUSTOMER_EXISTS')) return new Error('เบอร์นี้เป็นลูกค้าอยู่แล้ว ค้นหาด้วยเบอร์แทนการเพิ่มใหม่')
+  if (e.message.includes('PHONE_TOO_SHORT')) return new Error('พิมพ์เบอร์โทรให้ครบ')
+  if (e.message.includes('POINTS_NOT_ENOUGH')) return new Error('คะแนนไม่เพียงพอ')
+  if (e.message.includes('POINTS_INVALID')) return new Error('คะแนนต้องเป็นทวีคูณของ 100')
+  return new Error(e.message)
+}
 
-  if (q.trim()) {
-    query = query.or(`phone.ilike.%${q.trim()}%,name.ilike.%${q.trim()}%`)
-  }
-
-  const { data } = await query
+// Back office (/cafe): owner/manager of the shop only.
+export async function listCustomers(q: string, limit = 100): Promise<Customer[]> {
+  const { data, error } = await authClient.rpc('crm_list_customers', { p_q: q.trim(), p_limit: limit })
+  if (error) throw customerError(error)
   return (data ?? []) as Customer[]
 }
 
-export async function getCustomer(id: string): Promise<Customer | null> {
-  const { data } = await supabase.from('customers').select('*').eq('id', id).maybeSingle()
-  return data as Customer | null
+// POS: full phone number only, one customer or null.
+export async function findCustomerByPhone(phone: string): Promise<PosCustomer | null> {
+  const { data, error } = await supabase.rpc('pos_find_customer', { p_phone: phone })
+  if (error) throw customerError(error)
+  return (data ?? null) as PosCustomer | null
 }
 
 export async function getCustomerOrders(customerId: string, limit = 10) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('orders')
     .select('id, queue_number, status, total_lak, created_at')
     .eq('customer_id', customerId)
     .eq('status', 'paid')
     .order('created_at', { ascending: false })
     .limit(limit)
+  if (error) throw new Error(error.message)
   return data ?? []
 }
 
 export async function getLoyaltyTransactions(customerId: string, limit = 20): Promise<LoyaltyTransaction[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('loyalty_transactions')
     .select('*')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
     .limit(limit)
+  if (error) throw new Error(error.message)
   return (data ?? []) as LoyaltyTransaction[]
 }
 
@@ -113,7 +124,8 @@ export async function createCustomer(fields: {
   nationality?: string
   shop_id?: string
 }): Promise<Customer | null> {
-  const { data, error } = await supabase.rpc('crm_upsert_customer', {
+  // authClient: the owner (signed in) may update an existing phone; at the POS it runs as anon
+  const { data, error } = await authClient.rpc('crm_upsert_customer', {
     p_phone:       fields.phone,
     p_name:        fields.name,
     p_email:       fields.email       ?? null,
@@ -123,57 +135,24 @@ export async function createCustomer(fields: {
     p_nationality: fields.nationality ?? null,
     p_shop_id:     fields.shop_id     ?? null,
   })
-  if (error) throw error
+  if (error) throw customerError(error)
   return data as Customer | null
 }
 
-export async function updateCustomer(id: string, fields: Partial<Omit<Customer, 'id' | 'created_at'>>): Promise<Customer | null> {
-  const { data } = await supabase
-    .from('customers')
-    .update({ ...fields, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .maybeSingle()
-  return data as Customer | null
+export async function updateCustomer(
+  id: string,
+  fields: Partial<Pick<Customer, 'name' | 'phone' | 'email' | 'birthday' | 'notes'>>,
+): Promise<Customer> {
+  const { data, error } = await authClient.rpc('crm_update_customer', { p_id: id, p_fields: fields })
+  if (error) throw customerError(error)
+  return data as Customer
 }
 
-export async function adjustPoints(
-  shopId: string,
-  customerId: string,
-  points: number,
-  type: 'redeem' | 'adjust',
-  description?: string,
-): Promise<void> {
-  const delta = type === 'redeem' ? -Math.abs(points) : points
-  const { data: current } = await supabase.from('customers').select('loyalty_points').eq('id', customerId).maybeSingle()
-  const newPts = Math.max(0, ((current as Customer | null)?.loyalty_points ?? 0) + delta)
-  await supabase.from('customers').update({ loyalty_points: newPts, updated_at: new Date().toISOString() }).eq('id', customerId)
-  await supabase.from('loyalty_transactions').insert({
-    shop_id: shopId,
-    customer_id: customerId,
-    order_id: null,
-    type,
-    points: delta,
-    description: description ?? null,
+// One step in the database: checks the balance, lowers it and records it together. Returns the new balance.
+export async function redeemPoints(customerId: string, points: number, description?: string): Promise<number> {
+  const { data, error } = await authClient.rpc('crm_redeem_points', {
+    p_customer: customerId, p_points: points, p_description: description ?? null,
   })
-}
-
-export async function redeemPoints(
-  shopId: string,
-  customer: Customer,
-  points: number,
-  description?: string,
-): Promise<void> {
-  const newPts = Math.max(0, customer.loyalty_points - points)
-  await supabase.from('customers')
-    .update({ loyalty_points: newPts, updated_at: new Date().toISOString() })
-    .eq('id', customer.id)
-  await supabase.from('loyalty_transactions').insert({
-    shop_id: shopId,
-    customer_id: customer.id,
-    order_id: null,
-    type: 'redeem',
-    points: -points,
-    description: description ?? 'Points redeemed',
-  })
+  if (error) throw customerError(error)
+  return data as number
 }

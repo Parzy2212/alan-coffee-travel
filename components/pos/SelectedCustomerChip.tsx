@@ -1,6 +1,6 @@
 'use client'
 
-import type { Customer } from '@/lib/customers'
+import type { PosCustomer } from '@/lib/customers'
 import { VipBadge } from '@/components/customers/VipBadge'
 import { isBirthdayToday } from '@/lib/loyalty'
 
@@ -11,7 +11,7 @@ export function SelectedCustomerChip({
   onRemove,
   onClick,
 }: {
-  customer: Customer
+  customer: PosCustomer
   onRemove: () => void
   onClick?: () => void
 }) {

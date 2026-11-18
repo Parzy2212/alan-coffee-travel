@@ -13,7 +13,7 @@ import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner, TestModePinDialog } from '@/components/pos/TestModeBanner'
-import type { Customer } from '@/lib/customers'
+import type { PosCustomer } from '@/lib/customers'
 import { computeVipDiscount, getVipDiscountPct, isBirthdayToday, TIER_META } from '@/lib/loyalty'
 import { roundedDiscount, parseDiscountRoundStep, discountCap, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
 import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
@@ -1072,7 +1072,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
   discountReason: string
   activeEmployeeId?: string | null
   shopId: string | null
-  selectedCustomer?: Customer | null
+  selectedCustomer?: PosCustomer | null
   isTestMode?: boolean
   onTestModeOff?: () => void
   discountCapLak: number
@@ -2457,7 +2457,7 @@ export default function POSClient() {
   const [showOrderSuccess,    setShowOrderSuccess]     = useState(false)
   const [printStatus,         setPrintStatus]          = useState<PrintStatus>('off')
   const [printError,          setPrintError]           = useState('')
-  const [selectedCustomer,    setSelectedCustomer]     = useState<Customer | null>(null)
+  const [selectedCustomer,    setSelectedCustomer]     = useState<PosCustomer | null>(null)
   const [showCustomerSelector, setShowCustomerSelector] = useState(false)
   const printFnRef = useRef<(() => Promise<void>) | null>(null)
   const online = useNetworkStatus()

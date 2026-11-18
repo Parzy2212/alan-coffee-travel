@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Customer } from '@/lib/customers'
-import { searchCustomers, redeemPoints } from '@/lib/customers'
+import { listCustomers, redeemPoints } from '@/lib/customers'
 import { isBirthdayToday } from '@/lib/loyalty'
 import { CustomerCard } from '@/components/customers/CustomerCard'
 import { CustomerDetailModal } from '@/components/customers/CustomerDetailModal'
@@ -25,6 +25,7 @@ export function CustomersTab() {
   const [filter,    setFilter]    = useState<CustomerFilter>('all')
   const [sort,      setSort]      = useState<CustomerSort>('recent')
   const [loading,   setLoading]   = useState(false)
+  const [loadErr,   setLoadErr]   = useState('')
   const [detail,    setDetail]    = useState<Customer | null>(null)
   const [showAdd,   setShowAdd]   = useState(false)
 
@@ -35,9 +36,13 @@ export function CustomersTab() {
   const [redeemHistory,  setRedeemHistory]  = useState<{ name: string; pts: number; lak: number; time: string }[]>([])
 
   const load = useCallback(async (q = '') => {
-    setLoading(true)
-    const data = await searchCustomers(q, 100)
-    setCustomers(data)
+    setLoading(true); setLoadErr('')
+    try {
+      setCustomers(await listCustomers(q, 100))
+    } catch (e) {
+      setCustomers([])
+      setLoadErr(`อ่านรายชื่อลูกค้าไม่ได้: ${e instanceof Error ? e.message : String(e)}`)
+    }
     setLoading(false)
   }, [])
 
@@ -60,14 +65,20 @@ export function CustomersTab() {
   }, [customers, filter, sort])
 
   async function redeemSubmit() {
-    if (!redeemCustomer || !shopId) return
+    if (!redeemCustomer) return
     const pts = parseInt(redeemPts)
     if (isNaN(pts) || pts <= 0)          { setRedeemMsg('กรอกจำนวนคะแนนที่ถูกต้อง'); return }
     if (pts % POINTS_RATE !== 0)          { setRedeemMsg(`คะแนนต้องเป็นทวีคูณของ ${POINTS_RATE}`); return }
     if (pts > redeemCustomer.loyalty_points) { setRedeemMsg('คะแนนไม่เพียงพอ'); return }
     setRedeeming(true); setRedeemMsg('')
     const lak = Math.floor(pts / POINTS_RATE) * POINTS_VALUE
-    await redeemPoints(shopId, redeemCustomer, pts, `Redeemed ${pts} pts for ${lak.toLocaleString()} LAK discount`)
+    try {
+      await redeemPoints(redeemCustomer.id, pts, `Redeemed ${pts} pts for ${lak.toLocaleString()} LAK discount`)
+    } catch (e) {
+      setRedeemMsg(e instanceof Error ? e.message : 'แลกคะแนนไม่สำเร็จ')
+      setRedeeming(false)
+      return
+    }
     setRedeemHistory(h => [{ name: redeemCustomer.name ?? redeemCustomer.phone ?? '?', pts, lak, time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) }, ...h])
     setRedeemCustomer(null); setRedeemPts('')
     await load(search)
@@ -126,6 +137,8 @@ export function CustomersTab() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {Array.from({ length: 6 }).map((_, i) => <div key={i} style={{ height: 76, borderRadius: 14, backgroundColor: '#1a1a1a', animation: 'pulse 1.5s infinite' }} />)}
         </div>
+      ) : loadErr ? (
+        <div role="alert" style={{ textAlign: 'center', padding: '40px 16px', color: RED, fontSize: 13 }}>{loadErr}</div>
       ) : displayed.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.2)' }}>
           {filter === 'birthday' ? 'ไม่มีลูกค้าวันเกิดวันนี้' : 'ไม่พบลูกค้า'}
