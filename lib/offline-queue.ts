@@ -1,5 +1,7 @@
 'use client'
 
+import { PENDING_ORDERS, openOfflineDB } from './offline-db'
+
 export type OfflineOrder = {
   id: string           // local UUID
   payload: Record<string, unknown>
@@ -12,20 +14,8 @@ export type OfflineOrder = {
 /** After this many sends without an answer the bill is shown to the cashier (sending still goes on). */
 export const STALLED_AFTER = 10
 
-const DB_NAME    = 'alan-cafe-offline'
-const DB_VERSION = 1
-const STORE      = 'pending-orders'
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE, { keyPath: 'id' })
-    }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror   = () => reject(req.error)
-  })
-}
+const STORE  = PENDING_ORDERS
+const openDB = openOfflineDB
 
 function tx(db: IDBDatabase, mode: IDBTransactionMode) {
   return db.transaction(STORE, mode).objectStore(STORE)
@@ -98,7 +88,7 @@ function tryRegisterSync() {
   if ('serviceWorker' in navigator && 'SyncManager' in window) {
     navigator.serviceWorker.ready.then(reg => {
       // @ts-expect-error — SyncManager not in all TS lib versions
-      reg.sync.register('offline-orders').catch(() => {})
+      reg.sync.register('offline-orders').catch((e: unknown) => console.warn('[offline-queue] background sync not registered:', e))
     })
   }
 }
@@ -124,13 +114,16 @@ export async function replayQueue(
     const delay = Math.min(1000 * 2 ** order.attempts, 30000)
     if (order.lastAttempt && Date.now() - order.lastAttempt < delay) { failed++; continue }
     let result: ReplayResult = 'retry'
-    try { result = await submitFn(order.payload, order) } catch { /* no answer: retry */ }
+    try { result = await submitFn(order.payload, order) } catch (e) { console.warn('[offline-queue] no answer, will retry:', e) }
     if (result === 'ok') { await removeOrder(order.id); replayed++; continue }
     failed++
     const reason = result === 'retry' ? undefined : result.rejected
     try {
       await patchOrder(order.id, o => ({ ...o, attempts: o.attempts + 1, lastAttempt: Date.now(), ...(reason ? { rejected: reason } : {}) }))
-    } catch { /* storage hiccup: the bill is still in the queue, go on with the next one */ }
+    } catch (e) {
+      // the bill is still in the queue; go on with the next one
+      console.warn('[offline-queue] could not update the retry count:', e)
+    }
   }
   return { replayed, failed }
 }

@@ -1239,8 +1239,8 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
           // shown to the cashier if the server later refuses the bill (the RPC never sees this)
           summary: { items: cartPayload.map(i => ({ name: i.name ?? '', qty: i.qty, price: i.unit_price_lak, note: i.customization })), received: method === 'cash' ? receivedNum : null },
         }, clientUuid.current)
-      } catch {
-        setErrMsg('บันทึกบิลในเครื่องไม่สำเร็จ ห้ามรับเงิน ลองใหม่อีกครั้ง'); setLoading(false); return
+      } catch (e) {
+        setErrMsg(`บันทึกบิลในเครื่องไม่สำเร็จ ห้ามรับเงิน ลองใหม่อีกครั้ง (${e instanceof Error ? e.message : String(e)})`); setLoading(false); return
       }
       window.dispatchEvent(new Event('alan:queue-changed'))
       onSuccess(offlineQueue, String(offlineQueue).padStart(3, '0'), Math.max(changeAmt, 0), method, customerName, table, sentDiscount, cashIn, discountReason, receiptLang, xferIn)
@@ -2448,6 +2448,8 @@ export default function POSClient() {
   const [recipes,      setRecipes]      = useState<Recipe[]>([])
   const [categories,   setCategories]   = useState<Category[]>([])
   const [loading,      setLoading]      = useState(true)
+  const [menuNote,     setMenuNote]     = useState<string | null>(null)
+  const menuSeq = useRef(0)
   const [cart,         setCart]         = useState<CartItem[]>([])
   const [pinnedIds,    setPinnedIds]    = useState<string[]>(() => getPinnedRecipes())
   const [confirmClear,  setConfirmClear]  = useState(false)
@@ -2568,7 +2570,7 @@ export default function POSClient() {
         const code = (error as { code?: string }).code ?? ''
         const refused = /^[0-9A-Z]{5}$/.test(code) && !/^(08|25|40|53|55|57|58|XX)/.test(code) && status !== 408 && status !== 429
         return refused ? { rejected: error.message } : 'retry'
-      }).catch(() => {}).finally(() => { running = false; window.dispatchEvent(new Event('alan:queue-changed')) })
+      }).catch(e => console.warn('[POS] offline queue replay failed:', e)).finally(() => { running = false; window.dispatchEvent(new Event('alan:queue-changed')) })
     }
     replay()
     // the browser may never fire an "online" event (see saveOffline), so also retry on a timer
@@ -2584,44 +2586,42 @@ export default function POSClient() {
       .then(({ data }) => setCategories((data as Category[]) ?? []))
   }, [])
 
-  // Fetch menu (cache-first when offline)
-  useEffect(() => {
-    import('@/lib/menu-cache').then(({ fetchWithCache }) => {
-      fetchWithCache<Recipe[]>(
-        'pos-menu',
-        async () => {
-          const { data } = await supabase
-            .from('recipes')
-            .select('id, product_name, product_name_th, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
-            .eq('is_active', true)
-            .order('product_name')
-          return (data as Recipe[]) ?? []
-        }
-      ).then(({ data }) => { setRecipes(data); setLoading(false) })
-        .catch(() => setLoading(false))
-    })
+  // Menu: server first (so a price change shows on the next load); the copy saved on this
+  // device is used only when the server can't be reached, and the screen says so.
+  const loadMenu = useCallback(async () => {
+    const seq = ++menuSeq.current
+    const { getCached, setCache } = await import('@/lib/menu-cache')
+    const { data, error } = await supabase
+      .from('recipes')
+      .select('id, product_name, product_name_th, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
+      .eq('is_active', true)
+      .order('product_name')
+      .abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
+    if (seq !== menuSeq.current) return
+    if (!error) {
+      const list = (data ?? []).map(r => ({ ...r, category: null })) as Recipe[]
+      setRecipes(list)
+      setMenuNote(null)
+      setLoading(false)
+      await setCache('pos-menu', list)
+      return
+    }
+    const saved = await getCached<Recipe[]>('pos-menu')
+    if (seq !== menuSeq.current) return
+    if (saved) {
+      setRecipes(saved.data)
+      const at = new Date(saved.cachedAt).toLocaleString('th-TH', { timeZone: 'Asia/Vientiane', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      setMenuNote(`โหลดเมนูจากระบบไม่ได้ ใช้เมนูที่บันทึกไว้ในเครื่อง (${at}) ราคาอาจไม่ใช่ล่าสุด`)
+    } else {
+      setMenuNote(`โหลดเมนูไม่ได้ และเครื่องนี้ยังไม่มีเมนูที่บันทึกไว้: ${error.message}`)
+    }
+    setLoading(false)
+  }, [])
 
+  useEffect(() => {
+    void loadMenu()
     const channel = supabase.channel('recipes-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => {
-        supabase.from('recipes')
-          .select('id, product_name, product_name_th, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
-          .eq('is_active', true)
-          .order('product_name')
-          .then(({ data }) => {
-            if (data) setRecipes(data.map(r => ({
-              id: r.id as string,
-              product_name: r.product_name as string,
-              product_name_th: r.product_name_th as string | null,
-              product_name_lo: r.product_name_lo as string | null,
-              category: null,
-              category_id: r.category_id as string | null,
-              price_lak: r.price_lak as number,
-              image_url: r.image_url as string | null,
-              requires_customization: r.requires_customization as boolean,
-              default_sweetness: r.default_sweetness as string | null,
-            })))
-          })
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => { void loadMenu() })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -3239,6 +3239,14 @@ export default function POSClient() {
         {/* ── LEFT 60%: MENU */}
         <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
 
+          {menuNote && (
+            <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.35)', fontSize: 12, color: '#f59e0b', lineHeight: 1.5, flexShrink: 0 }}>
+              <span style={{ flex: 1 }}>{menuNote}</span>
+              <button onClick={() => { void loadMenu() }} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.5)', background: 'none', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+                ลองใหม่
+              </button>
+            </div>
+          )}
           {/* Search */}
           <div style={{ padding: '10px 16px', backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, position: 'relative' }}>
             <span style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: 'rgba(255,255,255,0.25)', pointerEvents: 'none' }}>🔍</span>
