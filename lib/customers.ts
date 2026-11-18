@@ -104,17 +104,33 @@ export async function getLoyaltyTransactions(customerId: string, limit = 20): Pr
   return (data ?? []) as LoyaltyTransaction[]
 }
 
+// null = the shop has saved nothing yet (the app and the database then use DEFAULT_SETTINGS)
 export async function getLoyaltySettings(shopId: string): Promise<LoyaltySettings | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('loyalty_settings')
     .select('*')
     .eq('shop_id', shopId)
     .maybeSingle()
+  if (error) throw new Error(`โหลดการตั้งค่าสะสมแต้มไม่ได้: ${error.message}`)
   return data as LoyaltySettings | null
 }
 
-export async function upsaveLoyaltySettings(settings: Partial<LoyaltySettings> & { shop_id: string }): Promise<void> {
-  await supabase.from('loyalty_settings').upsert(settings, { onConflict: 'shop_id' })
+// Only an active owner of the shop may change these; each change is logged in the database (070).
+export async function saveLoyaltySettings(shopId: string, s: LoyaltySettings): Promise<LoyaltySettings> {
+  // the database refuses any key it does not know (the loaded row also carries created_at)
+  const p_settings = {
+    enabled: s.enabled, points_per_lak: s.points_per_lak,
+    vip_silver_threshold: s.vip_silver_threshold, vip_gold_threshold: s.vip_gold_threshold, vip_platinum_threshold: s.vip_platinum_threshold,
+    silver_discount_percent: s.silver_discount_percent, gold_discount_percent: s.gold_discount_percent,
+    platinum_discount_percent: s.platinum_discount_percent, birthday_discount_percent: s.birthday_discount_percent,
+  }
+  const { data, error } = await authClient.rpc('update_loyalty_settings', { p_shop_id: shopId, p_settings })
+  if (error) {
+    if (error.code === '42501') throw new Error('เฉพาะเจ้าของร้านเท่านั้นที่แก้การตั้งค่าสะสมแต้มได้')
+    if (error.message.includes('INVALID_LOYALTY_SETTINGS')) throw new Error('ค่าไม่ถูกต้อง: ส่วนลดเป็นจำนวนเต็ม 0-100%, เกณฑ์แต้ม Silver < Gold < Platinum')
+    throw new Error(error.message)
+  }
+  return { shop_id: shopId, ...(data as Omit<LoyaltySettings, 'shop_id'>) }
 }
 
 export async function createCustomer(fields: {

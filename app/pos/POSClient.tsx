@@ -13,7 +13,7 @@ import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner, TestModePinDialog } from '@/components/pos/TestModeBanner'
-import type { PosCustomer } from '@/lib/customers'
+import { getLoyaltySettings, type PosCustomer, type LoyaltySettings } from '@/lib/customers'
 import { pinWaitText } from '@/lib/employee-pin'
 import { computeVipDiscount, getVipDiscountPct, TIER_META } from '@/lib/loyalty'
 import { roundedDiscount, parseDiscountRoundStep, discountCap, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
@@ -769,7 +769,7 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
 
 // ─── ChargePopup ─────────────────────────────────────────────────────────────
 
-function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, onTestModeOff, defaultLang, onSuccess, onClose }: {
+function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, vipPct, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, onTestModeOff, defaultLang, onSuccess, onClose }: {
   subtotal: number
   cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null; name?: string }[]
   discount: string
@@ -780,6 +780,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
   isTestMode?: boolean
   onTestModeOff?: () => void
   discountCapLak: number
+  vipPct: number
   defaultLang?: Lang
   onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string, receiptLang: Lang, splitTransfer: number) => void
   onClose: () => void
@@ -1054,7 +1055,6 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
             {selectedCustomer && (() => {
               const { color, icon, label } = TIER_META[selectedCustomer.vip_tier]
               const birthday = selectedCustomer.is_birthday_today === true
-              const vipPct   = selectedCustomer.vip_tier === 'platinum' ? 10 : selectedCustomer.vip_tier === 'gold' ? 5 : 0
               return (
                 <div style={{ padding: '10px 14px', borderRadius: RADIUS.xl, border: `1px solid ${color}44`, backgroundColor: `${color}0e` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2148,6 +2148,7 @@ export default function POSClient() {
   }, [showAppMenu])
   function closeAppMenu() { setShowAppMenu(false); appMenuBtnRef.current?.focus() }
   const [shopId,       setShopId]       = useState<string | null>(null)
+  const [loyalty,      setLoyalty]      = useState<LoyaltySettings | null>(null)
   const [mounted,      setMounted]      = useState(false)
   const [recipes,      setRecipes]      = useState<Recipe[]>([])
   const [categories,   setCategories]   = useState<Category[]>([])
@@ -2197,6 +2198,29 @@ export default function POSClient() {
     return () => window.removeEventListener('beforeinstallprompt', onPrompt)
   }, [])
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // The VIP % the owner saved (the database caps discounts with the same values, 070).
+  // A copy is kept on the device for offline sales; without one the defaults are used, and a
+  // discount the database then finds too high asks for the manager PIN as usual.
+  useEffect(() => {
+    if (!shopId) return
+    const key = `pos_loyalty:${shopId}`
+    let cached: string | null = null
+    try { cached = localStorage.getItem(key) } catch { /* storage blocked */ }
+    if (cached) {
+      try {
+        const saved = JSON.parse(cached) as LoyaltySettings
+        setLoyalty(l => l ?? saved)
+      } catch (e) { console.warn('[POS] saved VIP settings unreadable, using defaults until loaded:', e) }
+    }
+    getLoyaltySettings(shopId).then(
+      data => {
+        setLoyalty(data)
+        try { if (data) localStorage.setItem(key, JSON.stringify(data)); else localStorage.removeItem(key) } catch { /* storage blocked */ }
+      },
+      (e: Error) => console.warn('[POS] VIP settings not loaded, using the saved copy or defaults:', e.message),
+    )
+  }, [shopId])
 
   // Load shopId via auth client (needed for PIN verification and checkout).
   // Offline, the last known id is used, so a POS reloaded without internet can still take sales.
@@ -2377,10 +2401,11 @@ export default function POSClient() {
     : discountPreset === 'regular' ? Math.round(subtotal * 0.05)
     : discountPreset === 'other'   ? (parseInt(discountOtherAmt, 10) || 0)
     : 0
-  const vipDiscountAmt = selectedCustomer ? computeVipDiscount(subtotal, selectedCustomer.vip_tier) : 0
+  const vipDiscountAmt = selectedCustomer ? computeVipDiscount(subtotal, selectedCustomer.vip_tier, loyalty) : 0
   const discountRoundStep = parseDiscountRoundStep(posSettings.discount_round_step)
   const discountAmt = roundedDiscount(subtotal, baseDiscountAmt + vipDiscountAmt, discountRoundStep)
-  const discountCapLak = discountCap(subtotal, selectedCustomer ? getVipDiscountPct(selectedCustomer.vip_tier) : 0)
+  const vipPct = selectedCustomer ? getVipDiscountPct(selectedCustomer.vip_tier, loyalty) : 0
+  const discountCapLak = discountCap(subtotal, vipPct)
   const discountLabel = discountPreset === 'employee' ? 'บัตรพนักงาน'
     : discountPreset === 'promo'   ? 'โปรโมชัน'
     : discountPreset === 'regular' ? 'ลูกค้าประจำ'
@@ -2742,7 +2767,7 @@ export default function POSClient() {
       {showCharge && (
         <ChargePopup subtotal={subtotal} cartPayload={cartPayload}
           discount={String(discountAmt)} discountReason={discountLabel}
-          discountCapLak={discountCapLak}
+          discountCapLak={discountCapLak} vipPct={vipPct}
           activeEmployeeId={activeEmployee?.id ?? null}
           shopId={shopId}
           selectedCustomer={selectedCustomer}

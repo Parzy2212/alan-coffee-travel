@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getLoyaltySettings, upsaveLoyaltySettings } from '@/lib/customers'
+import { getLoyaltySettings, saveLoyaltySettings } from '@/lib/customers'
 import type { LoyaltySettings } from '@/lib/customers'
 import { DEFAULT_SETTINGS, computePointsEarned } from '@/lib/loyalty'
 import { useShop } from '@/lib/use-shop'
 import {
-  GOLD, SUCCESS, BG_BASE, BG_CARD_ALT, BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
+  GOLD, SUCCESS, DANGER, BG_BASE, BG_CARD_ALT, BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
   TEXT_1, TEXT_2, FONT_MONO, RADIUS, STATE_DISABLED_OPACITY, STATE_FOCUS_RING,
 } from '@/lib/pos-theme-tokens'
 
@@ -42,15 +42,18 @@ export function LoyaltySection() {
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
   const [saved,    setSaved]    = useState(false)
+  const [err,      setErr]      = useState('')
+  const [loadFailed, setLoadFailed] = useState(false)
 
   const s = settings ?? { shop_id: shopId ?? '', ...DEFAULT_SETTINGS }
 
   useEffect(() => {
     if (!shopId) return
-    getLoyaltySettings(shopId).then(data => {
-      setSettings(data ?? { shop_id: shopId, ...DEFAULT_SETTINGS } as LoyaltySettings)
-      setLoading(false)
-    })
+    getLoyaltySettings(shopId).then(
+      data => { setSettings(data ?? { shop_id: shopId, ...DEFAULT_SETTINGS } as LoyaltySettings); setLoading(false) },
+      // saving the defaults over settings that only failed to load would wipe them: block saving
+      (e: Error) => { setErr(e.message); setLoadFailed(true); setLoading(false) },
+    )
   }, [shopId])
 
   function update(key: keyof LoyaltySettings, value: unknown) {
@@ -59,10 +62,16 @@ export function LoyaltySection() {
 
   async function handleSave() {
     if (!shopId) return
-    setSaving(true)
-    await upsaveLoyaltySettings({ ...s, shop_id: shopId })
-    setSaving(false); setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    setSaving(true); setErr('')
+    try {
+      setSettings(await saveLoyaltySettings(shopId, s))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const sampleTotal   = 100000
@@ -164,10 +173,16 @@ export function LoyaltySection() {
         ))}
       </div>
 
+      {err && (
+        <div role="alert" style={{ padding: '12px 14px', borderRadius: RADIUS.lg, border: `1px solid ${DANGER}66`, backgroundColor: `${DANGER}14`, color: DANGER, fontSize: 14, lineHeight: 1.6 }}>
+          {err}
+        </div>
+      )}
+
       {/* Save */}
       <button
         onClick={handleSave}
-        disabled={saving || !shopId}
+        disabled={saving || !shopId || loadFailed}
         className="loyalty-save-btn"
         style={{
           height: 52, borderRadius: RADIUS.xl,
