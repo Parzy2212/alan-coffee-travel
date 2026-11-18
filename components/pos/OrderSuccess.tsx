@@ -37,6 +37,9 @@ const CSS = `
 
 export type PrintStatus = 'off' | 'printing' | 'sent' | 'error'
 
+// checkout_order (072) sells even when the system stock is short and lists what was short
+export type StockWarning = { inventory_id: string; name: string; unit: string; needed: number; had: number }
+
 export interface OrderSuccessProps {
   queue: number
   total: number
@@ -46,13 +49,14 @@ export interface OrderSuccessProps {
   printStatus?: PrintStatus
   printError?: string
   onRetryPrint?: () => void
+  stockWarnings?: StockWarning[]
 }
 
-export function OrderSuccess({ queue, total, change = 0, splitParts, onDismiss, printStatus = 'off', printError, onRetryPrint }: OrderSuccessProps) {
+export function OrderSuccess({ queue, total, change = 0, splitParts, onDismiss, printStatus = 'off', printError, onRetryPrint, stockWarnings = [] }: OrderSuccessProps) {
   const [count, setCount] = useState(3)
   const particles = useRef(mkParticles(52)).current
-  // Hold the screen while printing and on a print error, so a failed receipt is never skipped unseen
-  const paused = printStatus === 'printing' || printStatus === 'error'
+  // Hold the screen while printing, on a print error and on a stock warning, so none is skipped unseen
+  const paused = printStatus === 'printing' || printStatus === 'error' || stockWarnings.length > 0
 
   useEffect(() => {
     if (paused) return
@@ -169,6 +173,20 @@ export function OrderSuccess({ queue, total, change = 0, splitParts, onDismiss, 
           </div>
         )}
       </div>
+
+      {stockWarnings.length > 0 && (
+        <div role="status" style={{
+          marginTop: 24, maxWidth: 440, maxHeight: 180, overflowY: 'auto', padding: '12px 18px', borderRadius: 12,
+          backgroundColor: 'rgba(240,180,60,0.1)', border: '1px solid rgba(240,180,60,0.5)',
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#f0b43c', marginBottom: 6 }}>ขายแล้ว แต่สต็อกในระบบไม่พอ — แจ้งผู้จัดการเช็คสต็อก</div>
+          {stockWarnings.map(w => (
+            <div key={w.inventory_id} style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', fontVariantNumeric: 'tabular-nums' }}>
+              {w.name}: ใช้ {Number(w.needed).toLocaleString('en-US')} {w.unit} · ในระบบเหลือ {Number(w.had).toLocaleString('en-US')} {w.unit}
+            </div>
+          ))}
+        </div>
+      )}
 
       {printStatus === 'error' && (
         <div role="alert" style={{

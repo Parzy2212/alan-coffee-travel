@@ -7,7 +7,7 @@ import { MoneyInput } from '@/components/MoneyInput'
 import { PinPad } from '@/components/pos/PinPad'
 import { CashDrawer } from '@/components/pos/CashDrawer'
 import { ActiveEmployeeBadge } from '@/components/pos/ActiveEmployeeBadge'
-import { OrderSuccess, type PrintStatus } from '@/components/pos/OrderSuccess'
+import { OrderSuccess, type PrintStatus, type StockWarning } from '@/components/pos/OrderSuccess'
 import { KeyboardShortcuts } from '@/components/pos/KeyboardShortcuts'
 import { CustomerSelector } from '@/components/pos/CustomerSelector'
 import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
@@ -66,13 +66,25 @@ type Recipe = {
   image_url: string | null
   requires_customization: boolean | null
   default_sweetness: string | null
+  // active variants only, cheapest first within the same sort order (072)
+  variants: MenuVariant[]
 }
 
+type MenuVariant = { id: string; kind: 'default' | 'hot' | 'iced'; price_lak: number; sort_order: number }
+
+type Sweetness = 'none' | 'less' | 'normal' | 'more'
+
+// variantId / sweetness / extraShots / unitPrice are missing on carts saved before 072
+// (this device's pos_cart and held orders); refreshCartItem fills them from the menu
 type CartItem = {
   cartKey: string
   recipe: Recipe
   qty: number
   customization: string
+  variantId?: string | null
+  sweetness?: Sweetness
+  extraShots?: number
+  unitPrice?: number
 }
 
 type HeldOrder = {
@@ -114,6 +126,7 @@ type SuccessData = {
   finalTotal: number
   receiptLang: Lang
   isTest: boolean
+  stockWarnings: StockWarning[]
 }
 
 type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
@@ -181,7 +194,63 @@ function sweetnessFromDefault(ds: string | null): string {
   return 'หวานปกติ'
 }
 
+// The Thai label is what the cart, queue and receipt show; the code is what the database cuts stock by
+function sweetnessCode(text: string): Sweetness {
+  if (text.includes('ไม่หวาน')) return 'none'
+  if (text.includes('หวานน้อย')) return 'less'
+  if (text.includes('หวานมาก')) return 'more'
+  return 'normal'
+}
+
+const VARIANT_LABEL: Record<MenuVariant['kind'], string> = { default: '', hot: 'ร้อน', iced: 'เย็น' }
+
+// Same choice checkout_order makes for a line without a variant (072): the one price,
+// else the hot/iced named in the note, else the first variant
+function pickVariant(recipe: Recipe, customization: string): MenuVariant | null {
+  const vs = recipe.variants ?? []
+  const def = vs.find(v => v.kind === 'default')
+  if (def) return def
+  const kind = /(เย็น|ເຢັນ|Iced)/.test(customization) ? 'iced' : /(ร้อน|ຮ້ອນ|Hot)/.test(customization) ? 'hot' : null
+  return vs.find(v => v.kind === kind) ?? vs[0] ?? null
+}
+
+function cartKeyOf(recipeId: string, variantId: string | null | undefined, customization: string): string {
+  return `${recipeId}::${variantId ?? ''}::${customization}`
+}
+
+function lineUnitPrice(item: CartItem): number {
+  return item.unitPrice ?? item.recipe.price_lak
+}
+
+// Re-prices a cart line against the menu as it is now, so the total shown is what checkout_order
+// charges after a price change. Returns the same object when nothing changed.
+function refreshCartItem(item: CartItem, current: Recipe | undefined, shotPrice: number | null): CartItem {
+  if (!current) {
+    // menu item switched off or not loaded: left as is, checkout refuses it with a message
+    return item.recipe.variants ? item : { ...item, recipe: { ...item.recipe, variants: [] } }
+  }
+  if (item.variantId) {
+    const v = current.variants.find(x => x.id === item.variantId)
+    // that hot/iced is switched off: never swap the drink silently, checkout refuses it with a message
+    if (!v) return item.recipe === current ? item : { ...item, recipe: current }
+    const unitPrice = v.price_lak + (item.extraShots ?? 0) * (shotPrice ?? 0)
+    return item.recipe === current && item.unitPrice === unitPrice ? item : { ...item, recipe: current, unitPrice }
+  }
+  const v = pickVariant(current, item.customization)
+  const shots = item.extraShots ?? 0
+  const unitPrice = (v?.price_lak ?? current.price_lak) + shots * (shotPrice ?? 0)
+  // a menu with no variants (old offline menu copy) keeps variantId null: unchanged must stay the same object
+  if (!v && item.recipe === current && item.unitPrice === unitPrice) return item
+  return {
+    ...item, recipe: current, variantId: v?.id ?? null,
+    sweetness: item.sweetness ?? sweetnessCode(item.customization), extraShots: shots,
+    unitPrice, cartKey: cartKeyOf(current.id, v?.id, item.customization),
+  }
+}
+
+
 const NETWORK_TIMEOUT_MS = 10000
+const MENU_CACHE_KEY = 'pos-menu-v2'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -218,18 +287,15 @@ function offlineCheckoutArgs(payload: Record<string, unknown>, order: OfflineOrd
 function translateError(msg: string): string {
   if (msg.includes('DISCOUNT_NEEDS_PIN')) return 'ส่วนลดเกินเพดาน ต้องใช้ PIN ผู้จัดการ'
   if (msg.includes('TEST_MODE_OFF')) return 'โหมดทดสอบหมดเวลาหรือถูกปิดแล้ว กดคิดเงินอีกครั้ง บิลนี้จะเป็นบิลจริง'
-  if (msg.includes('PRICE_CHANGED')) return 'ราคาเมนูเปลี่ยนแล้ว กด F5 โหลดหน้าใหม่ แล้วคิดเงินอีกครั้ง'
-  if (msg.includes('menu item not available')) return 'มีเมนูในบิลที่ถูกปิดหรือลบไปแล้ว กด F5 โหลดหน้าใหม่'
+  if (msg.includes('PRICE_CHANGED')) return 'ราคาเมนูเปลี่ยนแล้ว กด F5 โหลดหน้าใหม่ (ยอดในตะกร้าจะเป็นราคาใหม่) แล้วคิดเงินอีกครั้ง'
+  if (msg.includes('menu item not available')) return 'มีเมนู (หรือแบบร้อน/เย็น) ในบิลที่ถูกปิดหรือลบไปแล้ว ลบรายการนั้นออกจากตะกร้า แล้วเพิ่มใหม่'
   if (msg.includes('cash received is less')) return 'เงินที่รับมาไม่เพียงพอ'
   if (msg.includes('discount must be')) return 'ส่วนลดมากกว่ายอดบิล'
   if (msg.includes('split payment is less')) return 'เงินสด + โอน ยังไม่ครบยอดบิล'
   if (msg.includes('transfer part is more')) return 'ยอดโอนมากกว่ายอดบิล ส่วนที่เกินต้องเป็นเงินสด'
   if (msg.includes('employee is not an active')) return 'พนักงานที่เข้ากะอยู่ไม่ได้อยู่ในร้านนี้ ออกจากกะแล้วใส่ PIN ใหม่'
-  if (msg.includes('Insufficient stock')) {
-    const match = msg.match(/"([^"]+)"/)
-    const ingredient = match?.[1] ?? 'วัตถุดิบ'
-    return `วัตถุดิบไม่เพียงพอ: ${ingredient}`
-  }
+  if (msg.includes('EXTRA_SHOT_NOT_SET')) return 'ร้านยังไม่ได้ตั้งราคา extra shot ลบ extra shot ออกจากบิล หรือให้เจ้าของตั้งราคาในหลังร้านก่อน'
+  if (msg.includes('variant does not belong')) return 'แบบร้อน/เย็นในบิลไม่ตรงกับเมนู ลบรายการนั้นออกจากตะกร้า แล้วเพิ่มใหม่'
   if (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('fetch'))
     return 'ไม่สามารถเชื่อมต่อได้ กรุณาลองใหม่'
   if (msg.includes('JWT') || msg.includes('auth'))
@@ -428,7 +494,7 @@ function CartItemCard({
           fontSize: 14, fontWeight: 700, color: GOLD,
           fontVariantNumeric: 'tabular-nums', paddingRight: 4,
         }}>
-          {(item.recipe.price_lak * item.qty).toLocaleString('en-US')} ₭
+          {(lineUnitPrice(item) * item.qty).toLocaleString('en-US')} ₭
         </div>
 
         {/* Edit */}
@@ -478,7 +544,10 @@ const TEMP_OPTIONS = [
   { value: 'ร้อน', icon: '🔥' },
   { value: 'เย็น', icon: '❄️' },
 ]
-const NOTE_CHIPS = ['ไม่ใส่น้ำแข็ง', 'extra shot', 'ห่อแยก']
+// extra shot is a priced option now (072), not a free note
+const NOTE_CHIPS = ['ไม่ใส่น้ำแข็ง', 'ห่อแยก']
+
+type PopupLine = { customization: string; qty: number; variantId: string | null; sweetness: Sweetness; extraShots: number; unitPrice: number }
 
 const POPUP_ANIM = `
 @keyframes cpopup-overlay { from{opacity:0} to{opacity:1} }
@@ -489,23 +558,38 @@ const POPUP_ANIM = `
 div:hover > .menu-pin-btn { opacity: 1 !important; }
 `
 
-function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initialQty }: {
+const SHOT_RE = /^extra shot( x\d+)?$/
+
+function CustomPopup({ recipe, shotPrice, onConfirm, onClose, initialCustomization, initialQty, initialVariantId, initialShots }: {
   recipe: Recipe
-  onConfirm: (customization: string, qty: number) => void
+  shotPrice: number | null
+  onConfirm: (line: PopupLine) => void
   onClose: () => void
   initialCustomization?: string
   initialQty?: number
+  initialVariantId?: string | null
+  initialShots?: number
 }) {
   // Old carts may still say อุ่น (option removed 2026-11-11; the shop serves hot or iced only)
   const initParts    = (initialCustomization?.split(' · ') ?? []).map(p => p === 'อุ่น' ? 'ร้อน' : p)
   const defaultSweet = sweetnessFromDefault(recipe.default_sweetness)
+  // hot/iced with their own prices once the owner sets them; until then hot/iced is only a note
+  const tempVariants = recipe.variants.filter(v => v.kind !== 'default')
+  const isKnownPart  = (p: string) => SWEETNESS_OPTIONS.some(s => s.value === p) || TEMP_OPTIONS.some(t => t.value === p) || SHOT_RE.test(p)
 
   const [sweetness, setSweetness] = useState(() => SWEETNESS_OPTIONS.find(s => initParts.includes(s.value))?.value ?? defaultSweet)
   const [temp,      setTemp]      = useState(() => TEMP_OPTIONS.find(t => initParts.includes(t.value))?.value ?? 'ร้อน')
-  const [note,      setNote]      = useState(() => initParts.filter(p => !SWEETNESS_OPTIONS.some(s => s.value === p) && !TEMP_OPTIONS.some(t => t.value === p)).join(' · '))
+  const [variantId, setVariantId] = useState<string | null>(() =>
+    (initialVariantId && recipe.variants.some(v => v.id === initialVariantId) ? initialVariantId : null)
+    ?? pickVariant(recipe, initialCustomization ?? '')?.id ?? null)
+  const [shots,     setShots]     = useState(() => (shotPrice ? initialShots ?? 0 : 0))
+  const [note,      setNote]      = useState(() => initParts.filter(p => !isKnownPart(p)).join(' · '))
   const [qty,       setQty]       = useState(initialQty ?? 1)
-  const [noteOpen,  setNoteOpen]  = useState(() => initParts.some(p => !SWEETNESS_OPTIONS.some(s => s.value === p) && !TEMP_OPTIONS.some(t => t.value === p) && p.length > 0))
+  const [noteOpen,  setNoteOpen]  = useState(() => initParts.some(p => !isKnownPart(p) && p.length > 0))
   const overlayRef                = useRef<HTMLDivElement>(null)
+
+  const variant   = recipe.variants.find(v => v.id === variantId) ?? null
+  const unitPrice = (variant?.price_lak ?? recipe.price_lak) + shots * (shotPrice ?? 0)
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -518,12 +602,16 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
   }
 
   function handleConfirm() {
-    const parts = [sweetness, temp]
+    const parts = [sweetness, tempVariants.length > 0 ? (variant ? VARIANT_LABEL[variant.kind] : '') : temp]
+    if (shots > 0) parts.push(shots === 1 ? 'extra shot' : `extra shot x${shots}`)
     if (note.trim()) parts.push(note.trim())
-    onConfirm(parts.join(' · '), qty)
+    onConfirm({
+      customization: parts.filter(Boolean).join(' · '), qty, variantId: variant?.id ?? null,
+      sweetness: sweetnessCode(sweetness), extraShots: shots, unitPrice,
+    })
   }
 
-  const total = recipe.price_lak * qty
+  const total = unitPrice * qty
 
   const optCard = (selected: boolean): React.CSSProperties => ({
     padding: '16px 12px', borderRadius: 12, cursor: 'pointer', border: 'none',
@@ -585,7 +673,7 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
               </div>
             )}
             <div style={{ fontSize: 15, color: GOLD, fontWeight: 700, marginTop: 5 }}>
-              {recipe.price_lak.toLocaleString()} ₭
+              {(variant?.price_lak ?? recipe.price_lak).toLocaleString()} ₭
             </div>
           </div>
           <button onClick={onClose} style={{
@@ -659,7 +747,16 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
           <section>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 14 }}>อุณหภูมิ</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
-              {TEMP_OPTIONS.map(opt => {
+              {tempVariants.length > 0 ? tempVariants.map(v => {
+                const sel = variantId === v.id
+                return (
+                  <button key={v.id} onClick={() => setVariantId(v.id)} style={optCard(sel)}>
+                    <span style={{ fontSize: 24, lineHeight: 1 }}>{v.kind === 'iced' ? '❄️' : '🔥'}</span>
+                    <span style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.2 }}>{VARIANT_LABEL[v.kind]}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{v.price_lak.toLocaleString()} ₭</span>
+                  </button>
+                )
+              }) : TEMP_OPTIONS.map(opt => {
                 const sel = temp === opt.value
                 return (
                   <button key={opt.value} onClick={() => setTemp(opt.value)} style={optCard(sel)}
@@ -673,6 +770,27 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
               })}
             </div>
           </section>
+
+          {/* Extra shot: only when the owner has set its price (072) */}
+          {shotPrice != null && (
+            <section>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 14 }}>
+                extra shot <span style={{ textTransform: 'none', letterSpacing: 0 }}>+{shotPrice.toLocaleString()} ₭ / shot</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'center' }}>
+                <button onClick={() => setShots(n => Math.max(0, n - 1))} disabled={shots === 0} aria-label="ลด extra shot" style={{
+                  width: 52, height: 52, borderRadius: 12, border: 'none', outline: '1.5px solid rgba(255,255,255,0.12)',
+                  backgroundColor: 'rgba(255,255,255,0.04)', color: shots === 0 ? 'rgba(255,255,255,0.2)' : '#fff',
+                  fontSize: 26, cursor: shots === 0 ? 'not-allowed' : 'pointer',
+                }}>−</button>
+                <div style={{ width: 56, textAlign: 'center', fontSize: 28, fontWeight: 700, color: shots > 0 ? GOLD : '#fff' }}>{shots}</div>
+                <button onClick={() => setShots(n => Math.min(9, n + 1))} disabled={shots >= 9} aria-label="เพิ่ม extra shot" style={{
+                  width: 52, height: 52, borderRadius: 12, border: 'none', outline: `1.5px solid ${GOLD}`,
+                  backgroundColor: 'rgba(201,168,76,0.12)', color: GOLD, fontSize: 26, cursor: shots >= 9 ? 'not-allowed' : 'pointer',
+                }}>+</button>
+              </div>
+            </section>
+          )}
 
           {/* Note (collapsible) */}
           <section>
@@ -740,7 +858,7 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
             <div style={{ textAlign: 'right' }}>
               {qty > 1 && (
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
-                  {recipe.price_lak.toLocaleString()} ₭ × {qty}
+                  {unitPrice.toLocaleString()} ₭ × {qty}
                 </div>
               )}
               <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>
@@ -771,7 +889,7 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
 
 function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, vipPct, discountReason, activeEmployeeId, shopId, selectedCustomer, isTestMode, onTestModeOff, defaultLang, onSuccess, onClose }: {
   subtotal: number
-  cartPayload: { recipe_id: string; qty: number; unit_price_lak: number; customization: string | null; name?: string }[]
+  cartPayload: { recipe_id: string; variant_id: string | null; qty: number; unit_price_lak: number; customization: string | null; sweetness: Sweetness; extra_shots: number; name?: string }[]
   discount: string
   discountReason: string
   activeEmployeeId?: string | null
@@ -782,7 +900,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, vipPct, 
   discountCapLak: number
   vipPct: number
   defaultLang?: Lang
-  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string, receiptLang: Lang, splitTransfer: number) => void
+  onSuccess: (queueNum: number, receipt: string, change: number, method: PaymentMethod, customer: string, table: string, discountAmt: number, received: number, discountReason: string, receiptLang: Lang, splitTransfer: number, stockWarnings: StockWarning[]) => void
   onClose: () => void
 }) {
   const isSmall = useIsSmall()
@@ -920,7 +1038,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, vipPct, 
       p_client_uuid:     clientUuid.current,
       p_shop_id:         shopId,
       p_employee_id:     activeEmployeeId && UUID_RE.test(activeEmployeeId) ? activeEmployeeId : null,
-      p_cart:            cartPayload.map(({ recipe_id, qty, customization }) => ({ recipe_id, qty, customization })),
+      p_cart:            cartPayload.map(({ recipe_id, variant_id, qty, customization, sweetness, extra_shots }) => ({ recipe_id, variant_id, qty, customization, sweetness, extra_shots })),
       p_customer_id:     customerId,
       p_payment_method:  method,
       p_amount_received: method === 'cash' ? receivedNum : null,
@@ -948,7 +1066,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, vipPct, 
         setErrMsg(`บันทึกบิลในเครื่องไม่สำเร็จ ห้ามรับเงิน ลองใหม่อีกครั้ง (${e instanceof Error ? e.message : String(e)})`); setLoading(false); return
       }
       window.dispatchEvent(new Event('alan:queue-changed'))
-      onSuccess(offlineQueue, String(offlineQueue).padStart(3, '0'), Math.max(changeAmt, 0), method, customerName, table, sentDiscount, cashIn, discountReason, receiptLang, xferIn)
+      onSuccess(offlineQueue, String(offlineQueue).padStart(3, '0'), Math.max(changeAmt, 0), method, customerName, table, sentDiscount, cashIn, discountReason, receiptLang, xferIn, [])
       setLoading(false)
     }
 
@@ -974,8 +1092,8 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, vipPct, 
       setErrMsg(translateError(error.message)); setLoading(false); return
     }
 
-    const result = data as { queue_number: number; change_lak: number | null; discount_lak: number }
-    onSuccess(result.queue_number, String(result.queue_number).padStart(3, '0'), Math.max(result.change_lak ?? 0, 0), method, customerName, table, Number(result.discount_lak) || 0, cashIn, discountReason, receiptLang, xferIn)
+    const result = data as { queue_number: number; change_lak: number | null; discount_lak: number; stock_warnings?: StockWarning[] }
+    onSuccess(result.queue_number, String(result.queue_number).padStart(3, '0'), Math.max(result.change_lak ?? 0, 0), method, customerName, table, Number(result.discount_lak) || 0, cashIn, discountReason, receiptLang, xferIn, result.stock_warnings ?? [])
     setLoading(false)
   }
 
@@ -2164,6 +2282,8 @@ export default function POSClient() {
   const [successData,  setSuccessData]  = useState<SuccessData | null>(null)
   const [posSettings,  setPosSettings]  = useState<PosSettings>({ shop_name: '', vat_percent: 0, discount_round_step: DEFAULT_DISCOUNT_ROUND_STEP, qr_payment_number: '', shop_line: '', shop_facebook: '', shop_address: '', shop_phone: '', receipt_footer: '' })
   const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null)
+  const [extraShotPrice, setExtraShotPrice] = useState<number | null>(null)
+  const [shotNote, setShotNote] = useState<string | null>(null)
   const [editingCartKey, setEditingCartKey] = useState<string | null>(null)
   const [discountPreset,      setDiscountPreset]      = useState<DiscountKey | ''>('')
   const [discountOtherAmt,    setDiscountOtherAmt]    = useState('')
@@ -2321,20 +2441,29 @@ export default function POSClient() {
     const { getCached, setCache } = await import('@/lib/menu-cache')
     const { data, error } = await supabase
       .from('recipes')
-      .select('id, product_name, product_name_th, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness')
+      .select('id, product_name, product_name_th, product_name_lo, category_id, price_lak, image_url, requires_customization, default_sweetness, menu_variants(id, kind, price_lak, sort_order, is_active)')
       .eq('is_active', true)
       .order('product_name')
       .abortSignal(AbortSignal.timeout(NETWORK_TIMEOUT_MS))
     if (seq !== menuSeq.current) return
     if (!error) {
-      const list = (data ?? []).map(r => ({ ...r, category: null })) as Recipe[]
+      type Row = Omit<Recipe, 'category' | 'variants'> & { menu_variants: (MenuVariant & { is_active: boolean })[] | null }
+      const list: Recipe[] = ((data ?? []) as Row[]).map(({ menu_variants, ...r }) => ({
+        ...r, category: null,
+        variants: (menu_variants ?? []).filter(v => v.is_active)
+          .sort((a, b) => a.sort_order - b.sort_order || a.price_lak - b.price_lak)
+          .map(({ id, kind, price_lak, sort_order }) => ({ id, kind, price_lak, sort_order })),
+      }))
       setRecipes(list)
       setMenuNote(null)
       setLoading(false)
-      await setCache('pos-menu', list)
+      await setCache(MENU_CACHE_KEY, list)
       return
     }
-    const saved = await getCached<Recipe[]>('pos-menu')
+    // v2 = menu with variants (072). A device that has only the copy saved before 072 still sells
+    // offline from it, at the menu price, as before.
+    const saved = (await getCached<Recipe[]>(MENU_CACHE_KEY))
+      ?? await getCached<Omit<Recipe, 'variants'>[]>('pos-menu').then(old => old && { ...old, data: old.data.map(r => ({ ...r, variants: [] })) })
     if (seq !== menuSeq.current) return
     if (saved) {
       setRecipes(saved.data)
@@ -2350,10 +2479,47 @@ export default function POSClient() {
     void loadMenu()
     const channel = supabase.channel('recipes-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipes' }, () => { void loadMenu() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_variants' }, () => { void loadMenu() })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [loadMenu])
+
+  // Extra shot price (072): no price set = no extra shot option. The last value is kept on this
+  // device so an offline POS still charges for it.
+  const loadExtraShotPrice = useCallback(() => {
+    let hadSaved = false
+    try {
+      const saved = localStorage.getItem('pos_extra_shot_price')
+      if (saved !== null) { hadSaved = true; setExtraShotPrice(saved === '' ? null : Number(saved)) }
+    } catch { /* storage blocked */ }
+    if (!shopId) return
+    supabase.from('shops').select('extra_shot_price_lak').eq('id', shopId).maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          setShotNote(hadSaved
+            ? `โหลดราคา extra shot ไม่ได้ ใช้ราคาที่บันทึกไว้ในเครื่อง: ${error.message}`
+            : `โหลดราคา extra shot ไม่ได้ ปุ่ม extra shot จะไม่แสดงจนกว่าจะโหลดได้: ${error.message}`)
+          return
+        }
+        setShotNote(null)
+        const price = data?.extra_shot_price_lak == null ? null : Number(data.extra_shot_price_lak)
+        setExtraShotPrice(price)
+        try { localStorage.setItem('pos_extra_shot_price', price == null ? '' : String(price)) } catch { /* storage blocked */ }
+      })
+  }, [shopId])
+
+  useEffect(() => { loadExtraShotPrice() }, [loadExtraShotPrice])
+
+  // Every cart line follows the menu as loaded now (also carts and held bills saved before 072)
+  useEffect(() => {
+    if (cart.length === 0) return
+    const byId = new Map(recipes.map(r => [r.id, r]))
+    setCart(prev => {
+      const next = prev.map(i => refreshCartItem(i, byId.get(i.recipe.id), extraShotPrice))
+      return next.some((x, n) => x !== prev[n]) ? next : prev
+    })
+  }, [recipes, cart, extraShotPrice])
 
   // L1 / L2 categories — exclude placeholder "." entries
   const l1Categories = useMemo(() => categories.filter(c => c.parent_id === null && c.name !== '.'), [categories])
@@ -2393,7 +2559,7 @@ export default function POSClient() {
     })
   }, [filtered, searchQuery, pinnedIds])
 
-  const subtotal   = cart.reduce((s, i) => s + i.recipe.price_lak * i.qty, 0)
+  const subtotal   = cart.reduce((s, i) => s + lineUnitPrice(i) * i.qty, 0)
   const totalItems = cart.reduce((s, i) => s + i.qty, 0)
 
   const baseDiscountAmt = discountPreset === 'employee' ? Math.round(subtotal * 0.15)
@@ -2415,39 +2581,51 @@ export default function POSClient() {
   const finalTotal = Math.max(subtotal - discountAmt, 0)
 
   // Cart actions
-  function editCartItem(oldKey: string, newCustomization: string, newQty?: number) {
+  function editCartItem(oldKey: string, line: PopupLine) {
     setCart(prev => {
       const item = prev.find(i => i.cartKey === oldKey)
       if (!item) return prev
-      const updatedQty = newQty ?? item.qty
-      const newKey = `${item.recipe.id}::${newCustomization}`
+      const newKey = cartKeyOf(item.recipe.id, line.variantId, line.customization)
+      const fields = { customization: line.customization, variantId: line.variantId, sweetness: line.sweetness, extraShots: line.extraShots, unitPrice: line.unitPrice }
       const existing = prev.find(i => i.cartKey === newKey && i.cartKey !== oldKey)
       if (existing) {
         return prev
           .filter(i => i.cartKey !== oldKey)
-          .map(i => i.cartKey === newKey ? { ...i, qty: i.qty + updatedQty } : i)
+          .map(i => i.cartKey === newKey ? { ...i, ...fields, qty: i.qty + line.qty } : i)
       }
-      return prev.map(i => i.cartKey === oldKey ? { ...i, cartKey: newKey, customization: newCustomization, qty: updatedQty } : i)
+      return prev.map(i => i.cartKey === oldKey ? { ...i, ...fields, cartKey: newKey, qty: line.qty } : i)
     })
   }
 
-  const addToCartWithCustomization = useCallback((recipe: Recipe, customization: string, qty = 1) => {
-    const cartKey = `${recipe.id}::${customization}`
+  const addToCartWithCustomization = useCallback((recipe: Recipe, line: PopupLine) => {
+    const cartKey = cartKeyOf(recipe.id, line.variantId, line.customization)
     setCart(prev => {
       const existing = prev.find(i => i.cartKey === cartKey)
-      if (existing) return prev.map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + qty } : i)
-      return [...prev, { cartKey, recipe, qty, customization }]
+      if (existing) return prev.map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + line.qty } : i)
+      return [...prev, {
+        cartKey, recipe, qty: line.qty, customization: line.customization, variantId: line.variantId,
+        sweetness: line.sweetness, extraShots: line.extraShots, unitPrice: line.unitPrice,
+      }]
     })
     setPendingRecipe(null)
   }, [])
 
+  // nothing to ask = straight into the cart; hot/iced prices always ask
   const handleMenuAdd = useCallback((recipe: Recipe) => {
-    if (recipe.requires_customization === false) {
-      addToCartWithCustomization(recipe, '')
+    if (recipe.requires_customization === false && recipe.variants.length <= 1) {
+      const v = pickVariant(recipe, '')
+      addToCartWithCustomization(recipe, {
+        customization: '', qty: 1, variantId: v?.id ?? null, sweetness: 'normal', extraShots: 0,
+        unitPrice: v?.price_lak ?? recipe.price_lak,
+      })
     } else {
       setPendingRecipe(recipe)
     }
   }, [addToCartWithCustomization])
+
+  function incrementCartItem(cartKey: string) {
+    setCart(prev => prev.map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + 1 } : i))
+  }
 
   const handleMenuPin = useCallback((id: string) => {
     setPinnedIds(togglePinnedRecipe(id))
@@ -2467,7 +2645,7 @@ export default function POSClient() {
   function handleChargeSuccess(
     queueNum: number, receipt: string, change: number, method: PaymentMethod,
     customer: string, table: string, discAmt: number, received: number, discReason: string,
-    receiptLang: Lang = 'en', splitTransfer = 0,
+    receiptLang: Lang = 'en', splitTransfer = 0, stockWarnings: StockWarning[] = [],
   ) {
     const cartSnapshot = [...cart]
     const data: SuccessData = {
@@ -2481,6 +2659,7 @@ export default function POSClient() {
       finalTotal,
       receiptLang,
       isTest: testMode,
+      stockWarnings,
     }
     setSuccessData(data)
     setCart([])
@@ -2712,26 +2891,23 @@ export default function POSClient() {
           e.preventDefault()
           const idx = Number(e.key) - 1
           const recipe = displayRecipes[idx]
-          if (recipe) {
-            if (recipe.requires_customization === false) {
-              addToCartWithCustomization(recipe, '')
-            } else {
-              setPendingRecipe(recipe)
-            }
-          }
+          if (recipe) handleMenuAdd(recipe)
           return
         }
       }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showOrderSuccess, showCustomerSelector, displayRecipes, showAppMenu, addToCartWithCustomization])
+  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showOrderSuccess, showCustomerSelector, displayRecipes, showAppMenu, handleMenuAdd])
 
   const cartPayload = cart.map(item => ({
     recipe_id:      item.recipe.id,
+    variant_id:     item.variantId ?? null,
     qty:            item.qty,
-    unit_price_lak: item.recipe.price_lak,
+    unit_price_lak: lineUnitPrice(item),
     customization:  item.customization || null,
+    sweetness:      item.sweetness ?? sweetnessCode(item.customization),
+    extra_shots:    item.extraShots ?? 0,
     name:           item.recipe.product_name,
   }))
 
@@ -2747,8 +2923,8 @@ export default function POSClient() {
 
       {/* Popups */}
       {pendingRecipe && (
-        <CustomPopup recipe={pendingRecipe}
-          onConfirm={(customization, qty) => addToCartWithCustomization(pendingRecipe, customization, qty)}
+        <CustomPopup recipe={pendingRecipe} shotPrice={extraShotPrice}
+          onConfirm={line => addToCartWithCustomization(pendingRecipe, line)}
           onClose={() => setPendingRecipe(null)} />
       )}
 
@@ -2756,10 +2932,12 @@ export default function POSClient() {
         const editItem = cart.find(i => i.cartKey === editingCartKey)
         if (!editItem) return null
         return (
-          <CustomPopup recipe={editItem.recipe}
+          <CustomPopup recipe={editItem.recipe} shotPrice={extraShotPrice}
             initialCustomization={editItem.customization}
             initialQty={editItem.qty}
-            onConfirm={(newCustomization, newQty) => { editCartItem(editingCartKey, newCustomization, newQty); setEditingCartKey(null) }}
+            initialVariantId={editItem.variantId}
+            initialShots={editItem.extraShots}
+            onConfirm={line => { editCartItem(editingCartKey, line); setEditingCartKey(null) }}
             onClose={() => setEditingCartKey(null)} />
         )
       })()}
@@ -2842,6 +3020,7 @@ export default function POSClient() {
           printStatus={printStatus}
           printError={printError}
           onRetryPrint={runPrint}
+          stockWarnings={successData.stockWarnings}
         />
       )}
 
@@ -2968,6 +3147,14 @@ export default function POSClient() {
             <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.35)', fontSize: 12, color: '#f59e0b', lineHeight: 1.5, flexShrink: 0 }}>
               <span style={{ flex: 1 }}>{menuNote}</span>
               <button onClick={() => { void loadMenu() }} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.5)', background: 'none', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+                ลองใหม่
+              </button>
+            </div>
+          )}
+          {shotNote && (
+            <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.35)', fontSize: 12, color: '#f59e0b', lineHeight: 1.5, flexShrink: 0 }}>
+              <span style={{ flex: 1 }}>{shotNote}</span>
+              <button onClick={loadExtraShotPrice} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.5)', background: 'none', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
                 ลองใหม่
               </button>
             </div>
@@ -3130,7 +3317,7 @@ export default function POSClient() {
                   key={item.cartKey}
                   item={item}
                   onDecrement={() => decrement(item.cartKey)}
-                  onIncrement={() => addToCartWithCustomization(item.recipe, item.customization)}
+                  onIncrement={() => incrementCartItem(item.cartKey)}
                   onEdit={() => setEditingCartKey(item.cartKey)}
                   onDelete={() => setCart(prev => prev.filter(i => i.cartKey !== item.cartKey))}
                 />
@@ -3276,6 +3463,7 @@ const MenuCard = React.memo(function MenuCard({ recipe, lang, pinned, shortcutKe
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.2 }}>{altName}</span>
           )}
           <span style={{ fontSize: 15, fontWeight: 800, color: GOLD, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+            {recipe.variants.length > 1 && <span style={{ fontSize: 11, fontWeight: 500, marginRight: 4, opacity: 0.75 }}>เริ่มต้น</span>}
             {recipe.price_lak.toLocaleString('en-US')}
             <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 3, opacity: 0.75 }}>LAK</span>
           </span>

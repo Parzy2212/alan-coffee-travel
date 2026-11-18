@@ -30,8 +30,15 @@ const OPTION_TEXT: Record<string, { en: string; lo: string; th?: string }> = {
   'ห่อแยก':        { en: 'Packed separately', lo: 'ຫໍ່ແຍກ' },
 }
 
+// "extra shot x2" = 2 extra shots: the count is kept, the words are translated
+function translateOption(t: string, lang: ReceiptLang): string {
+  const m = t.trim().match(/^(.*?)( x\d+)?$/)
+  const known = m ? OPTION_TEXT[m[1]]?.[lang] : undefined
+  return known ? known + (m?.[2] ?? '') : t
+}
+
 export function translateCustomization(s: string, lang: ReceiptLang): string {
-  return s.split(' · ').map(part => part.split(', ').map(t => OPTION_TEXT[t.trim()]?.[lang] ?? t).join(', ')).join(' · ')
+  return s.split(' · ').map(part => part.split(', ').map(t => translateOption(t, lang)).join(', ')).join(' · ')
 }
 
 export const esc = (s: string) => s
@@ -66,7 +73,7 @@ export function buildReceiptHtml(data: PrintReceiptData, lang: ReceiptLang, desi
 
   for (const item of data.cartSnapshot) {
     const name = getMenuName(item.recipe, lang) + (item.qty > 1 ? ` x${item.qty}` : '')
-    out.push(design.showItemPrice ? row(name, lak((item.recipe.price_lak || 0) * item.qty), 'item') : `<div class="item">${esc(name)}</div>`)
+    out.push(design.showItemPrice ? row(name, lak((item.unitPrice ?? item.recipe.price_lak ?? 0) * item.qty), 'item') : `<div class="item">${esc(name)}</div>`)
     if (item.customization) out.push(`<div class="sub">${esc(translateCustomization(item.customization, lang))}</div>`)
   }
 

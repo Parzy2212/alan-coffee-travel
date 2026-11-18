@@ -16,7 +16,8 @@ export type PrintReceiptData = {
   table:          string
   customer:       string
   staffName?:     string
-  cartSnapshot:   { qty: number; recipe: { product_name: string; product_name_th?: string | null; product_name_lo?: string | null; price_lak: number }; customization: string }[]
+  // unitPrice = the line's own price (hot/iced, extra shots; 072); receipts kept from before have only recipe.price_lak
+  cartSnapshot:   { qty: number; recipe: { product_name: string; product_name_th?: string | null; product_name_lo?: string | null; price_lak: number }; customization: string; unitPrice?: number }[]
   subtotal:       number
   discountAmt:    number
   discountReason: string
@@ -56,7 +57,7 @@ export function saveForReprint(data: PrintReceiptData): void {
     all[String(data.queue)] = {
       ...data,
       cartSnapshot: data.cartSnapshot.map(i => ({
-        qty: i.qty, customization: i.customization,
+        qty: i.qty, customization: i.customization, unitPrice: i.unitPrice,
         recipe: { product_name: i.recipe.product_name, product_name_th: i.recipe.product_name_th, product_name_lo: i.recipe.product_name_lo, price_lak: i.recipe.price_lak },
       })),
     }
@@ -189,7 +190,7 @@ export function buildReceiptText(data: PrintReceiptData, design?: ReceiptDesign,
   for (const item of data.cartSnapshot) {
     const nameQty = toAscii(item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : ''))
     if (d.showItemPrice) {
-      L(padR(nameQty, NAME_W) + ' ' + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W))
+      L(padR(nameQty, NAME_W) + ' ' + fmtLak((item.unitPrice ?? item.recipe.price_lak ?? 0) * item.qty).padStart(PRICE_W))
     } else {
       L(nameQty.substring(0, W))
     }
@@ -523,7 +524,7 @@ export async function printReceipt(data: PrintReceiptData): Promise<void> {
   for (const item of data.cartSnapshot) {
     const nameQty = toAscii(item.recipe.product_name + (item.qty > 1 ? ` x${item.qty}` : ''))
     if (design.showItemPrice) {
-      p(line(padR(nameQty, NAME_W) + ' ' + fmtLak((item.recipe.price_lak || 0) * item.qty).padStart(PRICE_W)))
+      p(line(padR(nameQty, NAME_W) + ' ' + fmtLak((item.unitPrice ?? item.recipe.price_lak ?? 0) * item.qty).padStart(PRICE_W)))
     } else {
       p(line(nameQty.substring(0, W)))
     }
