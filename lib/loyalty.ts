@@ -42,6 +42,7 @@ export function computePointsEarned(totalLak: number, settings?: Partial<Loyalty
 }
 
 export function getVipDiscountPct(tier: VipTier, settings?: Partial<LoyaltySettings> | null): number {
+  if (settings?.enabled === false) return 0
   if (tier === 'platinum') return settings?.platinum_discount_percent ?? DEFAULT_SETTINGS.platinum_discount_percent
   if (tier === 'gold')     return settings?.gold_discount_percent     ?? DEFAULT_SETTINGS.gold_discount_percent
   if (tier === 'silver')   return settings?.silver_discount_percent   ?? DEFAULT_SETTINGS.silver_discount_percent

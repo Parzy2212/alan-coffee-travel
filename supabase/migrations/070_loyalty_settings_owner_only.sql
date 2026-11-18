@@ -5,7 +5,8 @@
 -- Gold 5 / Platinum 10, so a changed % did nothing. The table had an anon "do anything"
 -- policy, so anyone with the public key could rewrite the settings.
 -- After (owner decision 2026-11-18):
---   * checkout_order's cap = 15% + the % saved for the customer's tier (no row: 0 / 5 / 10)
+--   * checkout_order's cap = 15% + the % saved for the customer's tier (no row: 0 / 5 / 10;
+--     loyalty switched off (enabled = false): no VIP %)
 --   * loyalty_settings is read-only for the app; changes go through update_loyalty_settings,
 --     which only an active owner of that shop may call, and every change is logged
 --     (who, when, before, after) in loyalty_settings_changes.
@@ -124,8 +125,9 @@ GRANT EXECUTE ON FUNCTION public.update_loyalty_settings(uuid, jsonb) TO authent
 CREATE OR REPLACE FUNCTION public.vip_discount_percent(p_shop_id uuid, p_tier text)
 RETURNS int LANGUAGE sql STABLE SET search_path = public, pg_temp AS $fn$
   SELECT COALESCE(
-    (SELECT CASE p_tier WHEN 'platinum' THEN l.platinum_discount_percent WHEN 'gold' THEN l.gold_discount_percent
-                        WHEN 'silver' THEN l.silver_discount_percent END
+    (SELECT CASE WHEN NOT l.enabled THEN 0
+                 WHEN p_tier = 'platinum' THEN l.platinum_discount_percent WHEN p_tier = 'gold' THEN l.gold_discount_percent
+                 WHEN p_tier = 'silver' THEN l.silver_discount_percent END
      FROM public.loyalty_settings l WHERE l.shop_id = p_shop_id),
     CASE p_tier WHEN 'platinum' THEN 10 WHEN 'gold' THEN 5 ELSE 0 END)
 $fn$;

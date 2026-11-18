@@ -146,8 +146,9 @@ GRANT EXECUTE ON FUNCTION public.update_loyalty_settings(uuid, jsonb) TO authent
 CREATE OR REPLACE FUNCTION public.vip_discount_percent(p_shop_id uuid, p_tier text)
 RETURNS int LANGUAGE sql STABLE SET search_path = public, pg_temp AS $fn$
   SELECT COALESCE(
-    (SELECT CASE p_tier WHEN 'platinum' THEN l.platinum_discount_percent WHEN 'gold' THEN l.gold_discount_percent
-                        WHEN 'silver' THEN l.silver_discount_percent END
+    (SELECT CASE WHEN NOT l.enabled THEN 0
+                 WHEN p_tier = 'platinum' THEN l.platinum_discount_percent WHEN p_tier = 'gold' THEN l.gold_discount_percent
+                 WHEN p_tier = 'silver' THEN l.silver_discount_percent END
      FROM public.loyalty_settings l WHERE l.shop_id = p_shop_id),
     CASE p_tier WHEN 'platinum' THEN 10 WHEN 'gold' THEN 5 ELSE 0 END)
 $fn$;
@@ -260,11 +261,28 @@ $swap$;
     report := report || CASE WHEN (v_res->>'discount_lak')::numeric = v_cap THEN E'\nPASS T8a Gold 23% accepted without PIN' ELSE E'\nFAIL T8a ' || v_res::text END;
   EXCEPTION WHEN OTHERS THEN report := report || E'\nFAIL T8a refused: ' || SQLERRM;
   END;
+  -- a paid bill re-ranks the customer from their points (the test customer has few), so set Gold again
+  UPDATE public.customers SET vip_tier = 'gold' WHERE id = v_gold;
   BEGIN
     PERFORM public.checkout_order(gen_random_uuid(), c_shop, v_cashier, v_cart, v_gold, 'cash', v_sub, v_cap + 1, 'T8', NULL, NULL, NULL, false, v_sub - v_cap - 1);
     report := report || E'\nFAIL T8b above 23% went through';
   EXCEPTION WHEN OTHERS THEN
     report := report || CASE WHEN SQLERRM LIKE 'DISCOUNT_NEEDS_PIN%' THEN E'\nPASS T8b above 23% needs the PIN' ELSE E'\nFAIL T8b ' || SQLERRM END;
+  END;
+
+  -- T10 owner switches loyalty off: no VIP % in the cap, so the Gold 23% bill now needs the PIN
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated', 'email', 'owner@test070')::text, true);
+  PERFORM set_config('request.jwt.claim.sub', c_owner::text, true);
+  PERFORM public.update_loyalty_settings(c_shop, '{"enabled": false}');
+  UPDATE public.customers SET vip_tier = 'gold' WHERE id = v_gold;
+  PERFORM set_config('request.jwt.claims', '', true);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  BEGIN
+    PERFORM public.checkout_order(gen_random_uuid(), c_shop, v_cashier, v_cart, v_gold, 'cash', v_sub, v_cap, 'T10', NULL, NULL, NULL, false, v_sub - v_cap);
+    report := report || E'\nFAIL T10 loyalty off but Gold 23% went through';
+  EXCEPTION WHEN OTHERS THEN
+    report := report || CASE WHEN SQLERRM LIKE 'DISCOUNT_NEEDS_PIN%' AND public.vip_discount_percent(c_shop, 'gold') = 0
+        THEN E'\nPASS T10 loyalty off = no VIP % in the cap' ELSE E'\nFAIL T10 ' || SQLERRM END;
   END;
 
   -- T9 running the migration a second time stops at the swap without breaking anything

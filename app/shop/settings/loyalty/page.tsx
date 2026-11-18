@@ -1,14 +1,12 @@
-import { MovedNotice } from '@/components/shop/MovedNotice'
+import { LoyaltySection } from '@/components/shop/LoyaltySection'
 
-export const metadata = { title: 'Loyalty — Alan Cafe OS' }
+export const metadata = { title: 'VIP Discount — Alan Cafe OS' }
 
-// Hidden until loyalty works end to end (2026-11-11); components/shop/LoyaltySection.tsx is kept for that.
 export default function LoyaltySettingsPage() {
   return (
-    <MovedNotice
-      title="ยังไม่เปิดใช้งาน"
-      reason="ระบบสะสมแต้มยังไม่พร้อมใช้ ปิดไว้ก่อน"
-      links={[{ href: '/cafe?tab=settings', label: 'ตั้งค่าร้าน' }]}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 640 }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: 'white' }}>ส่วนลด VIP</div>
+      <LoyaltySection />
+    </div>
   )
 }
