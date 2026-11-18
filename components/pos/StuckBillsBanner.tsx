@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { getPendingOrders, isStuck, removeOrder, retryOrder, type OfflineOrder } from '@/lib/offline-queue'
+import { pinErrorText } from '@/lib/employee-pin'
 
 const RED  = '#e05555'
 const GOLD = '#c9a84c'
@@ -25,13 +26,6 @@ function reasonText(msg: string): string {
   if (msg.includes('shop not found')) return 'ระบบไม่ยอมบันทึกบิลนี้ ถ่ายรูปส่งเจ้าของร้าน'
   if (msg.includes('JWT') || msg.includes('permission') || msg.includes('Could not find the function')) return 'ระบบไม่ยอมบันทึกบิลนี้ ถ่ายรูปส่งเจ้าของร้าน'
   return 'ระบบไม่รับบิลนี้ ถ่ายรูปส่งเจ้าของร้าน'
-}
-
-// the server reports how long the PIN lock still lasts, in seconds
-function waitText(seconds: unknown): string {
-  const s = Math.ceil(Number(seconds))
-  if (!Number.isFinite(s) || s <= 0) return 'สักครู่'
-  return s < 60 ? `${s} วินาที` : `${Math.ceil(s / 60)} นาที`
 }
 
 const REMOVED_KEY = 'alan_removed_offline_bills'
@@ -94,9 +88,7 @@ export function StuckBillsBanner({ shopId }: { shopId: string | null }) {
       const { supabase } = await import('@/lib/supabase')
       const { data, error } = await supabase.rpc('verify_employee_pin', { p_shop_id: shopId, p_pin: pin })
       if (error) {
-        setMsg(error.message.includes('PIN_LOCKED') ? `ใส่ PIN ผิดหลายครั้ง รอ ${waitText(error.details)} แล้วลองใหม่`
-          : error.code ? `ตรวจ PIN ไม่ได้ ถ่ายรูปหน้านี้ส่งเจ้าของร้าน (${error.message})`   // the server answered: not a network fault
-          : 'ตรวจ PIN ไม่ได้เพราะเน็ตหลุด ต่อเน็ตแล้วลองใหม่')
+        setMsg(pinErrorText(error))
         return
       }
       const manager = ((data ?? []) as { name: string; role: string }[]).find(e => e.role === 'manager' || e.role === 'owner')

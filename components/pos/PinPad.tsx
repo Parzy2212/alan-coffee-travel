@@ -40,6 +40,7 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
   const [status, setStatus]   = useState<PadStatus>('idle')
   const [greeting, setGreeting] = useState('')
   const [shake, setShake]     = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
   const submitLock            = useRef(false)
 
   // Forgot PIN / master PIN recovery
@@ -86,12 +87,17 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
 
     const verify = async () => {
       setStatus('checking')
-      const emp = await verifyEmployeePin(shopId, pin)
+      const check = await verifyEmployeePin(shopId, pin)
+      const emp = check.employee
       if (!emp) {
+        setProblem(check.problem)
         setStatus('error')
         setShake(true)
         setTimeout(() => setShake(false), 600)
-        setTimeout(() => { setPin(''); setStatus('idle') }, 800)
+        // a lock or network message stays until the next key press; "wrong PIN" clears itself.
+        // Clear the dots at once for those, so a key pressed right away isn't wiped by the delayed clear.
+        if (check.problem) setPin('')
+        else setTimeout(() => { setPin(''); setStatus('idle') }, 800)
         submitLock.current = false
         return
       }
@@ -263,7 +269,7 @@ export function PinPad({ shopId, onClockIn }: PinPadProps) {
       {/* Error message */}
       {status === 'error' && (
         <div style={{ color: '#ff6b6b', fontSize: 13, marginBottom: 20, fontWeight: 600 }}>
-          PIN ไม่ถูกต้อง
+          {problem ?? 'PIN ไม่ถูกต้อง'}
         </div>
       )}
 

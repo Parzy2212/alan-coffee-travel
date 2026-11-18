@@ -14,6 +14,7 @@ import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner, TestModePinDialog } from '@/components/pos/TestModeBanner'
 import type { PosCustomer } from '@/lib/customers'
+import { pinWaitText } from '@/lib/employee-pin'
 import { computeVipDiscount, getVipDiscountPct, TIER_META } from '@/lib/loyalty'
 import { roundedDiscount, parseDiscountRoundStep, discountCap, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
 import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
@@ -1930,7 +1931,7 @@ function SettingsPopup({ onClose, shop }: {
 // Error text for void_order_with_approval (migration 053)
 function voidErrorText(e: { message?: string; details?: string; code?: string }): string {
   const msg = e.message ?? ''
-  if (msg.includes('PIN_LOCKED')) return `ใส่ PIN ผิดหลายครั้ง — ลองใหม่ใน ${e.details ?? 'สักครู่'} วินาที`
+  if (msg.includes('PIN_LOCKED')) return `ใส่ PIN ผิดหลายครั้ง รอ ${pinWaitText(e.details)} แล้วลองใหม่`
   if (msg.includes('order not found')) return 'ไม่พบบิลนี้'
   if (msg.includes('another shop')) return 'บิลนี้เป็นของร้านอื่น'
   if (msg.includes('reason')) return 'กรุณาใส่เหตุผล'
