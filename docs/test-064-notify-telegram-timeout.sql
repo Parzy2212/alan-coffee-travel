@@ -61,8 +61,7 @@ BEGIN
   report := report || CASE WHEN v_req.id IS NOT NULL AND v_req.headers->>'x-notify-secret' = v_secret
       AND NOT (v_req.headers ? 'Authorization') AND v_req.url LIKE '%/functions/v1/telegram-send'
       AND v_req.timeout_milliseconds = 15000
-      THEN E'
-PASS T1 request carries the secret, no anon key, waits 15 s'
+      THEN E'\nPASS T1 request carries the secret, no anon key, waits 15 s'
       ELSE E'\nFAIL T1 ' || COALESCE(v_req.url, 'no request queued') END;
 
   -- T2 Telegram switched off in the shop settings: nothing queued
