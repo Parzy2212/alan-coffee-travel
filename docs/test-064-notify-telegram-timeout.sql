@@ -62,7 +62,7 @@ BEGIN
       AND NOT (v_req.headers ? 'Authorization') AND v_req.url LIKE '%/functions/v1/telegram-send'
       AND v_req.timeout_milliseconds = 15000
       THEN E'\nPASS T1 request carries the secret, no anon key, waits 15 s'
-      ELSE E'\nFAIL T1 ' || COALESCE(v_req.url, 'no request queued') END;
+      ELSE E'\nFAIL T1 ' || COALESCE(v_req.url || ' timeout_ms=' || COALESCE(v_req.timeout_milliseconds::text, 'null'), 'no request queued') END;
 
   -- T2 Telegram switched off in the shop settings: nothing queued
   SELECT COALESCE(max(id), 0) INTO v_max FROM net.http_request_queue;
