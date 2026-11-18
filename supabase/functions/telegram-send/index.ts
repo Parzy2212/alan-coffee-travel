@@ -11,7 +11,9 @@ const SHOP_ID = '9afdd9eb-728d-4e36-8077-492c92dbef30'
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+  // every header supabase-js sends (its own list: @supabase/supabase-js/cors); one missing = the
+  // browser's preflight fails and functions.invoke never reaches this function
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage',
 }
 
 function sameSecret(a: string, b: string): boolean {
