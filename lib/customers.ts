@@ -25,7 +25,8 @@ export type Customer = {
 }
 
 // What the POS gets back from a phone lookup (pos_find_customer, owner decision 2026-11-18)
-export type PosCustomer = Pick<Customer, 'id' | 'name' | 'vip_tier' | 'loyalty_points'>
+// is_birthday_today: true/false only, never the date (068). A customer just added at the POS has no flag.
+export type PosCustomer = Pick<Customer, 'id' | 'name' | 'vip_tier' | 'loyalty_points'> & { is_birthday_today?: boolean }
 
 export type LoyaltyTransaction = {
   id: string

@@ -137,6 +137,7 @@ export function CustomerSelector({ shopId, onSelect, onClose }: CustomerSelector
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{c.name ?? '—'}</span>
                       <VipBadge tier={c.vip_tier} />
+                      {c.is_birthday_today && <span style={{ fontSize: 12 }}>🎂</span>}
                     </div>
                   </div>
 

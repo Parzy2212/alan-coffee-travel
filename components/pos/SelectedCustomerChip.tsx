@@ -43,6 +43,7 @@ export function SelectedCustomerChip({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {customer.is_birthday_today ? '🎂 ' : ''}
             {customer.name ?? '—'}
           </span>
           <VipBadge tier={customer.vip_tier} />
