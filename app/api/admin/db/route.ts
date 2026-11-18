@@ -171,14 +171,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Non-blocking audit log (best-effort — ignored if table doesn't exist)
-    void supabase.from('audit_logs').insert({
+    const { error: auditErr } = await supabase.from('audit_logs').insert({
       action:     safeAction,
       table_name: safeTable,
-      record_id:  typeof id === 'string' ? id : null,
-      payload:    (data ?? rows ?? (column ? { column, value } : {})) as Record<string, unknown>,
-      created_at: new Date().toISOString(),
+      row_id:     typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id) ? id : null,
+      after_data: (data ?? rows ?? (column ? { column, value } : {})) as Record<string, unknown>,
+      staff_name: 'admin (shared password)',
+      ip_address: request.headers.get('cf-connecting-ip'),
     })
+    // The change itself is already saved, so the response stays ok; a missing log line goes to the server log
+    if (auditErr) console.error('admin audit log not written:', auditErr.message)
 
     return NextResponse.json({ ok: true, data: result })
   } catch (err: unknown) {

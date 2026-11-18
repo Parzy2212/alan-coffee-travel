@@ -390,6 +390,7 @@ function LeavesView() {
   const [submitting, setSubmitting] = useState(false)
   const [formErr,    setFormErr]    = useState('')
   const [notifyErr,  setNotifyErr]  = useState('')
+  const [actErr,     setActErr]     = useState('')
   const [staffErr,   setStaffErr]   = useState('')
 
   // telegram-send accepts a signed-in shop member's session, never the public key
@@ -421,7 +422,14 @@ function LeavesView() {
 
   async function approve(lv: LeaveRequest) {
     setActingId(lv.id)
-    await supabase.from('leave_requests').update({ status: 'approved' }).eq('id', lv.id)
+    setActErr('')
+    const { data: done, error } = await supabase.from('leave_requests').update({ status: 'approved' }).eq('id', lv.id).select('id')
+    if (error || !done?.length) {
+      setActErr(`อนุมัติไม่สำเร็จ: ${error?.message ?? 'ไม่พบใบลานี้ (อาจถูกแก้ไปแล้ว) หรือไม่มีสิทธิ์แก้'}`)
+      await load()
+      setActingId(null)
+      return
+    }
 
     // Auto-create attendance entries for each leave day
     const days: { staff_id: string; date: string; status: string; clock_in: null; clock_out: null; late_minutes: null }[] = []
@@ -431,7 +439,8 @@ function LeavesView() {
       days.push({ staff_id: lv.staff_id, date: d.toISOString().slice(0, 10), status: 'leave', clock_in: null, clock_out: null, late_minutes: null })
     }
     if (days.length > 0) {
-      await supabase.from('attendance').upsert(days, { onConflict: 'staff_id,date', ignoreDuplicates: true })
+      const { error: attErr } = await supabase.from('attendance').upsert(days, { onConflict: 'staff_id,date', ignoreDuplicates: true })
+      if (attErr) setActErr(`อนุมัติแล้ว แต่ลงวันลาในตารางเวลาเข้างานไม่สำเร็จ: ${attErr.message}`)
     }
 
     // Telegram notification to manager
@@ -444,7 +453,9 @@ function LeavesView() {
   async function reject(id: string) {
     setActingId(id)
     setNotifyErr('')
-    await supabase.from('leave_requests').update({ status: 'rejected' }).eq('id', id)
+    setActErr('')
+    const { data: done, error } = await supabase.from('leave_requests').update({ status: 'rejected' }).eq('id', id).select('id')
+    if (error || !done?.length) setActErr(`ปฏิเสธไม่สำเร็จ: ${error?.message ?? 'ไม่พบใบลานี้ (อาจถูกแก้ไปแล้ว) หรือไม่มีสิทธิ์แก้'}`)
     await load()
     setActingId(null)
   }
@@ -584,6 +595,7 @@ function LeavesView() {
           </button>
         </div>
         {notifyErr && <div role="alert" style={{ fontSize: 12, color: ORANGE }}>{notifyErr}</div>}
+        {actErr && <div role="alert" style={{ fontSize: 12, color: RED }}>{actErr}</div>}
 
         {loading ? <LoadingSpinner /> : leaves.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>ไม่มีคำขอลา</div>
