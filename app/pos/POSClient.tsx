@@ -2049,7 +2049,7 @@ function ReprintButton({ order, onReprint, onError }: {
 
 // ─── OrdersDrawer ─────────────────────────────────────────────────────────────
 
-function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, todayCount, shopId, onUpdateQueue, onVoided, onReprint }: {
+function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, todayCount, shopId, onUpdateQueue, queueError, onVoided, onReprint }: {
   open: boolean
   shopId: string | null
   onClose: () => void
@@ -2058,6 +2058,7 @@ function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, to
   todayTotal: number
   todayCount: number
   onUpdateQueue: (orderId: string, status: string) => void
+  queueError: string | null
   onVoided: () => void
   onReprint: (order: TodayOrder) => Promise<void>
 }) {
@@ -2079,6 +2080,7 @@ function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, to
           <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>คิว &amp; ออเดอร์วันนี้</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
+        {queueError && <div role="alert" style={{ padding: '8px 20px', fontSize: 13, color: RED, lineHeight: 1.5 }}>{queueError}</div>}
 
         {/* Queue section */}
         <div style={{ flex: '0 0 auto', borderBottom: '2px solid rgba(255,255,255,0.07)' }}>
@@ -2180,11 +2182,13 @@ function timeUntilExpiry(expiresAt: string): { label: string; soon: boolean } {
   return { label: `หมดใน ${mins} นาที`, soon }
 }
 
-function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose }: {
+function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose, error, loadError }: {
   heldOrders: HeldOrder[]
-  onResume: (held: HeldOrder) => void
+  onResume: (held: HeldOrder) => Promise<boolean>
   onDelete: (id: string) => void
   onClose: () => void
+  error: string | null
+  loadError: string | null
 }) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [search, setSearch] = useState('')
@@ -2259,9 +2263,14 @@ function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose }: {
           </div>
         )}
 
+        {(error || loadError) && (
+          <div role="alert" style={{ margin: '0 20px 10px', fontSize: 13, color: RED, lineHeight: 1.5 }}>
+            {error ?? loadError}
+          </div>
+        )}
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && loadError ? null : filtered.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center' }}>
               <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>📋</div>
               <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.25)' }}>
@@ -2297,7 +2306,7 @@ function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose }: {
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                     <button
-                      onClick={() => { onResume(held); onClose() }}
+                      onClick={async () => { if (await onResume(held)) onClose() }}
                       style={{ height: 48, padding: '0 18px', borderRadius: 10, border: `1px solid ${GOLD}55`, backgroundColor: `${GOLD}14`, color: GOLD, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s' }}
                       onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${GOLD}24` }}
                       onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${GOLD}14` }}
@@ -2324,9 +2333,11 @@ function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose }: {
 
 // ─── HoldModal ────────────────────────────────────────────────────────────────
 
-function HoldModal({ onConfirm, onClose }: {
+function HoldModal({ onConfirm, onClose, saving, error }: {
   onConfirm: (tableName: string, customerName: string) => void
   onClose: () => void
+  saving: boolean
+  error: string | null
 }) {
   const [tableName,    setTableName]    = useState('')
   const [customerName, setCustomerName] = useState('')
@@ -2362,15 +2373,16 @@ function HoldModal({ onConfirm, onClose }: {
             กรอกโต๊ะหรือชื่อลูกค้าอย่างน้อย 1 อย่าง
           </div>
         )}
+        {error && <div role="alert" style={{ fontSize: 13, color: RED, lineHeight: 1.5 }}>{error}</div>}
         <button
-          onClick={() => { if (tableName.trim() || customerName.trim()) onConfirm(tableName.trim(), customerName.trim()) }}
-          disabled={!tableName.trim() && !customerName.trim()}
+          onClick={() => { if (!saving && (tableName.trim() || customerName.trim())) onConfirm(tableName.trim(), customerName.trim()) }}
+          disabled={saving || (!tableName.trim() && !customerName.trim())}
           style={{ padding: '13px 0', borderRadius: 10, border: 'none',
             backgroundColor: (tableName.trim() || customerName.trim()) ? GOLD : 'rgba(255,255,255,0.08)',
             color: (tableName.trim() || customerName.trim()) ? BLACK : 'rgba(255,255,255,0.2)',
             fontWeight: 800, fontSize: 15, cursor: (tableName.trim() || customerName.trim()) ? 'pointer' : 'not-allowed',
             fontFamily: 'var(--font-heading)' }}>
-          พักออเดอร์
+          {saving ? 'กำลังบันทึก...' : 'พักออเดอร์'}
         </button>
       </div>
     </div>
@@ -2401,6 +2413,11 @@ function PosClockDisplay() {
 export default function POSClient() {
   const { employee: activeEmployee, ready: employeeReady, clockIn, clockOut } = useActiveEmployee()
   const [showAppMenu, setShowAppMenu] = useState(false)
+  const [heldErr,     setHeldErr]     = useState<string | null>(null)
+  const [heldLoadErr, setHeldLoadErr] = useState<string | null>(null)
+  const [holdSaving,  setHoldSaving]  = useState(false)
+  const [queueErr,    setQueueErr]    = useState<string | null>(null)
+  const resumingRef = useRef(false)
   // A tablet left signed in overnight never shows the PIN pad again, so yesterday's shift would
   // stay open for days. Ask for the PIN again on a new day; PinPad then closes the old shift.
   useEffect(() => {
@@ -2829,23 +2846,29 @@ export default function POSClient() {
   }, [])
 
   const loadHeldOrders = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('held_orders')
       .select('*')
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
+    if (error) { setHeldLoadErr(`โหลดรายการบิลพักไม่ได้: ${error.message}`); return }
+    setHeldLoadErr(null)
     setHeldOrders((data as HeldOrder[]) ?? [])
   }, [])
 
   async function holdCart(tableName: string, customerName: string) {
-    if (cart.length === 0) return
-    await supabase.from('held_orders').insert({
+    if (cart.length === 0 || holdSaving) return
+    setHoldSaving(true)
+    setHeldErr(null)
+    const { error } = await supabase.from('held_orders').insert({
       table_number:  tableName  || null,
       customer_name: customerName || null,
       cart_items:    cart,
       total_lak:     finalTotal,
       expires_at:    new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     })
+    setHoldSaving(false)
+    if (error) { setHeldErr(`พักบิลไม่สำเร็จ ตะกร้ายังอยู่ ลองใหม่: ${error.message}`); return }
     setCart([])
     setDiscountPreset('')
     setDiscountOtherAmt('')
@@ -2854,14 +2877,29 @@ export default function POSClient() {
     loadHeldOrders()
   }
 
-  async function resumeHeld(held: HeldOrder) {
-    setCart(held.cart_items)
-    await supabase.from('held_orders').delete().eq('id', held.id)
-    loadHeldOrders()
+  // Delete first and fill the cart only after, so two tablets can't both resume (and sell) one bill.
+  // A ref, not state: a second tap before the first finishes must see the lock at once.
+  async function resumeHeld(held: HeldOrder): Promise<boolean> {
+    if (resumingRef.current) return false
+    if (cart.length > 0) { setHeldErr('ตะกร้ายังมีรายการ พักหรือคิดเงินบิลปัจจุบันก่อน แล้วค่อยเรียกคืน'); return false }
+    resumingRef.current = true
+    setHeldErr(null)
+    try {
+      const { data, error } = await supabase.from('held_orders').delete().eq('id', held.id).select('id')
+      if (error) { setHeldErr(`เรียกคืนบิลไม่สำเร็จ ลองใหม่: ${error.message}`); return false }
+      loadHeldOrders()
+      if (!data?.length) { setHeldErr('บิลนี้ถูกเรียกคืนหรือลบไปแล้ว'); return false }
+      setCart(held.cart_items)
+      return true
+    } finally {
+      resumingRef.current = false
+    }
   }
 
   async function deleteHeld(id: string) {
-    await supabase.from('held_orders').delete().eq('id', id)
+    setHeldErr(null)
+    const { error } = await supabase.from('held_orders').delete().eq('id', id)
+    if (error) setHeldErr(`ลบบิลพักไม่สำเร็จ: ${error.message}`)
     loadHeldOrders()
   }
 
@@ -2877,7 +2915,8 @@ export default function POSClient() {
   }, [fetchTodayQueue, loadTodayOrders])
 
   async function updateQueueStatus(orderId: string, status: string) {
-    await supabase.rpc('update_queue_status', { p_order_id: orderId, p_status: status })
+    const { error } = await supabase.rpc('update_queue_status', { p_order_id: orderId, p_status: status })
+    setQueueErr(error ? `เปลี่ยนสถานะคิวไม่สำเร็จ: ${error.message}` : null)
     fetchTodayQueue()
   }
 
@@ -2909,10 +2948,10 @@ export default function POSClient() {
         if (showShortcuts)        { setShowShortcuts(false);        return }
         if (showCustomerSelector) { setShowCustomerSelector(false); return }
         if (showCharge)           { setShowCharge(false);           return }
-        if (showHeldModal)        { setShowHeldModal(false);        return }
-        if (showHoldModal)        { setShowHoldModal(false);        return }
+        if (showHeldModal)        { setShowHeldModal(false); setHeldErr(null); return }
+        if (showHoldModal)        { setShowHoldModal(false); setHeldErr(null); return }
         if (showSettings)         { setShowSettings(false);         return }
-        if (showDrawer)           { setShowDrawer(false);           return }
+        if (showDrawer)           { setShowDrawer(false); setQueueErr(null); return }
         return
       }
       if ((e.key === 'F1') || (e.key === '?' && !isInput)) {
@@ -3025,25 +3064,28 @@ export default function POSClient() {
         />
       )}
       {showHoldModal && (
-        <HoldModal onConfirm={(t, c) => holdCart(t, c)} onClose={() => setShowHoldModal(false)} />
+        <HoldModal onConfirm={(t, c) => holdCart(t, c)} onClose={() => { setShowHoldModal(false); setHeldErr(null) }} saving={holdSaving} error={heldErr} />
       )}
       {showHeldModal && (
         <HeldOrdersModal
           heldOrders={heldOrders}
           onResume={resumeHeld}
           onDelete={deleteHeld}
-          onClose={() => setShowHeldModal(false)}
+          onClose={() => { setShowHeldModal(false); setHeldErr(null) }}
+          error={heldErr}
+          loadError={heldLoadErr}
         />
       )}
       <OrdersDrawer
         open={showDrawer}
-        onClose={() => setShowDrawer(false)}
+        onClose={() => { setShowDrawer(false); setQueueErr(null) }}
         queueEntries={queueEntries}
         todayOrders={todayOrders}
         todayTotal={todayTotal}
         todayCount={todayCount}
         shopId={shopId}
         onUpdateQueue={updateQueueStatus}
+        queueError={queueErr}
         onVoided={() => { fetchTodayQueue(); loadTodayOrders() }}
         onReprint={reprintOrder}
       />
