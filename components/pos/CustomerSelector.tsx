@@ -5,7 +5,6 @@ import type { PosCustomer } from '@/lib/customers'
 import { findCustomerByPhone } from '@/lib/customers'
 import { VipBadge } from '@/components/customers/VipBadge'
 import { AddCustomerModal } from '@/components/customers/AddCustomerModal'
-import { isBirthdayToday, fmtLastVisit } from '@/lib/loyalty'
 
 const GOLD   = '#c9a84c'
 const BORDER = 'rgba(255,255,255,0.1)'
@@ -138,10 +137,6 @@ export function CustomerSelector({ shopId, onSelect, onClose }: CustomerSelector
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{c.name ?? '—'}</span>
                       <VipBadge tier={c.vip_tier} />
-                      {isBirthdayToday(c.birthday) && <span style={{ fontSize: 12 }}>🎂</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>
-                      {c.phone ?? '—'} · {fmtLastVisit(c.last_visit)}
                     </div>
                   </div>
 

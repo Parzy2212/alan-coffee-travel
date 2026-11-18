@@ -24,10 +24,8 @@ export type Customer = {
   updated_at: string
 }
 
-// What the POS gets back from a phone lookup (pos_find_customer): no email, notes or spend;
-// birthday only when it is today.
-export type PosCustomer = Pick<Customer,
-  'id' | 'name' | 'phone' | 'vip_tier' | 'loyalty_points' | 'visit_count' | 'last_visit' | 'birthday'>
+// What the POS gets back from a phone lookup (pos_find_customer, owner decision 2026-11-18)
+export type PosCustomer = Pick<Customer, 'id' | 'name' | 'vip_tier' | 'loyalty_points'>
 
 export type LoyaltyTransaction = {
   id: string
@@ -59,6 +57,10 @@ function customerError(e: { code?: string; message: string }): Error {
   if (e.code === '42501') return new Error('ต้องล็อกอินเป็นเจ้าของหรือผู้จัดการร้าน ลองออกจากระบบแล้วเข้าใหม่')
   if (e.message.includes('CUSTOMER_EXISTS')) return new Error('เบอร์นี้เป็นลูกค้าอยู่แล้ว ค้นหาด้วยเบอร์แทนการเพิ่มใหม่')
   if (e.message.includes('PHONE_TOO_SHORT')) return new Error('พิมพ์เบอร์โทรให้ครบ')
+  if (e.message.includes('LOOKUP_PAUSED')) {
+    const s = e.message.match(/wait (\d+)/)?.[1]
+    return new Error(`ค้นเบอร์ที่ไม่มีในระบบบ่อยเกินไป รออีก ${s ?? '60'} วินาทีแล้วลองใหม่`)
+  }
   if (e.message.includes('POINTS_NOT_ENOUGH')) return new Error('คะแนนไม่เพียงพอ')
   if (e.message.includes('POINTS_INVALID')) return new Error('คะแนนต้องเป็นทวีคูณของ 100')
   return new Error(e.message)

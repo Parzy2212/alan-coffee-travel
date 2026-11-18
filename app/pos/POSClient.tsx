@@ -14,7 +14,7 @@ import { SelectedCustomerChip } from '@/components/pos/SelectedCustomerChip'
 import { SyncStatus } from '@/components/SyncStatus'
 import { TestModeBanner, TestModePinDialog } from '@/components/pos/TestModeBanner'
 import type { PosCustomer } from '@/lib/customers'
-import { computeVipDiscount, getVipDiscountPct, isBirthdayToday, TIER_META } from '@/lib/loyalty'
+import { computeVipDiscount, getVipDiscountPct, TIER_META } from '@/lib/loyalty'
 import { roundedDiscount, parseDiscountRoundStep, discountCap, DEFAULT_DISCOUNT_ROUND_STEP } from '@/lib/discount-rounding'
 import { enqueueOrder, replayQueue, type OfflineOrder } from '@/lib/offline-queue'
 import { StuckBillsBanner } from '@/components/pos/StuckBillsBanner'
@@ -1348,14 +1348,12 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
             {/* Selected customer banner */}
             {selectedCustomer && (() => {
               const { color, icon, label } = TIER_META[selectedCustomer.vip_tier]
-              const birthday = isBirthdayToday(selectedCustomer.birthday)
               const vipPct   = selectedCustomer.vip_tier === 'platinum' ? 10 : selectedCustomer.vip_tier === 'gold' ? 5 : 0
               return (
                 <div style={{ padding: '10px 14px', borderRadius: RADIUS.xl, border: `1px solid ${color}44`, backgroundColor: `${color}0e` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: TEXT_1 }}>
-                      {birthday ? '🎂 ' : ''}
-                      {selectedCustomer.name ?? selectedCustomer.phone}
+                      {selectedCustomer.name ?? '—'}
                     </div>
                     {selectedCustomer.vip_tier !== 'regular' && (
                       <span style={{ fontSize: 11, fontWeight: 700, color, padding: '1px 7px', borderRadius: RADIUS.pill, border: `1px solid ${color}44`, backgroundColor: `${color}14` }}>
@@ -1366,7 +1364,6 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
                   <div style={{ fontSize: 11, color: TEXT_2, marginTop: 3, display: 'flex', gap: 12 }}>
                     <span>{selectedCustomer.loyalty_points.toLocaleString()} pts</span>
                     {vipPct > 0 && <span style={{ color: '#4cba7f' }}>ส่วนลด VIP {vipPct}% ถูกใช้แล้ว</span>}
-                    {birthday && <span style={{ color: GOLD }}>วันเกิดวันนี้!</span>}
                   </div>
                 </div>
               )

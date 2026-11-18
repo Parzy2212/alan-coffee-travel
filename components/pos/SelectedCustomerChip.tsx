@@ -2,7 +2,6 @@
 
 import type { PosCustomer } from '@/lib/customers'
 import { VipBadge } from '@/components/customers/VipBadge'
-import { isBirthdayToday } from '@/lib/loyalty'
 
 const GOLD = '#c9a84c'
 
@@ -15,8 +14,6 @@ export function SelectedCustomerChip({
   onRemove: () => void
   onClick?: () => void
 }) {
-  const birthday = isBirthdayToday(customer.birthday)
-
   return (
     <div
       onClick={onClick}
@@ -24,13 +21,13 @@ export function SelectedCustomerChip({
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '8px 10px 8px 12px',
         borderRadius: 12,
-        border: birthday ? `1px solid ${GOLD}` : `1px solid ${GOLD}55`,
-        backgroundColor: birthday ? `${GOLD}18` : `${GOLD}0c`,
+        border: `1px solid ${GOLD}55`,
+        backgroundColor: `${GOLD}0c`,
         cursor: onClick ? 'pointer' : 'default',
         transition: 'all 0.12s',
       }}
       onMouseEnter={e => { if (onClick) e.currentTarget.style.backgroundColor = `${GOLD}20` }}
-      onMouseLeave={e => { e.currentTarget.style.backgroundColor = birthday ? `${GOLD}18` : `${GOLD}0c` }}
+      onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${GOLD}0c` }}
     >
       {/* Avatar */}
       <div style={{
@@ -46,8 +43,7 @@ export function SelectedCustomerChip({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {birthday ? '🎂 ' : ''}
-            {customer.name ?? customer.phone ?? '—'}
+            {customer.name ?? '—'}
           </span>
           <VipBadge tier={customer.vip_tier} />
         </div>
