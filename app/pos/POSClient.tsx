@@ -1124,7 +1124,9 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
     (method === 'transfer' && selectedBank !== null) ||
     (method === 'split' && splitTotal >= finalTotal && splitXferNum <= finalTotal)
 
-  // Keyboard shortcuts inside ChargePopup
+  // Keyboard shortcuts inside ChargePopup. No dependency list on purpose: the handler is
+  // re-attached after every render so Enter always confirms with what is on screen now
+  // (a list of 4 values let it confirm with an older amount received).
   useEffect(() => {
     function h(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName
@@ -1148,8 +1150,7 @@ function ChargePopup({ subtotal, cartPayload, discount, discountCapLak, discount
     }
     document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cashOk, loading, method, finalTotal])
+  })
 
   // Load settings when QR or transfer tab is first opened
   useEffect(() => {
