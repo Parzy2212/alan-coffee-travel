@@ -1,8 +1,10 @@
--- READ-ONLY. Why test-072 stopped at "checkout_order is not the 071 version":
--- compares production checkout_order with the 071 version 072 was written against
--- (embedded below as "loc") and lists only the lines that differ. Changes nothing.
--- Run the whole file in the Supabase SQL Editor and send back the result table.
-WITH loc AS (SELECT $loc$
+-- READ-ONLY, one SELECT. Why test-072 stopped at "checkout_order is not the 071 version":
+-- compares production checkout_order / void_order_with_approval with the versions 072 was written
+-- against (embedded below). CR and LF are removed on both sides (the SQL Editor or git may add CR
+-- to the embedded copy), blank lines at the start and end are dropped, and lines are matched
+-- without caring about order, so only lines that really differ are listed. Changes nothing.
+WITH loc(fn, s) AS (VALUES
+  ('checkout_order', $loc_co$
 DECLARE
   v_existing  public.orders%ROWTYPE;
   -- offline replay: the sale already happened, so record it rather than reject it
@@ -262,43 +264,161 @@ BEGIN
     'subtotal_lak', v_subtotal, 'discount_lak', v_discount, 'total_lak', v_total,
     'change_lak', v_change, 'status', CASE WHEN v_test THEN 'test' ELSE 'paid' END, 'duplicate', false);
 END;
-$loc$::text AS s),
-fns AS (
-  SELECT p.oid, pg_get_function_identity_arguments(p.oid) AS args, p.prosrc AS raw, replace(p.prosrc, E'\r', '') AS s
-  FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'checkout_order'
-),
-prod AS (SELECT s FROM fns ORDER BY oid LIMIT 1),
-pl AS (SELECT n, l, row_number() OVER (PARTITION BY l ORDER BY n) AS k
-       FROM prod, unnest(string_to_array(prod.s, E'\n')) WITH ORDINALITY AS u(l, n)),
-ll AS (SELECT n, l, row_number() OVER (PARTITION BY l ORDER BY n) AS k
-       FROM loc, unnest(string_to_array(loc.s, E'\n')) WITH ORDINALITY AS u(l, n)),
-vo AS (
-  SELECT replace(p.prosrc, E'\r', '') AS s FROM pg_proc p
-  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'void_order_with_approval'
-),
-void_old AS (SELECT $o$    FROM (
+$loc_co$::text),
+  ('void_order_with_approval', $loc_void$
+DECLARE
+  v_order    public.orders%ROWTYPE;
+  v_reason   text := NULLIF(btrim(COALESCE(p_reason, '')), '');
+  v_scope    text := 'void:' || p_shop_id::text;
+  v_wait     int;
+  v_mgr_id   uuid;
+  v_mgr_name text;
+  v_earn_pts int;
+  v_income   numeric;
+  v_now      timestamptz := now();
+BEGIN
+  IF v_reason IS NULL THEN
+    RAISE EXCEPTION 'a reason is required to void a bill' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'order not found' USING ERRCODE = 'P0002';
+  END IF;
+  -- bills made before 055 have shop_id NULL: they belong to the real shop
+  IF COALESCE(v_order.shop_id, '9afdd9eb-728d-4e36-8077-492c92dbef30'::uuid) IS DISTINCT FROM p_shop_id THEN
+    RAISE EXCEPTION 'order belongs to another shop' USING ERRCODE = '42501';
+  END IF;
+  IF v_order.status IS NULL OR v_order.status NOT IN ('paid', 'test') THEN
+    RAISE EXCEPTION 'ORDER_NOT_PAID' USING DETAIL = COALESCE(v_order.status, 'null'),
+      HINT = 'only a paid bill can be voided';
+  END IF;
+
+  v_wait := public.pin_attempt_wait(v_scope);
+  IF v_wait > 0 THEN
+    RAISE EXCEPTION 'PIN_LOCKED' USING DETAIL = v_wait::text, HINT = 'retry after ' || v_wait || ' seconds';
+  END IF;
+
+  SELECT e.id, e.name INTO v_mgr_id, v_mgr_name
+  FROM public.employees e
+  WHERE e.shop_id = p_shop_id
+    AND e.is_active = true
+    AND e.role = 'manager'
+    AND p_manager_pin ~ '^[0-9]{4}$'
+    AND e.pin_hash = extensions.crypt(p_manager_pin, e.pin_hash)
+  LIMIT 1;
+
+  -- only a manager PIN counts as success; no RAISE after a failed PIN (it would roll the count back)
+  PERFORM public.pin_attempt_record(v_scope, v_mgr_id IS NOT NULL, 5, 60, 1800);
+  IF v_mgr_id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_pin');
+  END IF;
+
+  UPDATE public.orders
+  SET status = 'void', void_reason = v_reason, voided_at = v_now, voided_by_employee_id = v_mgr_id
+  WHERE id = p_order_id;
+
+  IF v_order.status = 'paid' THEN
+    UPDATE public.inventory i
+    SET current_qty = i.current_qty + restore.qty, updated_at = v_now
+    FROM (
       SELECT ri.inventory_id, SUM(oi.qty * ri.qty_normal) AS qty
       FROM public.order_items oi
       JOIN public.recipe_ingredients ri ON ri.recipe_id = oi.recipe_id
       WHERE oi.order_id = p_order_id AND ri.inventory_id IS NOT NULL
       GROUP BY ri.inventory_id
-    ) restore$o$::text AS s)
-SELECT 0 AS sort, 'checkout_order versions (args)' AS what,
-       count(*)::text || ': ' || string_agg(args, ' | ' ORDER BY oid) AS detail FROM fns
+    ) restore
+    WHERE i.id = restore.inventory_id;
+
+    IF v_order.customer_id IS NOT NULL THEN
+      SELECT COALESCE(SUM(points), 0) INTO v_earn_pts
+      FROM public.loyalty_transactions WHERE order_id = p_order_id AND type = 'earn';
+
+      UPDATE public.customers
+      SET lifetime_spend_lak = GREATEST(0, COALESCE(lifetime_spend_lak, 0) - COALESCE(v_order.total_lak, 0)),
+          visit_count        = GREATEST(0, COALESCE(visit_count, 0) - 1),
+          loyalty_points     = GREATEST(0, COALESCE(loyalty_points, 0) - v_earn_pts)
+      WHERE id = v_order.customer_id;
+
+      IF v_earn_pts > 0 THEN
+        INSERT INTO public.loyalty_transactions (shop_id, customer_id, order_id, type, points, description)
+        SELECT shop_id, customer_id, order_id, 'adjust', -v_earn_pts,
+               'Voided order #' || COALESCE(v_order.queue_number::text, '?')
+        FROM public.loyalty_transactions WHERE order_id = p_order_id AND type = 'earn' LIMIT 1;
+      END IF;
+    END IF;
+
+    SELECT COALESCE(SUM(amount_lak), 0) INTO v_income
+    FROM public.cash_flow WHERE reference_id = p_order_id AND type = 'income';
+    IF v_income > 0 THEN
+      INSERT INTO public.cash_flow (type, category, amount_lak, description, reference_id, payment_method, date, shop_id)
+      VALUES ('income', 'ยกเลิกบิล', -v_income,
+        'Void order #' || COALESCE(v_order.queue_number::text, '?') || ': ' || v_reason,
+        p_order_id, COALESCE(v_order.payment_method, 'cash'),
+        (v_now AT TIME ZONE 'Asia/Vientiane')::date, COALESCE(v_order.shop_id, p_shop_id));
+    END IF;
+  END IF;
+
+  INSERT INTO public.audit_logs (staff_id, action, table_name, row_id, after_data)
+  VALUES (
+    v_order.staff_id, 'void_order', 'orders', p_order_id,
+    jsonb_build_object(
+      'order_id', p_order_id, 'queue_number', v_order.queue_number,
+      'total_lak', v_order.total_lak, 'reason', v_reason, 'was_test', v_order.status = 'test',
+      'approved_by_employee_id', v_mgr_id, 'approved_by', v_mgr_name, 'voided_at', v_now
+    )
+  );
+
+  RETURN jsonb_build_object('ok', true, 'order_id', p_order_id, 'voided_at', v_now, 'approved_by', v_mgr_name);
+END;
+$loc_void$::text)
+),
+live AS (
+  SELECT p.proname::text AS fn, count(*) OVER (PARTITION BY p.proname) AS versions, p.prosrc AS raw,
+         row_number() OVER (PARTITION BY p.proname ORDER BY p.oid) AS pick
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('checkout_order', 'void_order_with_approval')
+),
+src AS (
+  SELECT 'PRODUCTION' AS side, fn, raw AS s FROM live WHERE pick = 1
+  UNION ALL SELECT 'LOCAL', fn, s FROM loc
+),
+lines AS (
+  SELECT side, fn, n, replace(replace(l, E'\r', ''), E'\n', '') AS l
+  FROM src, unnest(string_to_array(replace(src.s, E'\r', ''), E'\n')) WITH ORDINALITY AS u(l, n)
+),
+bounds AS (
+  SELECT side, fn, min(n) FILTER (WHERE btrim(l) <> '') AS lo, max(n) FILTER (WHERE btrim(l) <> '') AS hi
+  FROM lines GROUP BY side, fn
+),
+body AS (
+  SELECT x.side, x.fn, x.n - b.lo + 1 AS n, x.l,
+         row_number() OVER (PARTITION BY x.side, x.fn, x.l ORDER BY x.n) AS k
+  FROM lines x JOIN bounds b USING (side, fn) WHERE x.n BETWEEN b.lo AND b.hi
+),
+clean AS (
+  SELECT side, fn, string_agg(l, E'\n' ORDER BY n) AS s, count(*) AS line_count FROM body GROUP BY side, fn
+),
+only_one AS (
+  SELECT a.side, a.fn, a.n, a.l
+  FROM body a
+  WHERE NOT EXISTS (SELECT 1 FROM body b WHERE b.fn = a.fn AND b.side <> a.side AND b.l = a.l AND b.k = a.k)
+),
+ranked AS (
+  SELECT *, row_number() OVER (PARTITION BY side, fn ORDER BY n) AS r FROM only_one
+)
+SELECT fn, 0 AS sort, 'versions on production' AS what, COALESCE(max(versions)::text, '0 (missing)') AS detail
+FROM (SELECT fn FROM loc) f LEFT JOIN live USING (fn) GROUP BY fn
 UNION ALL
-SELECT 1, 'md5 with CR / without CR / expected', md5(raw) || ' / ' || md5(s) || ' / 827846d3feeb3d58fc8d1c2d7f4b3560' FROM fns
+SELECT p.fn, 1, 'md5 production / local (no CR, trimmed)', md5(p.s) || ' / ' || md5(l.s)
+FROM clean p JOIN clean l ON l.fn = p.fn AND l.side = 'LOCAL' WHERE p.side = 'PRODUCTION'
 UNION ALL
-SELECT 2, 'length raw / without CR / CR count / local', length(raw) || ' / ' || length(s) || ' / ' || (length(raw) - length(s)) || ' / ' || (SELECT length(s) FROM loc) FROM fns
+SELECT p.fn, 2, 'length production / local (no CR, trimmed)', length(p.s) || ' / ' || length(l.s)
+FROM clean p JOIN clean l ON l.fn = p.fn AND l.side = 'LOCAL' WHERE p.side = 'PRODUCTION'
 UNION ALL
-SELECT 3, 'lines prod / local', (SELECT count(*) FROM pl) || ' / ' || (SELECT count(*) FROM ll)
+SELECT p.fn, 3, 'lines production / local', p.line_count || ' / ' || l.line_count
+FROM clean p JOIN clean l ON l.fn = p.fn AND l.side = 'LOCAL' WHERE p.side = 'PRODUCTION'
 UNION ALL
-SELECT 4, 'void_order_with_approval: versions / 053 restore text found', count(*) || ' / ' ||
-       COALESCE(string_agg(((length(vo.s) - length(replace(vo.s, void_old.s, ''))) / length(void_old.s))::text, ','), '-')
-FROM vo, void_old
-UNION ALL
-(SELECT 10 + pl.n::int, 'only on PRODUCTION, line ' || pl.n, left(pl.l, 200)
- FROM pl LEFT JOIN ll ON ll.l = pl.l AND ll.k = pl.k WHERE ll.n IS NULL ORDER BY pl.n LIMIT 40)
-UNION ALL
-(SELECT 100000 + ll.n::int, 'only in LOCAL 071, line ' || ll.n, left(ll.l, 200)
- FROM ll LEFT JOIN pl ON pl.l = ll.l AND pl.k = ll.k WHERE pl.n IS NULL ORDER BY ll.n LIMIT 40)
-ORDER BY 1;
+SELECT fn, (CASE side WHEN 'PRODUCTION' THEN 10000 ELSE 20000 END + n)::int, 'only ' || side || ', line ' || n, left(l, 220)
+FROM ranked WHERE r <= 40
+ORDER BY 1, 2;
