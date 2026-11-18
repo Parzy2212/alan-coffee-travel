@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   BarChart, Bar, Cell,
-  XAxis, YAxis, Tooltip, ResponsiveContainer,
+  XAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { authClient, dbErrorText } from '@/lib/supabase-auth'
@@ -480,8 +480,6 @@ function RecipeCard({
   const [archiving,  setArchiving]  = useState(false)
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3000) }
-
-  const confirmName = r.product_name_th || r.product_name
 
   async function loadHistory() {
     if (history !== null) return

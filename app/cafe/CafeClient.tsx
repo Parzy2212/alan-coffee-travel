@@ -2,8 +2,8 @@
 
 import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { authClient, dbErrorText } from '@/lib/supabase-auth'
@@ -81,40 +81,6 @@ type StockVal = {
   top_used:    { name: string; used_qty: number; unit: string }[]
 }
 
-type Category = {
-  id: string; name: string; name_th: string | null; name_lo: string | null; parent_id: string | null
-}
-
-type CategoryJoin = { id: string; name: string; name_th: string | null } | null
-
-type Recipe = {
-  id: string; product_name: string; product_name_th: string | null; product_name_lo: string | null
-  price_lak: number; is_active: boolean; category: string | null; category_id: string | null
-  categories: CategoryJoin | CategoryJoin[]
-}
-
-type InventoryItem = {
-  id: string; name: string; name_th: string | null; name_lo: string | null
-  current_qty: number; unit: string; reorder_point: number | null
-  supplier: string | null; supplier_phone: string | null
-}
-
-type PurchaseLog = {
-  id: string; qty_purchased: number; unit_price_lak: number; total_lak: number
-  supplier: string | null; created_at: string
-}
-
-type SiteSettings = {
-  shop_name: string; shop_name_th: string; shop_name_lo: string; ticker_text: string
-}
-
-type Customer = {
-  id: string; name: string | null; phone: string | null; nationality: string | null
-  language_pref: string; allergies: string[]; loyalty_points: number
-  visit_count: number; lifetime_spend_lak: number; email: string | null
-  created_at: string; updated_at: string
-}
-
 type PurchaseEntry = {
   id: string; inventory_name: string | null; unit: string | null; staff_name: string | null
   qty_purchased: number; unit_price_lak: number; market_price_lak: number | null
@@ -134,19 +100,10 @@ type Alert = {
   created_at: string; acknowledged_at: string | null; status: string
 }
 
-type LeaveRequest = {
-  id: string; staff_id: string; leave_type: string
-  start_date: string; end_date: string; reason: string | null
-  status: string; created_at: string
-  staff?: { name: string | null } | null
-}
-
 type CashflowRow = {
   log_date: string; shift: string; system_sales: number; actual_cash: number
   variance_lak: number; opening_cash?: number; staff_id?: string
 }
-
-type InventorySimple = { id: string; name: string; unit: string }
 
 type FullSettings = {
   shop_name: string; shop_name_th: string; shop_name_lo: string
@@ -222,13 +179,6 @@ const DAYS_OF_WEEK = [
   { key: 'sun', label: 'อา' },
 ]
 
-type RecipeEdit = {
-  product_name: string; product_name_th: string; product_name_lo: string
-  price_str: string; category_id: string
-}
-
-type AddStockForm = { qty: string; cost: string; supplier: string; date: string }
-
 type StockDetail = {
   id: string; name: string; name_th: string | null; name_lo: string | null; unit: string
   current_qty: number; reorder_point: number | null; max_quantity: number | null
@@ -240,68 +190,6 @@ type StockDetail = {
   daily_usage: number; days_until_empty: number | null
   last_price: number | null; last_purchased_at: string | null
 }
-
-type InventoryForm = {
-  name: string; name_th: string; name_lo: string; unit: string
-  current_qty: string; reorder_point: string; max_quantity: string
-  cost_per_unit: string; storage_location: string; expiry_days: string
-  supplier: string; supplier_phone: string
-  secondary_supplier: string; secondary_supplier_phone: string
-  notes: string
-}
-
-type UsageStat = { day: string; used_qty: number; sales_lak: number }
-
-const STORAGE_OPTIONS = [
-  { value: 'fridge',  label: '🧊 ตู้เย็น' },
-  { value: 'freezer', label: '❄️ Freezer' },
-  { value: 'shelf',   label: '📦 ชั้นวาง' },
-  { value: 'counter', label: '🍳 Counter' },
-]
-
-function storageIcon(loc: string | null): string {
-  if (loc === 'fridge')  return '🧊'
-  if (loc === 'freezer') return '❄️'
-  if (loc === 'counter') return '🍳'
-  return '📦'
-}
-
-function emptyInventoryForm(): InventoryForm {
-  return {
-    name: '', name_th: '', name_lo: '', unit: 'g',
-    current_qty: '0', reorder_point: '', max_quantity: '',
-    cost_per_unit: '', storage_location: 'shelf', expiry_days: '',
-    supplier: '', supplier_phone: '',
-    secondary_supplier: '', secondary_supplier_phone: '',
-    notes: '',
-  }
-}
-
-type RecipeIngredient = {
-  id: string; inventory_id: string; name: string; name_th: string | null
-  qty_required: number; unit: string
-}
-
-type RecipeFull = {
-  id: string; product_name: string; product_name_th: string | null; product_name_lo: string | null
-  price_lak: number; is_active: boolean; is_seasonal: boolean; seasonal_note: string | null
-  category: string | null; category_id: string | null
-  description_en: string | null; description_th: string | null; description_lo: string | null
-  preparation_time: number | null; calories: number | null
-  allergens: string[]; cost_per_cup_lak: number | null; image_url: string | null
-  total_qty_30d: number; total_sales_30d: number; calc_cost: number; margin_pct: number
-  ingredients: RecipeIngredient[]
-}
-
-type RecipeFullEdit = {
-  product_name: string; product_name_th: string; product_name_lo: string
-  description_en: string; description_th: string; description_lo: string
-  price_str: string; cost_str: string; prep_str: string; cal_str: string
-  allergens: string[]; category_id: string
-  is_seasonal: boolean; seasonal_note: string; image_url: string
-}
-
-type DaySale = { day: string; qty: number; sales: number }
 
 type CatNode = {
   id: string; name: string; name_th: string | null; name_lo: string | null
@@ -326,15 +214,6 @@ type PaymentBank = {
 
 // ─── Staff Types ──────────────────────────────────────────────────────────────
 
-type StaffMember = {
-  id: string; name: string; name_th: string | null; name_lo: string | null
-  phone: string | null; avatar_url: string | null
-  salary: number | null; salary_type: string | null
-  start_date: string | null; is_active: boolean; is_verified: boolean
-  scheduled_start_time: string | null; rating: number | null
-  skills: string[] | null; notes: string | null
-}
-
 type StaffToday = {
   id: string; name: string; name_th: string | null; avatar_url: string | null
   clock_in: string | null; clock_out: string | null
@@ -347,29 +226,6 @@ type StaffAnalytics = {
   punctuality_pct: number; orders_served: number
 }
 
-type AttendanceRow = {
-  staff_id: string; staff_name: string; report_date: string
-  clock_in: string | null; clock_out: string | null
-  status: string; late_minutes: number | null
-}
-
-type StaffForm = {
-  name: string; name_th: string; name_lo: string
-  phone: string; salary: string; salary_type: string
-  start_date: string; scheduled_start_time: string
-  skills: string; notes: string; pin: string
-}
-
-function emptyStaffForm(): StaffForm {
-  return {
-    name: '', name_th: '', name_lo: '', phone: '',
-    salary: '', salary_type: 'monthly',
-    start_date: new Date().toISOString().slice(0, 10),
-    scheduled_start_time: '08:00',
-    skills: '', notes: '', pin: '',
-  }
-}
-
 const ICON_OPTIONS = [
   '☕','🍵','🧋','🥤','🍹','🍰','🧁','🍫','🥐','🥪',
   '🌿','🍋','🍓','🫐','🍊','🌸','⭐','🔥','✨','❄️',
@@ -378,30 +234,6 @@ const ICON_OPTIONS = [
 
 function emptyEditCat(): CatEdit {
   return { name: '', name_th: '', name_lo: '', icon: '', color: '#c9a84c', parent_id: '', sort_order: '0' }
-}
-
-const ALLERGENS = ['นม', 'กลูเตน', 'ถั่ว', 'ไข่', 'ซีฟู้ด']
-
-function toEdit(r: RecipeFull): RecipeFullEdit {
-  return {
-    product_name: r.product_name, product_name_th: r.product_name_th ?? '',
-    product_name_lo: r.product_name_lo ?? '',
-    description_en: r.description_en ?? '', description_th: r.description_th ?? '',
-    description_lo: r.description_lo ?? '',
-    price_str: String(r.price_lak), cost_str: String(r.cost_per_cup_lak ?? ''),
-    prep_str: String(r.preparation_time ?? ''), cal_str: String(r.calories ?? ''),
-    allergens: r.allergens ?? [], category_id: r.category_id ?? '',
-    is_seasonal: r.is_seasonal, seasonal_note: r.seasonal_note ?? '', image_url: r.image_url ?? '',
-  }
-}
-
-function emptyEdit(): RecipeFullEdit {
-  return {
-    product_name: '', product_name_th: '', product_name_lo: '',
-    description_en: '', description_th: '', description_lo: '',
-    price_str: '', cost_str: '', prep_str: '', cal_str: '',
-    allergens: [], category_id: '', is_seasonal: false, seasonal_note: '', image_url: '',
-  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -420,23 +252,8 @@ function fmtHour(h: number): string {
   return String(h).padStart(2, '0') + 'h'
 }
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('th-TH', {
-    day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Vientiane',
-  })
-}
-
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
 function todayVientiane(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
-}
-
-function getCategoryData(c: CategoryJoin | CategoryJoin[]): CategoryJoin {
-  if (Array.isArray(c)) return c[0] ?? null
-  return c
 }
 
 function currentHourVientiane(): number {
@@ -1430,7 +1247,7 @@ function CategoriesTab() {
         ))}
         {cats.length === 0 && (
           <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.2)', padding: 48, fontSize: 14 }}>
-            ยังไม่มีหมวดหมู่ — กด "+ เพิ่มหมวดหมู่" เพื่อเริ่ม
+            ยังไม่มีหมวดหมู่ — กด “+ เพิ่มหมวดหมู่” เพื่อเริ่ม
           </div>
         )}
       </div>
@@ -2175,12 +1992,6 @@ function SettingsTab() {
 
 // ─── CustomersTab → see components/cafe/CustomersTab.tsx ──────────────────────
 
-const ALLERGY_MAP: Record<string, string> = {
-  นม: '🥛', กลูเตน: '🌾', ถั่ว: '🥜', ไข่: '🥚', ซีฟู้ด: '🦐',
-}
-
-const POINTS_RATE = 100  // points per redeem unit
-const POINTS_VALUE = 5000 // LAK per redeem unit
 
 // CustomersTab extracted to components/cafe/CustomersTab.tsx
 
@@ -3179,13 +2990,17 @@ function ChatSection() {
     void loadCtx()
   }, [])
 
-  // Proactive morning briefing — fires once after context loads
+  // Proactive morning briefing — fires once after context loads. ask is reached through a ref:
+  // it is a new function every render, and re-running on it would send the briefing again
+  // after "clear chat" (which resets briefingSent).
+  const askRef = useRef(ask)
+  useEffect(() => { askRef.current = ask })
   useEffect(() => {
     if (!ctxLoading && !briefingSent.current) {
       briefingSent.current = true
-      void ask('สวัสดีครับ! ช่วยสรุปสถานการณ์ Alan Cafe วันนี้แบบครบถ้วน — ยอดขาย สต็อกวิกฤต และ 3 สิ่งที่ต้องทำด่วนวันนี้')
+      void askRef.current('สวัสดีครับ! ช่วยสรุปสถานการณ์ Alan Cafe วันนี้แบบครบถ้วน — ยอดขาย สต็อกวิกฤต และ 3 สิ่งที่ต้องทำด่วนวันนี้')
     }
-  }, [ctxLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ctxLoading])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import {
@@ -33,9 +33,6 @@ type WeekDay = { label: string; revenue: number; isToday: boolean }
 type StockAlert = { name: string; qty: number; unit: string; daysLeft: number | null }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function fmtLak(n: number): string {
-  return new Intl.NumberFormat('th-TH').format(n) + ' ₭'
-}
 
 function timeOfDay(): 'morning' | 'afternoon' | 'evening' {
   const h = new Date().getHours()
@@ -291,7 +288,6 @@ export function OwnerClient() {
   const loadWeek = useCallback(async () => {
     const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const days: WeekDay[] = []
-    const todayDow = new Date().getDay()
 
     for (let i = 6; i >= 0; i--) {
       const d = new Date()

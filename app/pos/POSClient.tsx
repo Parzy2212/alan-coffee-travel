@@ -42,7 +42,7 @@ import {
   BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
   TEXT_1, TEXT_2, TEXT_4,
   FONT_MONO, RADIUS, SHADOW_MODAL,
-  STATE_FOCUS_RING, STATE_SELECTED_BG, STATE_SELECTED_BORDER,
+  STATE_SELECTED_BG, STATE_SELECTED_BORDER,
 } from '@/lib/pos-theme-tokens'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -85,8 +85,6 @@ type HeldOrder = {
   created_at: string
   expires_at: string
 }
-
-type ChargeStatus = 'idle' | 'loading' | 'success' | 'error'
 
 type PosSettings = {
   shop_name: string
@@ -150,18 +148,6 @@ type PaymentBank = {
   account_number: string
   account_name: string
   color: string
-}
-
-type PayDetails = {
-  method: PaymentMethod
-  received: number
-  change: number
-  customer: string
-  table: string
-  discount: number
-  discountReason: string
-  staffNote: string
-  finalTotal: number
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -286,22 +272,6 @@ const DISCOUNT_PRESETS = [
 ] as const
 type DiscountKey = 'employee' | 'promo' | 'regular' | 'other'
 const NUMPAD_KEYS = ['7','8','9','4','5','6','1','2','3','00','0','⌫'] as const
-
-// ─── QtyButton ────────────────────────────────────────────────────────────────
-
-function QtyButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button onClick={onClick} style={{
-      width: 28, height: 28, borderRadius: 4,
-      border: '1px solid rgba(255,255,255,0.14)',
-      backgroundColor: 'transparent', color: '#fff',
-      fontWeight: 700, fontSize: 16, lineHeight: 1, cursor: 'pointer',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      {label}
-    </button>
-  )
-}
 
 // ─── CartItemCard ─────────────────────────────────────────────────────────────
 
@@ -793,273 +763,6 @@ function CustomPopup({ recipe, onConfirm, onClose, initialCustomization, initial
           </button>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ─── DigitalReceiptPopup ──────────────────────────────────────────────────────
-
-function DigitalReceiptPopup({
-  data, settings, onClose,
-}: {
-  data: SuccessData
-  settings: PosSettings
-  onClose: () => void
-}) {
-  const now     = new Date()
-  const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
-  const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-
-  const vatPct    = settings.vat_percent
-  const vatAmount = vatPct > 0 ? Math.round(data.finalTotal * vatPct / (100 + vatPct)) : 0
-
-  const qrContent = settings.qr_payment_number || settings.shop_line || settings.shop_facebook || ''
-
-  const payLabel = data.method === 'cash' ? 'เงินสด' : data.method === 'qr' ? 'QR Code' : 'โอนเงิน'
-
-  const [printState, setPrintState] = useState<'idle' | 'printing' | 'done' | 'error'>('idle')
-
-  async function handleThermalPrint() {
-    setPrintState('printing')
-    try {
-      const footerText = settings.receipt_footer || 'Thank you for visiting'
-      const phone      = settings.shop_phone
-      const address    = settings.shop_address
-      const shopName   = settings.shop_name || 'ALAN COFFEE & TRAVEL'
-      await thermalPrint({
-        shopName,
-        queue:          data.queue,
-        receipt:        data.receipt,
-        table:          data.table,
-        customer:       data.customer,
-        cartSnapshot:   data.cartSnapshot,
-        subtotal:       data.subtotal,
-        discountAmt:    data.discountAmt,
-        discountReason: data.discountReason || '',
-        finalTotal:     data.finalTotal,
-        method:         data.method,
-        received:       data.received,
-        change:         data.change,
-        vatPct:         settings.vat_percent,
-        footerText,
-        phone,
-        address,
-        isTest:         data.isTest,
-        lang:           data.receiptLang,
-      })
-      setPrintState('done')
-      setTimeout(() => setPrintState('idle'), 3000)
-    } catch (e) {
-      console.error('[POS] Print failed:', e)
-      setPrintState('error')
-      setTimeout(() => setPrintState('idle'), 3000)
-    }
-  }
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 300,
-      backgroundColor: 'rgba(0,0,0,0.88)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 16,
-    }}>
-      {/* Screen receipt card */}
-      <div style={{
-        backgroundColor: '#121212', border: `1px solid ${GOLD}44`,
-        borderRadius: 16, width: '100%', maxWidth: 420,
-        maxHeight: '85dvh', display: 'flex', flexDirection: 'column',
-        overflow: 'hidden',
-      }}>
-        {/* Header bar */}
-        <div style={{
-          padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          flexShrink: 0,
-        }}>
-          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2.5px', textTransform: 'uppercase', fontWeight: 700 }}>
-            ใบเสร็จ / Receipt
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={handleThermalPrint}
-              disabled={printState === 'printing'}
-              style={{
-                padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: printState === 'printing' ? 'wait' : 'pointer',
-                border: `1px solid ${printState === 'done' ? GREEN + '88' : printState === 'error' ? RED + '88' : GOLD + '55'}`,
-                backgroundColor: printState === 'done' ? `${GREEN}18` : printState === 'error' ? `${RED}14` : `${GOLD}14`,
-                color: printState === 'done' ? GREEN : printState === 'error' ? '#e07070' : GOLD,
-                minWidth: 120,
-              }}
-            >
-              {printState === 'printing' ? 'กำลังพิมพ์...'
-               : printState === 'done'    ? 'พิมพ์เรียบร้อย ✓'
-               : printState === 'error'   ? 'ไม่พบเครื่องพิมพ์'
-               : '🖨️ พิมพ์ใบเสร็จ'}
-            </button>
-            <button onClick={onClose} style={{
-              padding: '5px 14px', borderRadius: 6,
-              border: '1px solid rgba(255,255,255,0.12)',
-              backgroundColor: 'rgba(255,255,255,0.05)',
-              color: 'rgba(255,255,255,0.5)', fontSize: 12, cursor: 'pointer',
-            }}>
-              ปิด
-            </button>
-          </div>
-        </div>
-
-        {/* Receipt body */}
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-            {/* Shop info */}
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <div style={{
-                fontFamily: 'var(--font-heading)', fontWeight: 900,
-                fontSize: 24, color: '#fff', letterSpacing: '-0.5px',
-              }}>
-                {settings.shop_name || 'ALAN COFFEE'}
-              </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
-                {dateStr} · {timeStr}
-              </div>
-            </div>
-
-            {/* Receipt / Queue numbers */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between',
-              padding: '10px 12px', borderRadius: 8,
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.07)',
-              marginBottom: 16,
-            }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>ใบเสร็จ</div>
-                <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: GOLD, marginTop: 2 }}>{data.receipt || '—'}</div>
-              </div>
-              <div style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>คิว</div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 900, color: '#fff', marginTop: 2, letterSpacing: '-1px' }}>
-                  {fmtQueue(data.queue)}
-                </div>
-              </div>
-              {data.customer && (
-                <>
-                  <div style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>ลูกค้า</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fff', marginTop: 2 }}>{data.customer}</div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Divider */}
-            <div style={{ borderTop: '1px dashed rgba(255,255,255,0.12)', marginBottom: 14 }} />
-
-            {/* Items */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-              {data.cartSnapshot.map((item, i) => (
-                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <div style={{ minWidth: 20, textAlign: 'right', fontSize: 12, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>
-                    {item.qty}×
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{item.recipe.product_name}</div>
-                    {item.customization && (
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>{item.customization}</div>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 13, color: '#fff', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-                    {(item.recipe.price_lak * item.qty).toLocaleString('en-US')}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Divider */}
-            <div style={{ borderTop: '1px dashed rgba(255,255,255,0.12)', marginBottom: 12 }} />
-
-            {/* Totals */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
-                <span>ยอดรวม</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{data.subtotal.toLocaleString('en-US')}</span>
-              </div>
-              {data.discountAmt > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: GREEN }}>
-                  <span>ส่วนลด</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>−{data.discountAmt.toLocaleString('en-US')}</span>
-                </div>
-              )}
-              {vatPct > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
-                  <span>VAT {vatPct}% (รวมอยู่แล้ว)</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{vatAmount.toLocaleString('en-US')}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Grand total */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-              marginTop: 10, paddingTop: 10, borderTop: `1px solid ${GOLD}33`,
-            }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: '0.5px' }}>ยอดสุทธิ</span>
-              <span style={{ fontSize: 26, fontWeight: 900, color: GOLD, fontVariantNumeric: 'tabular-nums', letterSpacing: '-1px' }}>
-                {data.finalTotal.toLocaleString('en-US')} <span style={{ fontSize: 14 }}>LAK</span>
-              </span>
-            </div>
-
-            {/* Payment info */}
-            <div style={{
-              marginTop: 14, padding: '10px 14px', borderRadius: 8,
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.07)',
-              display: 'flex', flexDirection: 'column', gap: 6,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
-                <span>ชำระด้วย</span>
-                <span style={{ fontWeight: 600, color: '#fff' }}>{payLabel}</span>
-              </div>
-              {data.method === 'cash' && data.received > 0 && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>
-                    <span>รับมา</span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{data.received.toLocaleString('en-US')}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: GREEN, fontWeight: 700 }}>
-                    <span>เงินทอน</span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{data.change.toLocaleString('en-US')}</span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Shop QR */}
-            {qrContent && (
-              <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrContent)}&bgcolor=121212&color=c9a84c&margin=6`}
-                  alt="QR"
-                  width={120} height={120}
-                  style={{ borderRadius: 8, border: `1px solid ${GOLD}33` }}
-                />
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '1px' }}>
-                  ขอบคุณที่ใช้บริการ
-                </div>
-              </div>
-            )}
-
-            {!qrContent && (
-              <div style={{ marginTop: 16, textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>
-                ขอบคุณที่ใช้บริการ — Thank you
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
     </div>
   )
 }
@@ -2236,7 +1939,7 @@ function HeldOrdersModal({ heldOrders, onResume, onDelete, onClose, error, loadE
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>แตะ "เรียกคืน" เพื่อดึงกลับมาในตะกร้า</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>แตะ “เรียกคืน” เพื่อดึงกลับมาในตะกร้า</div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 22, cursor: 'pointer' }}>×</button>
         </div>
@@ -2626,7 +2329,7 @@ export default function POSClient() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [loadMenu])
 
   // L1 / L2 categories — exclude placeholder "." entries
   const l1Categories = useMemo(() => categories.filter(c => c.parent_id === null && c.name !== '.'), [categories])
@@ -2637,14 +2340,11 @@ export default function POSClient() {
 
   function selectL1(id: string) { setActiveL1(id); setActiveL2(null) }
 
-  function getFamilyIds(parentId: string): string[] {
-    const children = categories.filter(c => c.parent_id === parentId)
-    return [parentId, ...children.flatMap(c => getFamilyIds(c.id))]
-  }
-
   const filtered = useMemo(() => {
     if (activeL1 === 'All') return recipes
     if (activeL2) return recipes.filter(r => r.category_id === activeL2)
+    const getFamilyIds = (parentId: string): string[] =>
+      [parentId, ...categories.filter(c => c.parent_id === parentId).flatMap(c => getFamilyIds(c.id))]
     const familyIds = getFamilyIds(activeL1)
     return recipes.filter(r => r.category_id && familyIds.includes(r.category_id))
   }, [recipes, activeL1, activeL2, categories])
@@ -3000,8 +2700,7 @@ export default function POSClient() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showOrderSuccess, showCustomerSelector, displayRecipes, showAppMenu])
+  }, [cart.length, showCharge, showHeldModal, showHoldModal, showSettings, showDrawer, showShortcuts, showOrderSuccess, showCustomerSelector, displayRecipes, showAppMenu, addToCartWithCustomization])
 
   const cartPayload = cart.map(item => ({
     recipe_id:      item.recipe.id,

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { getInvitationDetails, acceptInvitation, roleLabel, isExpired, type InvitationDetails } from '@/lib/invitations'
 import { RoleBadge } from '@/components/shop/RoleBadge'
+import Link from 'next/link'
 
 const GOLD = '#c9a84c'
 
@@ -69,11 +70,11 @@ export default function AcceptInvitePage() {
 
   const Logo = () => (
     <div style={{ textAlign: 'center', marginBottom: 40 }}>
-      <a href="/" style={{ textDecoration: 'none' }}>
+      <Link href="/" style={{ textDecoration: 'none' }}>
         <div style={{ fontSize: 28, fontWeight: 800, color: GOLD, fontFamily: 'var(--font-heading)', letterSpacing: '-0.5px' }}>
           ALAN <span style={{ color: 'rgba(201,168,76,0.5)', fontSize: 13, letterSpacing: '3px', fontWeight: 600 }}>CafeOS</span>
         </div>
-      </a>
+      </Link>
     </div>
   )
 
@@ -81,7 +82,7 @@ export default function AcceptInvitePage() {
     <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <Logo />
       <div style={CARD}>{children}</div>
-      <a href="/" style={{ marginTop: 24, color: 'rgba(255,255,255,0.2)', fontSize: 12, textDecoration: 'none' }}>← กลับหน้าหลัก</a>
+      <Link href="/" style={{ marginTop: 24, color: 'rgba(255,255,255,0.2)', fontSize: 12, textDecoration: 'none' }}>← กลับหน้าหลัก</Link>
     </main>
   )
 

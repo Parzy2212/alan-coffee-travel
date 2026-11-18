@@ -249,8 +249,7 @@ function OverviewSection() {
               <Tooltip
                 contentStyle={{ backgroundColor: '#1a1a1a', border: `1px solid ${GOLD}44`, borderRadius: 8 }}
                 labelStyle={{ color: GOLD }}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              formatter={(v: any) => [fmtLAK(Number(v ?? 0))]}
+              formatter={v => [fmtLAK(Number(v ?? 0))]}
               />
               <Bar dataKey="income"  name="รายรับ"  fill={GREEN} radius={[3,3,0,0]} />
               <Bar dataKey="expense" name="รายจ่าย" fill={RED}   radius={[3,3,0,0]} />
@@ -414,6 +413,17 @@ const DATE_FILTERS = [
 ] as const
 type DateFilter = (typeof DATE_FILTERS)[number]['key']
 
+function dateRange(filter: DateFilter): { start: string | null; end: string | null } {
+  const today = todayISO()
+  if (filter === 'today') return { start: today, end: today }
+  if (filter === 'week') {
+    const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 6)
+    return { start: d.toISOString().slice(0, 10), end: today }
+  }
+  if (filter === 'month') return { start: monthStart(), end: today }
+  return { start: null, end: null }
+}
+
 function EntriesSection() {
   const [entries,    setEntries]    = useState<CFEntry[]>([])
   const [loading,    setLoading]    = useState(true)
@@ -423,20 +433,9 @@ function EntriesSection() {
   const [deleting,   setDeleting]   = useState<string | null>(null)
   const [err,        setErr]        = useState('')
 
-  function getRange(): { start: string | null; end: string | null } {
-    const today = todayISO()
-    if (dateFilter === 'today') return { start: today, end: today }
-    if (dateFilter === 'week') {
-      const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 6)
-      return { start: d.toISOString().slice(0, 10), end: today }
-    }
-    if (dateFilter === 'month') return { start: monthStart(), end: today }
-    return { start: null, end: null }
-  }
-
   const load = useCallback(async () => {
     setLoading(true)
-    const { start, end } = getRange()
+    const { start, end } = dateRange(dateFilter)
     const { data } = await authClient.rpc('get_cash_flow_entries', {
       p_start:  start,
       p_end:    end,
@@ -446,7 +445,6 @@ function EntriesSection() {
     })
     setEntries((data as CFEntry[] | null) ?? [])
     setLoading(false)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilter, typeFilter])
 
   useEffect(() => { void load() }, [load])

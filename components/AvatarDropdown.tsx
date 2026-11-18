@@ -6,7 +6,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { getInitials } from '@/lib/avatar'
 
 const GOLD = '#c9a84c'
-const DARK = '#111'
 
 interface MenuItem {
   label: string

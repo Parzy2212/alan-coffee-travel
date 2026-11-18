@@ -9,6 +9,7 @@ import { ShopIdentity } from '@/components/onboarding/ShopIdentity'
 import { SampleMenu, SAMPLE_ITEMS, type CustomItem } from '@/components/onboarding/SampleMenu'
 import { PrinterSetup, type PrinterPath } from '@/components/onboarding/PrinterSetup'
 import { Celebration } from '@/components/onboarding/Celebration'
+import Link from 'next/link'
 
 // ─── Keyframes injected once ────────────────────────────────────────────────
 const STYLES = `
@@ -249,14 +250,14 @@ export default function OnboardingPage() {
 
       {/* Logo */}
       <div style={{ textAlign: 'center', marginBottom: 24, flexShrink: 0 }}>
-        <a href="/" style={{ textDecoration: 'none' }}>
+        <Link href="/" style={{ textDecoration: 'none' }}>
           <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: '#c9a84c', letterSpacing: '-0.3px' }}>
             ALAN
           </span>
           <span style={{ color: 'rgba(201,168,76,0.4)', fontSize: 11, letterSpacing: '3px', fontWeight: 600, marginLeft: 6 }}>
             CafeOS
           </span>
-        </a>
+        </Link>
       </div>
 
       {/* Progress bar */}

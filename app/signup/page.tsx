@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { getInvitationDetails } from '@/lib/invitations'
+import Link from 'next/link'
 
 const GOLD = '#c9a84c'
 
@@ -85,12 +86,12 @@ export default function SignupPage() {
 
       {/* Logo */}
       <div style={{ textAlign: 'center', marginBottom: 40 }}>
-        <a href="/" style={{ textDecoration: 'none' }}>
+        <Link href="/" style={{ textDecoration: 'none' }}>
           <div style={{ fontSize: 28, fontWeight: 800, color: GOLD, fontFamily: 'var(--font-heading)', letterSpacing: '-0.5px' }}>
             ALAN
             <span style={{ color: 'rgba(201,168,76,0.5)', fontSize: 13, letterSpacing: '3px', fontWeight: 600, marginLeft: 10 }}>CafeOS</span>
           </div>
-        </a>
+        </Link>
         <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginTop: 6 }}>ทดลองใช้ฟรี · ไม่ต้องใช้บัตรเครดิต</p>
       </div>
 
@@ -215,9 +216,9 @@ export default function SignupPage() {
         </div>
       </div>
 
-      <a href="/" style={{ marginTop: 24, color: 'rgba(255,255,255,0.2)', fontSize: 12, textDecoration: 'none' }}>
+      <Link href="/" style={{ marginTop: 24, color: 'rgba(255,255,255,0.2)', fontSize: 12, textDecoration: 'none' }}>
         ← กลับหน้าหลัก
-      </a>
+      </Link>
     </main>
   )
 }

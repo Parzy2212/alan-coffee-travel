@@ -7,7 +7,6 @@ import { fetchTodayStats, fmtLakShort, fmtTimeAgo, pctVsYesterday, type TodaySta
 const GOLD   = '#c9a84c'
 const GREEN  = '#4cba7f'
 const RED    = '#ff6b6b'
-const DARK   = '#111'
 const BORDER = 'rgba(201,168,76,0.14)'
 
 function fmtHour(h: number): string {
@@ -15,20 +14,6 @@ function fmtHour(h: number): string {
   if (h < 12)   return `${h} AM`
   if (h === 12) return '12 PM'
   return `${h - 12} PM`
-}
-
-// Compact change badge: ▲ +18% or ▼ -5%
-function ChangeBadge({ today, yesterday }: { today: number; yesterday: number }) {
-  const ch = pctVsYesterday(today, yesterday)
-  if (!ch) return null
-  return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, marginLeft: 6,
-      color: ch.up ? GREEN : RED,
-    }}>
-      {ch.up ? '▲' : '▼'} {ch.pct}%
-    </span>
-  )
 }
 
 // Expanded popover panel

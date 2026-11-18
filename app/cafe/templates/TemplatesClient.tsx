@@ -65,7 +65,7 @@ export function TemplatesClient() {
             <span style={{ fontSize: 20, flexShrink: 0 }}>✅</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: GREEN, marginBottom: 4 }}>
-                ใช้ Template "{result.template}" สำเร็จ
+                ใช้ Template “{result.template}” สำเร็จ
               </div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.8 }}>
                 เมนู: สร้าง {result.data.recipesCreated} รายการ

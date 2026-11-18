@@ -27,7 +27,7 @@ function timeAgo(iso: string): string {
 }
 
 export function SessionsSection() {
-  const { user, signOut } = useAuth()
+  const { user } = useAuth()
   const router = useRouter()
   const [parsed, setParsed] = useState<{ browser: string; os: string; deviceType: string } | null>(null)
   const [lastSeen, setLastSeen] = useState<string | null>(null)

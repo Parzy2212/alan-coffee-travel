@@ -6,7 +6,7 @@ import { authClient } from '@/lib/supabase-auth'
 import { getFaceApi } from '@/lib/faceapi'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
-  GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
+  GOLD, BLACK, CARD, BORDER, RED, GREEN, ORANGE,
   StaffMember, StaffToday, StaffAnalytics, LeaveRequest, StaffForm,
   Badge, LoadingSpinner, staffListError,
   inputStyle, btnStyle,
@@ -340,7 +340,7 @@ function FaceEnrollModal({ staff, onClose, onSaved }: { staff: StaffMember; onCl
         )}
         {(status === 'captured' || status === 'saving') && (
           <>
-            {preview && <img src={preview} style={{ width: '100%', borderRadius: 10, marginBottom: 14, maxHeight: 260, objectFit: 'cover' }} />}
+            {preview && <img src={preview} alt="รูปหน้าที่ถ่าย" style={{ width: '100%', borderRadius: 10, marginBottom: 14, maxHeight: 260, objectFit: 'cover' }} />}
             {saveStep && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, backgroundColor: `${GOLD}12`, marginBottom: 8 }}>
                 <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${GOLD}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -838,10 +838,9 @@ function StaffCardGrid({ onProfile }: { onProfile: (s: StaffWithRole) => void })
 // ─── StaffProfileView ─────────────────────────────────────────────────────────
 
 function StaffProfileView({
-  staff, onBack, onEnroll, onRefresh,
+  staff, onEnroll, onRefresh,
 }: {
   staff: StaffWithRole
-  onBack: () => void
   onEnroll: () => void
   onRefresh: () => void
 }) {
@@ -1271,7 +1270,6 @@ export default function StaffTab() {
           </button>
           <StaffProfileView
             staff={selectedStaff}
-            onBack={handleBack}
             onEnroll={() => setEnrollTarget(selectedStaff)}
             onRefresh={handleRefresh}
           />

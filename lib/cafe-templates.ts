@@ -37,8 +37,6 @@ export type CafeTemplate = {
   recipeLinks: TemplateRecipeLink[]
 }
 
-// ── Seeded category IDs from migration 005_categories ─────────────────────────
-const CAT_COFFEE  = 'ca000000-0000-0000-0000-000000000001'
 const CAT_HOT     = 'ca000000-0000-0000-0000-000000000003'
 const CAT_ICED    = 'ca000000-0000-0000-0000-000000000004'
 const CAT_BAKERY  = 'ca000000-0000-0000-0000-000000000005'

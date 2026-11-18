@@ -70,10 +70,10 @@ export default function POSProductPage() {
         alignItems: 'center',
         justifyContent: 'space-between',
       }}>
-        <a href="/" style={{ textDecoration: 'none' }}>
+        <Link href="/" style={{ textDecoration: 'none' }}>
           <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: GOLD }}>ALAN</span>
           <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', marginLeft: 8 }}>CafeOS</span>
-        </a>
+        </Link>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           <a href="/pos-product/pricing" style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, textDecoration: 'none' }}>ราคา</a>
           <a href="/login" style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, textDecoration: 'none' }}>เข้าสู่ระบบ</a>

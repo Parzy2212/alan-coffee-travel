@@ -37,14 +37,13 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 
 export interface CustomerDetailModalProps {
   customer: Customer
-  shopId?: string | null
   onClose: () => void
   onUpdated: (c: Customer) => void
 }
 
 type Order = { id: string; queue_number: number | null; status: string; total_lak: number | null; created_at: string }
 
-export function CustomerDetailModal({ customer: init, shopId, onClose, onUpdated }: CustomerDetailModalProps) {
+export function CustomerDetailModal({ customer: init, onClose, onUpdated }: CustomerDetailModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [c,       setC]       = useState<Customer>(init)
   const [tab,     setTab]     = useState<'profile' | 'orders' | 'loyalty'>('profile')

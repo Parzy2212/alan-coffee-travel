@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { GOLD, BLACK, CARD, BORDER, RED, GREEN, ORANGE } from '@/components/cafe/shared'
+import { GOLD, CARD, BORDER, RED, GREEN, ORANGE } from '@/components/cafe/shared'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

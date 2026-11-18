@@ -173,7 +173,6 @@ export function CustomersTab() {
       {detail && (
         <CustomerDetailModal
           customer={detail}
-          shopId={shopId}
           onClose={() => setDetail(null)}
           onUpdated={updated => {
             setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c))

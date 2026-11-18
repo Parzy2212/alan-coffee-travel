@@ -398,8 +398,7 @@ export default function RecipeCostTab() {
             setItems([])
           }
         })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [recipeId, loaded])
+    }, [recipeId, loaded, menuItems])
 
     function addIngItem() {
       if (!inventory.length) return

@@ -117,7 +117,7 @@ function CameraCapture({ onCapture }: { onCapture: (b: Blob) => void }) {
 
   if (preview) return (
     <div>
-      <img src={preview} style={{ width: '100%', height: 130, objectFit: 'cover', borderRadius: 8 }} />
+      <img src={preview} alt="รูปที่ถ่าย" style={{ width: '100%', height: 130, objectFit: 'cover', borderRadius: 8 }} />
       <button onClick={() => { setPreview(null); void start() }}
         style={{ marginTop: 6, width: '100%', padding: 6, borderRadius: 7, border: `1px solid ${BORDER}`,
           background: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 12 }}>
@@ -229,7 +229,7 @@ function FaceVerify({ staff, onPass, onBack }: {
       clearInterval(intervalRef.current)
       streamRef.current?.getTracks().forEach(t => t.stop())
     }
-  }, [staff]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [staff])
 
   // ── Detection loop: runs while status === 'live' ──
   useEffect(() => {
@@ -254,8 +254,7 @@ function FaceVerify({ staff, onPass, onBack }: {
         if (!ctx) return
         ctx.clearRect(0, 0, over.width, over.height)
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let det: any = null
+        let det
         try {
           det = await fa.detectSingleFace(video, new fa.TinyFaceDetectorOptions({ scoreThreshold: 0.5 }))
             .withFaceLandmarks()
@@ -315,9 +314,13 @@ function FaceVerify({ staff, onPass, onBack }: {
     }, 200)
 
     return () => clearInterval(intervalRef.current)
-  }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status])
 
   // ── Face recognition after liveness pass ──
+  // Latest props through a ref: the parent passes a new onPass on every render, and re-running
+  // the check on that would recognise (and pass) the same face twice.
+  const latest = useRef({ onPass, descriptor: staff.face_descriptor })
+  useEffect(() => { latest.current = { onPass, descriptor: staff.face_descriptor } })
   useEffect(() => {
     if (status !== 'verifying' || !preview) return
     void (async () => {
@@ -332,13 +335,13 @@ function FaceVerify({ staff, onPass, onBack }: {
         if (!det) { setStatus('no_face'); return }
         const dist: number = fa.euclideanDistance(
           Array.from(det.descriptor as Float32Array),
-          Array.from(new Float32Array(staff.face_descriptor!))
+          Array.from(new Float32Array(latest.current.descriptor!))
         )
         console.log('[FaceVerify] Distance:', dist.toFixed(3), dist < 0.5 ? '→ PASS' : '→ FAIL')
         setDistance(dist)
         if (dist < 0.5) {
           setStatus('pass')
-          captureRef.current?.toBlob(b => { if (b) setTimeout(() => onPass(b), 1200) }, 'image/jpeg', 0.85)
+          captureRef.current?.toBlob(b => { if (b) setTimeout(() => latest.current.onPass(b), 1200) }, 'image/jpeg', 0.85)
         } else {
           setStatus('fail')
         }
@@ -347,7 +350,7 @@ function FaceVerify({ staff, onPass, onBack }: {
         setErrMsg(String(e)); setStatus('error')
       }
     })()
-  }, [status, preview]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, preview])
 
   async function retry() {
     clearInterval(intervalRef.current)
@@ -481,7 +484,7 @@ function FaceVerify({ staff, onPass, onBack }: {
 
       {/* ── captured preview ── */}
       {preview && status !== 'live' && (
-        <img src={preview} style={{ width: '100%', borderRadius: 12, maxHeight: 240, objectFit: 'cover', animation: 'fadeIn .3s' }} />
+        <img src={preview} alt="รูปที่ถ่าย" style={{ width: '100%', borderRadius: 12, maxHeight: 240, objectFit: 'cover', animation: 'fadeIn .3s' }} />
       )}
 
       {/* ── verifying ── */}
@@ -681,7 +684,8 @@ export default function StaffClient() {
         supabase.rpc('get_staff_today_status'),
         supabase.rpc('get_site_settings'),
       ])
-      const list: StaffEntry[] = (allStaff ?? []).map((s: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      type StaffRow = Omit<StaffEntry, 'face_descriptor'> & { face_descriptor: unknown }
+      const list: StaffEntry[] = ((allStaff ?? []) as StaffRow[]).map(s => ({
         id: s.id, name: s.name, name_th: s.name_th ?? null,
         avatar_url: s.avatar_url ?? null, scheduled_start_time: s.scheduled_start_time ?? null,
         face_descriptor: Array.isArray(s.face_descriptor) ? s.face_descriptor : null,
@@ -701,17 +705,6 @@ export default function StaffClient() {
 
   useEffect(() => { void loadData() }, [loadData])
 
-  // ── Load inventory on purchase_form ──
-  useEffect(() => {
-    if (phase !== 'purchase_form') return
-    void loadInventory()
-  }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Start audit on stock_audit ──
-  useEffect(() => {
-    if (phase !== 'stock_audit') return
-    void startAudit()
-  }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── GPS on action phase ──
   useEffect(() => {
@@ -736,7 +729,7 @@ export default function StaffClient() {
           p_photo: uploadedUrl, p_distance_meters: distanceM ?? null,
         })
         if (error) { setErrMsg(error.message); return }
-        const r = data as any // eslint-disable-line @typescript-eslint/no-explicit-any
+        const r = data as { success?: boolean; error?: string } | null
         if (!r?.success) { setErrMsg(r?.error ?? 'เกิดข้อผิดพลาด'); return }
         setSuccessInfo({ action: 'in', name: selected.name, time: fmtTime(new Date().toISOString()) })
         setPhase('dashboard')
@@ -829,8 +822,7 @@ export default function StaffClient() {
     const { data, error } = await authClient.rpc('start_stock_audit', { p_staff_id: selected.id })
     setAuditLoading(false)
     if (error || !data) { setAuditMsg(error ? dbErrorText(error) : 'เกิดข้อผิดพลาด'); return }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setAuditItems((data as any[]).map((d: any) => ({ audit_id: d.audit_id, inventory_id: d.inventory_id, inventory_name: d.inventory_name, unit: d.unit, system_qty: d.system_qty ?? null, counted: '' })))
+    setAuditItems((data as Omit<AuditItem, 'counted'>[]).map(d => ({ audit_id: d.audit_id, inventory_id: d.inventory_id, inventory_name: d.inventory_name, unit: d.unit, system_qty: d.system_qty ?? null, counted: '' })))
   }
 
   async function submitAudit() {
@@ -1029,12 +1021,12 @@ export default function StaffClient() {
 
           {/* Action buttons */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            <button onClick={() => setPhase('purchase_form')}
+            <button onClick={() => { setPhase('purchase_form'); void loadInventory() }}
               style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}08`, color: GOLD, cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 30 }}>🧾</span>
               แจ้งซื้อวัตถุดิบ
             </button>
-            <button onClick={() => setPhase('stock_audit')}
+            <button onClick={() => { setPhase('stock_audit'); void startAudit() }}
               style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 30 }}>📦</span>
               นับสต็อก

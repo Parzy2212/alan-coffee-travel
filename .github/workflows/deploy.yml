@@ -22,6 +22,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # next build lints only app/ components/ lib/; this covers the rest (contexts/, scripts/)
+      - name: Lint
+        run: npm run lint
+
       - name: Build
         run: npm run pages:build
         env:

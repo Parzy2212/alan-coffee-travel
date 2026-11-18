@@ -1,6 +1,5 @@
 'use client'
 
-import { supabase } from '@/lib/supabase'
 import { authClient } from '@/lib/supabase-auth'
 
 const SHOW_ADVANCED_KEY = 'alan_show_advanced_features'
