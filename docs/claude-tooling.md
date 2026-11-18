@@ -86,6 +86,17 @@ Subagents: `quality-reviewer` (this repo, `.claude/agents`); hq has `dao-secreta
 
 `/clarify` = the `clarify` skill in `.claude/skills/clarify`, one of the 18 skills from GitHub `pbakaus/impeccable`.
 
+## Lint (since 2026-11-18)
+
+- `eslint.config.mjs` loads `eslint-config-next` (15.x, old eslintrc format) through `FlatCompat` from `@eslint/eslintrc`.
+  Before, the config spread it directly and failed to load ("nextVitals is not iterable"), so no rule ever ran.
+- `@eslint/eslintrc` **3.3.4** is a pinned devDependency (owner approved 2026-11-18). It already came with `eslint`;
+  it is listed so it can't disappear on an eslint update. Source: npm registry (the version that was already in package-lock).
+- Shop side = error, the travel site files in `TRAVEL_SITE` = warning until the redesign (owner decision 2026-11-18).
+  `@next/next/no-img-element` is off: `images.unoptimized` (no image optimiser on Cloudflare Pages), owner accepted.
+- Runs in `next build` (app/ components/ lib/) and as its own step `npm run lint` in `.github/workflows/deploy.yml`
+  (covers contexts/ and scripts/ too). An error stops the deploy; no `eslint-disable` comments.
+
 ## Fonts (self-hosted since 2026-11-18)
 
 Why: `next/font/google` downloaded the fonts from Google during every build, and the GitHub Actions deploy failed several times in a row on that download (`next/font` "Cannot read properties of null"). Owner approved keeping the files in the repo (2026-11-18).
