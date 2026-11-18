@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { RoleBadge } from './RoleBadge'
 import { buildInviteLink, roleLabel, type InvitationRole } from '@/lib/invitations'
 import { logAccountEvent } from '@/lib/account-events'
+import { dbErrorText } from '@/lib/supabase-auth'
 
 const GOLD = '#c9a84c'
 const OVERLAY: React.CSSProperties = {
@@ -65,12 +66,19 @@ export function InviteMemberModal({ shopId, userId, existingEmails, onSaved, onC
     try {
       const { authClient } = await import('@/lib/supabase-auth')
 
-      // Revoke any existing pending invitation for this email
-      await authClient.from('shop_invitations')
-        .update({ status: 'revoked' })
-        .eq('shop_id', shopId)
-        .eq('email', trimEmail)
-        .eq('status', 'pending')
+      // Revoke any existing pending invitation for this email. Count them first: a refused
+      // update also changes 0 rows, and would leave two pending invitations for one email.
+      const pending = await authClient.from('shop_invitations')
+        .select('id').eq('shop_id', shopId).eq('email', trimEmail).eq('status', 'pending')
+      if (pending.error) { setError(`ตรวจคำเชิญเดิมไม่ได้: ${dbErrorText(pending.error)}`); return }
+      if (pending.data.length) {
+        const revoked = await authClient.from('shop_invitations')
+          .update({ status: 'revoked' })
+          .in('id', pending.data.map(r => r.id))
+          .select('id')
+        if (revoked.error) { setError(`ยกเลิกคำเชิญเดิมไม่ได้: ${dbErrorText(revoked.error)}`); return }
+        if (revoked.data.length !== pending.data.length) { setError('ยกเลิกคำเชิญเดิมไม่ได้: บัญชีนี้ไม่มีสิทธิ์'); return }
+      }
 
       // Create new invitation
       const { data, error: err } = await authClient.from('shop_invitations').insert({
@@ -81,7 +89,7 @@ export function InviteMemberModal({ shopId, userId, existingEmails, onSaved, onC
         message:             message.trim() || null,
       }).select('token').single()
 
-      if (err) throw err
+      if (err) { setError(`สร้างคำเชิญไม่ได้: ${dbErrorText(err)}`); return }
 
       const token = (data as { token: string }).token
       setInviteLink(buildInviteLink(token))

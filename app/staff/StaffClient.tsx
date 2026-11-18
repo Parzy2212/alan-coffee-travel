@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authClient, dbErrorText } from '@/lib/supabase-auth'
 import { getFaceApi } from '@/lib/faceapi'
+import { todayVientiane } from '@/components/cafe/shared'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -735,12 +736,13 @@ export default function StaffClient() {
         setPhase('dashboard')
         void loadData()
       } else {
-        const today = new Date().toISOString().slice(0, 10)
-        const { error } = await supabase.from('attendance').update({
+        // clock_in stores the Laos date; UTC is still yesterday before 07:00 in Laos
+        const { data: closed, error } = await supabase.from('attendance').update({
           clock_out: new Date().toISOString(),
           clock_out_photo: uploadedUrl,
-        }).eq('staff_id', selected.id).eq('date', today).is('clock_out', null)
-        if (error) { setErrMsg(error.message); return }
+        }).eq('staff_id', selected.id).eq('date', todayVientiane()).is('clock_out', null).select('id')
+        if (error) { setErrMsg(dbErrorText(error)); return }
+        if (!closed?.length) { setErrMsg('ไม่พบการลงเวลาเข้าของวันนี้ที่ยังไม่ได้ลงเวลาออก (ถ้าเข้างานก่อนเที่ยงคืน ให้แจ้งผู้จัดการแก้เวลา)'); return }
         setSuccessInfo({ action: 'out', name: selected.name, time: fmtTime(new Date().toISOString()) })
         setPhase('success')
         setTimeout(() => {
