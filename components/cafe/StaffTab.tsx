@@ -431,16 +431,38 @@ function LeavesView() {
       return
     }
 
-    // Auto-create attendance entries for each leave day
-    const days: { staff_id: string; date: string; status: string; clock_in: null; clock_out: null; late_minutes: null }[] = []
-    const start = new Date(lv.start_date)
-    const end   = new Date(lv.end_date)
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      days.push({ staff_id: lv.staff_id, date: d.toISOString().slice(0, 10), status: 'leave', clock_in: null, clock_out: null, late_minutes: null })
+    // Leave days into attendance (owner decision 2026-11-18): an "absent" day becomes leave,
+    // a day with a real clock-in (or any other existing status) is kept and listed for the manager.
+    const dates: string[] = []
+    for (let d = new Date(lv.start_date); d <= new Date(lv.end_date); d.setDate(d.getDate() + 1)) {
+      dates.push(d.toISOString().slice(0, 10))
     }
-    if (days.length > 0) {
-      const { error: attErr } = await supabase.from('attendance').upsert(days, { onConflict: 'staff_id,date', ignoreDuplicates: true })
-      if (attErr) setActErr(`อนุมัติแล้ว แต่ลงวันลาในตารางเวลาเข้างานไม่สำเร็จ: ${attErr.message}`)
+    const { data: existing, error: readErr } = await supabase.from('attendance')
+      .select('date, status, clock_in').eq('staff_id', lv.staff_id).in('date', dates)
+    if (readErr) {
+      setActErr(`อนุมัติแล้ว แต่อ่านตารางเวลาเข้างานไม่ได้ จึงยังไม่ได้ลงวันลา: ${readErr.message}`)
+    } else {
+      const byDate = new Map((existing ?? []).map(r => [r.date as string, r as { status: string | null; clock_in: string | null }]))
+      const toInsert = dates.filter(d => !byDate.has(d))
+      const toLeave  = dates.filter(d => { const r = byDate.get(d); return !!r && !r.clock_in && r.status === 'absent' })
+      const kept     = dates.filter(d => { const r = byDate.get(d); return !!r && r.status !== 'leave' && !toLeave.includes(d) })
+      const errs: string[] = []
+      if (toInsert.length) {
+        const { error } = await supabase.from('attendance').upsert(
+          toInsert.map(date => ({ staff_id: lv.staff_id, date, status: 'leave', leave_type: lv.leave_type })),
+          { onConflict: 'staff_id,date', ignoreDuplicates: true })
+        if (error) errs.push(error.message)
+      }
+      if (toLeave.length) {
+        const { error } = await supabase.from('attendance').update({ status: 'leave', leave_type: lv.leave_type })
+          .eq('staff_id', lv.staff_id).in('date', toLeave).is('clock_in', null).eq('status', 'absent')
+        if (error) errs.push(error.message)
+      }
+      if (errs.length) setActErr(`อนุมัติแล้ว แต่ลงวันลาในตารางเวลาเข้างานไม่สำเร็จ: ${errs.join('; ')}`)
+      else if (kept.length) {
+        const list = kept.map(d => { const r = byDate.get(d)!; return `${d} (${r.clock_in ? 'มีเวลาเข้างานจริง' : staffStatusLabel(r.status ?? '')})` })
+        setActErr(`อนุมัติแล้ว แต่วันเหล่านี้มีข้อมูลเข้างานอยู่แล้ว จึงไม่ได้เปลี่ยนเป็นวันลา: ${list.join(', ')}`)
+      }
     }
 
     // Telegram notification to manager
