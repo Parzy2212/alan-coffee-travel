@@ -85,3 +85,33 @@ Subagents: `quality-reviewer` (this repo, `.claude/agents`); hq has `dao-secreta
 | `data` plugin: Amplitude, Amplitude EU, Atlassian, Hex, Definite | come with the `data` plugin | unknown | not signed in; Definite fails to connect |
 
 `/clarify` = the `clarify` skill in `.claude/skills/clarify`, one of the 18 skills from GitHub `pbakaus/impeccable`.
+
+## Fonts (self-hosted since 2026-11-18)
+
+Why: `next/font/google` downloaded the fonts from Google during every build, and the GitHub Actions deploy failed several times in a row on that download (`next/font` "Cannot read properties of null"). Owner approved keeping the files in the repo (2026-11-18).
+
+- Files: `public/fonts/<family>/*.woff2`, each folder with the font's `OFL.txt` (SIL Open Font License 1.1).
+- `@font-face` rules: `app/fonts.css` (generated, same unicode ranges Google serves; imported in `app/layout.tsx`). CSS vars `--font-heading`/`--font-body`/`--font-thai`/`--font-lao` are set in `app/globals.css`; IBM Plex Sans Thai via class `.font-plex-thai`.
+- Only the subsets the app used before were kept (same as the old `subsets:` options). Inter, Playfair Display and Noto Sans Lao are variable fonts: one file covers all weights.
+- Woff2 source: Google Fonts CSS API (`fonts.googleapis.com/css2`) -> `fonts.gstatic.com`, downloaded 2026-11-18. Licence source: `https://raw.githubusercontent.com/google/fonts/main/ofl/<family>/OFL.txt` (Google Fonts official repo), same day.
+- To update: `node scripts/fetch-google-fonts.mjs .` from the repo root (rewrites the files, `app/fonts.css` and the OFL files, prints the rows of the table below); the version is the `vNN` in each URL.
+
+| Family | Subset | Weights in the file | Version | Downloaded from |
+|---|---|---|---|---|
+| Playfair Display | latin | 400, 700, 800 | v40 | https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTzYgA.woff2 |
+| Inter | latin | 100 900 | v20 | https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 |
+| Sarabun | thai | 400 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVjJx26TKEr37c9aAFJn2QN.woff2 |
+| Sarabun | latin | 400 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVjJx26TKEr37c9aBVJnw.woff2 |
+| Sarabun | thai | 600 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVmJx26TKEr37c9YMptik8s6zDX.woff2 |
+| Sarabun | latin | 600 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVmJx26TKEr37c9YMptilss6w.woff2 |
+| Sarabun | thai | 700 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVmJx26TKEr37c9YK5sik8s6zDX.woff2 |
+| Sarabun | latin | 700 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVmJx26TKEr37c9YK5silss6w.woff2 |
+| Sarabun | thai | 800 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVmJx26TKEr37c9YLJvik8s6zDX.woff2 |
+| Sarabun | latin | 800 | v17 | https://fonts.gstatic.com/s/sarabun/v17/DtVmJx26TKEr37c9YLJvilss6w.woff2 |
+| Noto Sans Lao | lao | 400, 700 | v33 | https://fonts.gstatic.com/s/notosanslao/v33/bx6QNx2Ol_ixgdYWLm9BwxM3NW6BOkuf763Clj73Cg46D6ELWw.woff2 |
+| IBM Plex Sans Thai | thai | 400 | v11 | https://fonts.gstatic.com/s/ibmplexsansthai/v11/m8JPje1VVIzcq1HzJq2AEdo2Tj_qvLqMHdYgVcM.woff2 |
+| IBM Plex Sans Thai | latin | 400 | v11 | https://fonts.gstatic.com/s/ibmplexsansthai/v11/m8JPje1VVIzcq1HzJq2AEdo2Tj_qvLqMCdYg.woff2 |
+| IBM Plex Sans Thai | thai | 500 | v11 | https://fonts.gstatic.com/s/ibmplexsansthai/v11/m8JMje1VVIzcq1HzJq2AEdo2Tj_qvLqE-vU1fuJHa74.woff2 |
+| IBM Plex Sans Thai | latin | 500 | v11 | https://fonts.gstatic.com/s/ibmplexsansthai/v11/m8JMje1VVIzcq1HzJq2AEdo2Tj_qvLqE-vU1auJH.woff2 |
+| IBM Plex Sans Thai | thai | 600 | v11 | https://fonts.gstatic.com/s/ibmplexsansthai/v11/m8JMje1VVIzcq1HzJq2AEdo2Tj_qvLqE1vI1fuJHa74.woff2 |
+| IBM Plex Sans Thai | latin | 600 | v11 | https://fonts.gstatic.com/s/ibmplexsansthai/v11/m8JMje1VVIzcq1HzJq2AEdo2Tj_qvLqE1vI1auJH.woff2 |

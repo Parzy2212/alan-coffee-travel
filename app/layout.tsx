@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { Playfair_Display, Inter, Noto_Sans_Lao, Sarabun } from 'next/font/google'
 import Script from 'next/script'
 import { LanguageProvider } from '@/contexts/LanguageContext'
 import { AuthProvider } from '@/contexts/AuthContext'
@@ -7,36 +6,8 @@ import { ShopProvider } from '@/contexts/ShopContext'
 import { PWAProvider } from '@/components/PWAProvider'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
+import './fonts.css'
 import './globals.css'
-
-const playfair = Playfair_Display({
-  subsets: ['latin'],
-  variable: '--font-heading',
-  display: 'swap',
-  weight: ['400', '700', '800'],
-})
-
-const sarabun = Sarabun({
-  subsets: ['thai', 'latin'],
-  variable: '--font-thai',
-  display: 'swap',
-  weight: ['400', '600', '700', '800'],
-  preload: false, // default lang is 'en' — most page loads never render Thai script, so don't preload it upfront
-})
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-body',
-  display: 'swap',
-})
-
-const notoSansLao = Noto_Sans_Lao({
-  subsets: ['lao'],
-  variable: '--font-lao',
-  display: 'swap',
-  weight: ['400', '700'],
-  preload: false, // default lang is 'en' — most page loads never render Lao script, so don't preload it upfront
-})
 
 const BASE_URL = 'https://alancoffeetravel.com'
 
@@ -170,6 +141,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Latin heading/body faces were preloaded by next/font before; Thai and Lao were not (preload: false) */}
+        <link rel="preload" href="/fonts/inter/inter-latin-variable.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/playfairdisplay/playfairdisplay-latin-variable.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         {/* Synchronously set data-lang before first paint to avoid font FOUC */}
         <script dangerouslySetInnerHTML={{ __html: `
           try {
@@ -193,7 +167,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icons/icon-152x152.png" />
         <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png" />
       </head>
-      <body className={`${playfair.variable} ${inter.variable} ${notoSansLao.variable} ${sarabun.variable}`}>
+      <body>
         <PWAProvider>
           <AuthProvider>
             <ShopProvider>

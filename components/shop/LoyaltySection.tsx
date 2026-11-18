@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { IBM_Plex_Sans_Thai } from 'next/font/google'
 import { getLoyaltySettings, upsaveLoyaltySettings } from '@/lib/customers'
 import type { LoyaltySettings } from '@/lib/customers'
 import { DEFAULT_SETTINGS, computePointsEarned } from '@/lib/loyalty'
@@ -10,12 +9,6 @@ import {
   GOLD, SUCCESS, BG_BASE, BG_CARD_ALT, BORDER_SUBTLE, BORDER_DEFAULT, BORDER_GOLD,
   TEXT_1, TEXT_2, FONT_MONO, RADIUS, STATE_DISABLED_OPACITY, STATE_FOCUS_RING,
 } from '@/lib/pos-theme-tokens'
-
-const ibmPlexSansThai = IBM_Plex_Sans_Thai({
-  subsets: ['thai', 'latin'],
-  weight: ['400', '500', '600'],
-  display: 'swap',
-})
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: RADIUS.lg,
@@ -85,7 +78,7 @@ export function LoyaltySection() {
   }
 
   return (
-    <div className={`${ibmPlexSansThai.className} loyalty-section`} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div className={`font-plex-thai loyalty-section`} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
       {/* Enable toggle */}
       <div style={{ padding: '16px 0', borderBottom: `1px solid ${BORDER_SUBTLE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

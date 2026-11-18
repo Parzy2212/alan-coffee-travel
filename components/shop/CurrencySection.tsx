@@ -1,19 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { IBM_Plex_Sans_Thai } from 'next/font/google'
 import { type CurrencyCode } from '@/lib/currency'
 import {
   GOLD, BG_VOID, BG_CARD, BORDER_SUBTLE, BORDER_DEFAULT,
   STATE_SELECTED_BG, STATE_SELECTED_BORDER, STATE_FOCUS_RING,
   TEXT_1, TEXT_2, FONT_MONO, RADIUS,
 } from '@/lib/pos-theme-tokens'
-
-const ibmPlexSansThai = IBM_Plex_Sans_Thai({
-  subsets: ['thai', 'latin'],
-  weight: ['400', '500', '600'],
-  display: 'swap',
-})
 
 const CURRENCIES: { code: CurrencyCode; name: string; symbol: string }[] = [
   { code: 'USD', name: 'US Dollar',    symbol: '$'  },
@@ -37,7 +30,7 @@ export function CurrencySection({ rates, display, onRates, onDisplay }: {
   }
 
   return (
-    <div className={`${ibmPlexSansThai.className} currency-section`} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className={`font-plex-thai currency-section`} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
         <div style={{ fontSize: 11, color: TEXT_2, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 12 }}>อัตราแลกเปลี่ยน (กี่กีบ ต่อ 1 หน่วย)</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

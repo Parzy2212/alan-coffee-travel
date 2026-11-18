@@ -9,8 +9,8 @@
  * (artifact ef83b998): collapses the old 6-step pure-white text scale into
  * 5 steps on a warm cream base (#f6f2e8, replacing #ffffff), adds a new
  * STATE_* token group (hover/pressed/disabled/focus/selected), and switches
- * FONT_BODY/FONT_HEADING from Inter to IBM Plex Sans Thai (native Thai/Lao
- * + Latin support in one family). BG scale, status colors, font-size scale,
+ * FONT_BODY/FONT_HEADING from Inter to IBM Plex Sans Thai (Thai + Latin in
+ * one family; no Lao glyphs). BG scale, status colors, font-size scale,
  * spacing, and radius are unchanged from v1 — re-verified against the same
  * canvas, no drift.
  *
@@ -115,13 +115,9 @@ export const COLOR_ACCENT_COLD = '#4a9eff'
 
 // ─── Typography ─────────────────────────────────────────────────────────────
 // v2: FONT_HEADING/FONT_BODY switch from Inter to IBM Plex Sans Thai — one
-// family covering Thai/Lao/Latin natively instead of falling back to the
-// separate --font-thai/--font-lao CSS vars the rest of the site uses. Not
-// yet loaded via next/font/google anywhere — the screen(s) that first
-// import this token file need to add that font loading themselves (see
-// app/layout.tsx for the existing next/font pattern to follow). Falls back
-// to the site's existing --font-body var so nothing breaks before that
-// font is actually loaded.
+// family covering Thai and Latin instead of falling back to the separate
+// --font-thai CSS var the rest of the site uses. Its Thai and Latin faces (400/500/600) are self-hosted in app/fonts.css; it has
+// no Lao glyphs, so Lao text falls back to the next family in the list.
 
 export const FONT_HEADING = "'IBM Plex Sans Thai', var(--font-heading), sans-serif"
 export const FONT_BODY    = "'IBM Plex Sans Thai', var(--font-body, Inter, sans-serif)"

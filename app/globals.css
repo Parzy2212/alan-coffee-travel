@@ -3,10 +3,11 @@
 /* ─── Design tokens ───────────────────────────────────────── */
 
 :root {
-  /* --font-heading, --font-body are injected by next/font class on <body> */
-  /* These are fallback definitions for use in html[data-lang] rules */
-  --font-lao:  'Noto Sans Lao', sans-serif;
-  --font-thai: 'Sarabun', sans-serif;
+  /* faces are self-hosted in app/fonts.css */
+  --font-heading: 'Playfair Display', serif;
+  --font-body:    'Inter', sans-serif;
+  --font-lao:     'Noto Sans Lao', sans-serif;
+  --font-thai:    'Sarabun', sans-serif;
 
   --color-black:        #0f0f0f;
   --color-black-soft:   #1a1a1a;
@@ -41,10 +42,10 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading), var(--font-thai), var(--font-lao), serif;
 }
 
+.font-plex-thai { font-family: 'IBM Plex Sans Thai', sans-serif; }
+
 /* ─── Language font overrides ─────────────────────────────── */
-/* Target body and its descendants so var() resolves from body's scope,
-   where next/font classes have set --font-lao and --font-thai.
-   !important is required to override inline fontFamily in JSX components. */
+/* !important is required to override inline fontFamily in JSX components. */
 
 html[data-lang="lo"] body,
 html[data-lang="lo"] body * {
