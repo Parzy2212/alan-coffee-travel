@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authClient } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
-import { GOLD, CARD, CARD2, BORDER, RED, GREEN, ORANGE, inputStyle, btnStyleSm } from '@/components/cafe/shared'
+import { GOLD, CARD, CARD2, BORDER, RED, GREEN, ORANGE, inputStyle, btnStyleSm, staffListError } from '@/components/cafe/shared'
 
 // Shop cost inputs (site_settings keys) used by RecipeCostTab to add packaging, ice and overhead to each cup.
 export const COST_DEFAULTS = {
@@ -100,6 +100,7 @@ type SalaryBreakdownItem = { name: string; monthly: number; note: string }
 
 export function ShopCostSection({ settings, onChange }: { settings: CostSettings; onChange: (s: CostSettings) => void }) {
   const [loadingSalary,    setLoadingSalary]    = useState(false)
+  const [salaryErr,        setSalaryErr]        = useState('')
   const [salaryBreakdown,  setSalaryBreakdown]  = useState<SalaryBreakdownItem[]>([])
   const set = (k: keyof CostSettings) =>
     (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...settings, [k]: e.target.value })
@@ -135,7 +136,8 @@ export function ShopCostSection({ settings, onChange }: { settings: CostSettings
 
   async function loadSalaries() {
     setLoadingSalary(true)
-    const { data } = await authClient.rpc('get_all_staff')
+    const { data, error } = await authClient.rpc('get_all_staff')
+    setSalaryErr(error ? staffListError(error) : '')
     if (data) {
       type StaffRow = { name?: string; name_th?: string | null; salary?: number | null; salary_type?: string | null; hours_per_day?: number | null; is_active?: boolean }
       const active = (data as StaffRow[]).filter(st => st.is_active !== false)
@@ -347,6 +349,7 @@ export function ShopCostSection({ settings, onChange }: { settings: CostSettings
               style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, border: `1px solid ${GOLD}44`, backgroundColor: 'transparent', color: GOLD, cursor: 'pointer', opacity: loadingSalary ? 0.5 : 1 }}>
               {loadingSalary ? '...' : '↓ ดึงอัตโนมัติ'}
             </button>
+            {salaryErr && <span role="alert" style={{ fontSize: 11, color: RED }}>{salaryErr}</span>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <MoneyInput value={settings.overhead_salary}

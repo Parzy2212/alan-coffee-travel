@@ -14,16 +14,14 @@ export function setShowAdvancedFeatures(v: boolean): void {
   try { localStorage.setItem(SHOW_ADVANCED_KEY, String(v)) } catch {}
 }
 
-// Returns true when the operator has no staff → solo mode
+// Returns true when the operator has no staff → solo mode. Refused (42501: not the shop's owner or
+// manager) = they can't manage staff anyway, keep the short menu. Any other failure keeps the full
+// menu, so the staff page shows the error instead of the menu silently disappearing.
 export async function detectSoloMode(): Promise<boolean> {
   if (isShowAdvancedFeatures()) return false
-  try {
-    const { data, error } = await authClient.rpc('get_all_staff')
-    if (error) return true
-    return !data || (data as unknown[]).length === 0
-  } catch {
-    return true
-  }
+  const { data, error } = await authClient.rpc('get_all_staff')
+  if (error) return error.code === '42501'
+  return !data || (data as unknown[]).length === 0
 }
 
 // Hook-friendly: call once on mount, returns stable boolean

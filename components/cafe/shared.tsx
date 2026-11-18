@@ -315,6 +315,13 @@ export const ICON_OPTIONS = [
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
+// get_all_staff answers only a signed-in owner/manager of the real shop: say so instead of showing an empty list
+export function staffListError(e: { code?: string; message: string }): string {
+  return e.code === '42501'
+    ? 'อ่านรายชื่อพนักงานไม่ได้: ต้องล็อกอินเป็นเจ้าของหรือผู้จัดการร้าน ลองออกจากระบบแล้วเข้าใหม่'
+    : `อ่านรายชื่อพนักงานไม่ได้: ${e.message}`
+}
+
 export function fmtLAK(n: number): string {
   return new Intl.NumberFormat('lo-LA').format(Math.round(n)) + ' ₭'
 }

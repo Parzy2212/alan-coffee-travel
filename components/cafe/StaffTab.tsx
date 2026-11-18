@@ -8,7 +8,7 @@ import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
   StaffMember, StaffToday, StaffAnalytics, LeaveRequest, StaffForm,
-  Badge, LoadingSpinner,
+  Badge, LoadingSpinner, staffListError,
   inputStyle, btnStyle,
   emptyStaffForm,
 } from '@/components/cafe/shared'
@@ -390,6 +390,7 @@ function LeavesView() {
   const [submitting, setSubmitting] = useState(false)
   const [formErr,    setFormErr]    = useState('')
   const [notifyErr,  setNotifyErr]  = useState('')
+  const [staffErr,   setStaffErr]   = useState('')
 
   // telegram-send accepts a signed-in shop member's session, never the public key
   async function notifyTelegram(message: string) {
@@ -412,7 +413,10 @@ function LeavesView() {
 
   useEffect(() => {
     void load()
-    authClient.rpc('get_all_staff').then(({ data }) => setStaffList((data ?? []) as StaffMember[]))
+    authClient.rpc('get_all_staff').then(({ data, error }) => {
+      setStaffErr(error ? staffListError(error) : '')
+      setStaffList((data ?? []) as StaffMember[])
+    })
   }, [load])
 
   async function approve(lv: LeaveRequest) {
@@ -514,6 +518,12 @@ function LeavesView() {
                     <option key={s.id} value={s.id}>{s.name}{s.name_th ? ` (${s.name_th})` : ''}</option>
                   ))}
                 </select>
+                {staffErr && <div role="alert" style={{ fontSize: 12, color: RED, marginTop: 6 }}>{staffErr}</div>}
+                {!staffErr && !staffList.some(s => s.is_active) && (
+                  <div style={{ fontSize: 12, color: ORANGE, marginTop: 6 }}>
+                    ยังไม่มีพนักงานที่สถานะ &ldquo;ทำงาน&rdquo; ({staffList.length} คนในรายชื่อปิดใช้งานอยู่) เปิดใช้งานหรือเพิ่มพนักงานที่แท็บ 📋 รายชื่อ
+                  </div>
+                )}
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 6, display: 'block' }}>ประเภทการลา *</label>
@@ -621,6 +631,7 @@ function StaffCardGrid({ onProfile }: { onProfile: (s: StaffWithRole) => void })
   const [perfMap,   setPerfMap]   = useState<Record<string, PerfMapEntry>>({})
   const [loading,   setLoading]   = useState(true)
   const [inactiveExpanded, setInactiveExpanded] = useState(false)
+  const [listErr,   setListErr]   = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -629,6 +640,7 @@ function StaffCardGrid({ onProfile }: { onProfile: (s: StaffWithRole) => void })
       supabase.rpc('get_staff_today_status'),
       supabase.rpc('get_staff_analytics'),
     ])
+    setListErr(staffRes.error ? staffListError(staffRes.error) : '')
     const staff = (staffRes.data ?? []) as StaffWithRole[]
     const today = (todayRes.data ?? []) as StaffToday[]
     const perf  = (perfRes.data ?? []) as StaffAnalytics[]
@@ -740,6 +752,7 @@ function StaffCardGrid({ onProfile }: { onProfile: (s: StaffWithRole) => void })
   }
 
   if (loading) return <LoadingSpinner />
+  if (listErr) return <div role="alert" style={{ padding: 16, borderRadius: 10, border: `1px solid ${RED}44`, backgroundColor: `${RED}10`, color: RED, fontSize: 13 }}>{listErr}</div>
 
   const activeStaff   = staffList.filter(s => s.is_active)
   const inactiveStaff = staffList.filter(s => !s.is_active)
@@ -1116,6 +1129,7 @@ export default function StaffTab() {
   const [selectedStaff, setSelectedStaff] = useState<StaffWithRole | null>(null)
   const [enrollTarget, setEnrollTarget] = useState<StaffMember | null>(null)
   const [refreshKey,   setRefreshKey]   = useState(0)
+  const [csvErr,       setCsvErr]       = useState('')
 
   const subNavTabs: { id: 'list' | 'today' | 'perf' | 'leaves'; label: string }[] = [
     { id: 'list',   label: '📋 รายชื่อ' },
@@ -1173,7 +1187,9 @@ export default function StaffTab() {
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               onClick={async () => {
-                const { data } = await authClient.rpc('get_all_staff')
+                const { data, error } = await authClient.rpc('get_all_staff')
+                setCsvErr(error ? staffListError(error) : '')
+                if (error) return
                 const staff = (data ?? []) as StaffWithRole[]
                 const date  = new Date().toISOString().slice(0, 10)
                 const csvCell = (v: unknown) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s }
@@ -1196,6 +1212,7 @@ export default function StaffTab() {
             >
               ⬇ CSV
             </button>
+            {csvErr && <span role="alert" style={{ fontSize: 11, color: RED }}>{csvErr}</span>}
             <a href="/staff"
               style={{ fontSize: 11, color: GOLD, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${GOLD}44`, borderRadius: 6 }}>
               Kiosk →
