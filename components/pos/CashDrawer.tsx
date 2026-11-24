@@ -70,6 +70,7 @@ function rpcErrorText(msg: string): string {
   if (msg.includes('NOT_COUNTED'))           return 'ยังไม่ได้นับเงิน — โหลดข้อมูลใหม่แล้ว'
   if (msg.includes('already counted'))       return 'นับเงินไปแล้ว แก้รายการนี้ไม่ได้'
   if (msg.includes('movement not found'))    return 'ไม่พบรายการนี้ (อาจถูกยกเลิกไปแล้ว)'
+  if (msg.includes('RECEIVE_PAID_OUT'))      return 'รายการนี้มาจากการรับของในหลังร้าน ยกเลิกที่นี่ไม่ได้ (ของยังอยู่ในสต็อก) ถ้าใส่ยอดผิด แจ้งเจ้าของร้าน'
   if (/fetch|network|timeout|abort/i.test(msg)) return 'ต่ออินเทอร์เน็ตไม่ได้ ลองใหม่อีกครั้ง (ลิ้นชักต้องใช้อินเทอร์เน็ต)'
   return msg
 }

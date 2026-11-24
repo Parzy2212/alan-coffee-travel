@@ -22,7 +22,7 @@ export const ORANGE  = '#ff9933'
 
 // ─── Shared Types ─────────────────────────────────────────────────────────────
 
-export type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'purchase' | 'finance' | 'ai' | 'audit' | 'recipe-cost'
+export type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'finance' | 'ai' | 'audit' | 'recipe-cost'
 
 export type ExtDashStats = {
   today_sales:     number
@@ -70,11 +70,6 @@ export type InventoryItem = {
   id: string; name: string; name_th: string | null; name_lo: string | null
   current_qty: number; unit: string; reorder_point: number | null
   supplier: string | null; supplier_phone: string | null
-}
-
-export type PurchaseLog = {
-  id: string; qty_purchased: number; unit_price_lak: number; total_lak: number
-  supplier: string | null; created_at: string
 }
 
 export type SiteSettings = {
@@ -170,16 +165,16 @@ export type StockDetail = {
 
 export type InventoryForm = {
   name: string; name_th: string; name_lo: string; unit: string
-  current_qty: string; reorder_point: string; max_quantity: string
+  reorder_point: string; max_quantity: string
   cost_per_unit: string; storage_location: string; expiry_days: string
   supplier: string; supplier_phone: string
   secondary_supplier: string; secondary_supplier_phone: string
   notes: string
 }
 
-export type UsageStat = { day: string; used_qty: number; sales_lak: number }
+export type UsageStat = { day: string; used_qty: number }
 
-export type AddStockForm = { qty: string; cost: string; supplier: string; date: string }
+export type ReceiveForm = { qty: string; cost: string; free: boolean; paidFrom: '' | 'drawer' | 'owner' | 'transfer'; supplier: string; note: string }
 
 export type RecipeIngredient = {
   id: string; inventory_id: string; name: string; name_th: string | null
@@ -370,7 +365,7 @@ export function storageIcon(loc: string | null): string {
 export function emptyInventoryForm(): InventoryForm {
   return {
     name: '', name_th: '', name_lo: '', unit: 'g',
-    current_qty: '0', reorder_point: '', max_quantity: '',
+    reorder_point: '', max_quantity: '',
     cost_per_unit: '', storage_location: 'shelf', expiry_days: '',
     supplier: '', supplier_phone: '',
     secondary_supplier: '', secondary_supplier_phone: '',

@@ -25,7 +25,6 @@ export const APP_NAV: AppNavGroup[] = [
   ]},
   { label: 'สต็อก', items: [
     { href: '/cafe?tab=stock',    label: 'วัตถุดิบ',             icon: '📦' },
-    { href: '/cafe?tab=purchase', label: 'รับของเข้า / การซื้อ', icon: '🧾' },
   ]},
   { label: 'ทีมงาน', items: [
     { href: '/shop/team',           label: 'บัญชีและสิทธิ์', icon: '👥', soloHidden: true },

@@ -7,7 +7,7 @@ const GOLD = '#c9a84c'
 const ACTIONS = [
   { icon: '🛒', label: 'เปิด POS',        href: '/pos'  },
   { icon: '➕', label: 'เพิ่มเมนู',        href: '/cafe?tab=menu' },
-  { icon: '📦', label: 'บันทึกการซื้อ',   href: '/cafe?tab=purchase' },
+  { icon: '📦', label: 'รับของเข้า',      href: '/cafe?tab=stock' },
   { icon: '📊', label: 'ดูรายงาน',        href: '/cafe' },
 ]
 

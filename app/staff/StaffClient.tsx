@@ -18,7 +18,7 @@ const ORANGE = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'dashboard' | 'success' | 'purchase_form' | 'stock_audit' | 'leave_request'
+type Phase = 'select' | 'pin' | 'face_verify' | 'action' | 'dashboard' | 'success' | 'leave_request'
 
 type StaffEntry = {
   id: string; name: string; name_th: string | null
@@ -28,9 +28,7 @@ type StaffEntry = {
 // Same main name as the POS list (employees); the Thai name is extra
 const staffLabel = (s: StaffEntry) => s.name_th ? `${s.name} · ${s.name_th}` : s.name
 type TodayRecord = { clock_in: string | null; clock_out: string | null; status: string | null }
-type SuccessInfo = { action: 'in' | 'out'; name: string; time: string; hours_worked?: number }
-type InventorySimple = { id: string; name: string; unit: string; cost_per_unit: number | null }
-type AuditItem = { audit_id: string; inventory_id: string; inventory_name: string; unit: string; system_qty: number | null; counted: string }
+type SuccessInfo = { action: 'in' | 'out'; name: string; time: string; hours_worked?: number; photo_failed?: boolean }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -52,13 +50,14 @@ async function getGPS() {
     )
   })
 }
-async function uploadPhotoBlob(staffId: string, action: 'in' | 'out', blob: Blob): Promise<string | null> {
+// a failed photo must not stop clocking in, but the screen says the photo is missing
+async function uploadPhotoBlob(staffId: string, action: 'in' | 'out', blob: Blob): Promise<{ url: string | null; failed: boolean }> {
   try {
     const path = `attendance/${staffId}/${action}_${Date.now()}.jpg`
     const { error } = await supabase.storage.from('staff-photos').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
-    if (error) { console.warn('[Upload]', error.message); return null }
-    return supabase.storage.from('staff-photos').getPublicUrl(path).data?.publicUrl ?? null
-  } catch (e) { console.warn('[Upload]', e); return null }
+    if (error) { console.warn('[Upload]', error.message); return { url: null, failed: true } }
+    return { url: supabase.storage.from('staff-photos').getPublicUrl(path).data?.publicUrl ?? null, failed: false }
+  } catch (e) { console.warn('[Upload]', e); return { url: null, failed: true } }
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -535,101 +534,6 @@ function FaceVerify({ staff, onPass, onBack }: {
   )
 }
 
-// ─── PurchaseCamera ───────────────────────────────────────────────────────────
-
-function PurchaseCamera({
-  title, required = false,
-  onCapture, onSkip,
-}: {
-  title: string; required?: boolean
-  onCapture: (blob: Blob, preview: string) => void
-  onSkip?: () => void
-}) {
-  const videoRef  = useRef<HTMLVideoElement | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [camErr,  setCamErr]  = useState<string | null>(null)
-  const [preview, setPreview] = useState<string | null>(null)
-  const [blob,    setBlob]    = useState<Blob | null>(null)
-
-  useEffect(() => {
-    let mounted = true
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-      .then(stream => {
-        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return }
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          videoRef.current.onloadedmetadata = () => { videoRef.current?.play().catch(() => {}) }
-        }
-      })
-      .catch(e => { if (mounted) setCamErr((e as Error).message) })
-    return () => {
-      mounted = false
-      streamRef.current?.getTracks().forEach(t => t.stop())
-    }
-  }, [])
-
-  function capture() {
-    if (!videoRef.current || !canvasRef.current) return
-    const v = videoRef.current, c = canvasRef.current
-    c.width = v.videoWidth; c.height = v.videoHeight
-    c.getContext('2d')?.drawImage(v, 0, 0)
-    const dataUrl = c.toDataURL('image/jpeg', 0.85)
-    c.toBlob(b => {
-      if (!b) return
-      setBlob(b); setPreview(dataUrl)
-      streamRef.current?.getTracks().forEach(t => t.stop())
-    }, 'image/jpeg', 0.85)
-  }
-
-  function retake() {
-    setPreview(null); setBlob(null)
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-      .then(stream => {
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          videoRef.current.onloadedmetadata = () => { videoRef.current?.play().catch(() => {}) }
-        }
-      })
-      .catch(e => setCamErr((e as Error).message))
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
-      {camErr ? (
-        <div style={{ padding: 14, borderRadius: 10, backgroundColor: `${RED}10`, color: RED, fontSize: 13 }}>
-          ไม่สามารถเปิดกล้องได้: {camErr}
-          {!required && onSkip && (
-            <button onClick={onSkip} style={{ marginLeft: 12, background: 'none', border: 'none', color: GOLD, cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>ข้าม</button>
-          )}
-        </div>
-      ) : preview ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <img src={preview} alt="preview" style={{ width: '100%', borderRadius: 10, maxHeight: 260, objectFit: 'cover', border: `1px solid ${BORDER}` }} />
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={retake} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1px solid ${BORDER}`, backgroundColor: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 14 }}>ถ่ายใหม่</button>
-            <button onClick={() => blob && onCapture(blob, preview)} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', backgroundColor: GREEN, color: '#fff', fontWeight: 800, cursor: 'pointer', fontSize: 14 }}>✓ ใช้รูปนี้</button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', backgroundColor: '#000', aspectRatio: '4/3' }}>
-            <video ref={el => { videoRef.current = el }} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          </div>
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-          <button onClick={capture} style={{ padding: 14, borderRadius: 10, border: 'none', backgroundColor: GOLD, color: '#000', fontWeight: 800, cursor: 'pointer', fontSize: 15 }}>📷 ถ่ายรูป</button>
-          {!required && onSkip && (
-            <button onClick={onSkip} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>ข้ามขั้นตอนนี้</button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function StaffClient() {
@@ -656,35 +560,20 @@ export default function StaffClient() {
   const [submitting, setSubmitting] = useState(false)
   const [errMsg,     setErrMsg]     = useState('')
   const [successInfo,setSuccessInfo]= useState<SuccessInfo | null>(null)
-
-  // ── Purchase form ──
-  const [invList,      setInvList]      = useState<InventorySimple[]>([])
-  const [purchaseForm,     setPurchaseForm]     = useState({ inventory_id: '', qty: '', unit_price: '', supplier: '' })
-  const [receiptBlob,      setReceiptBlob]      = useState<Blob | null>(null)
-  const [weighBlob,        setWeighBlob]        = useState<Blob | null>(null)
-  const [receiptPreview,   setReceiptPreview]   = useState<string | null>(null)
-  const [weighPreview,     setWeighPreview]     = useState<string | null>(null)
-  const [purchaseFlagged,  setPurchaseFlagged]  = useState(false)
-  const [purchaseFlagReason, setPurchaseFlagReason] = useState('')
-  const [purchaseStep,     setPurchaseStep]     = useState<'form' | 'receipt' | 'weigh' | 'confirm' | 'done'>('form')
-  const [purchaseMsg,      setPurchaseMsg]      = useState('')
-  const [purchasing,       setPurchasing]       = useState(false)
-
-  // ── Stock audit ──
-  const [auditItems,  setAuditItems]  = useState<AuditItem[]>([])
-  const [auditLoading,setAuditLoading]= useState(false)
-  const [auditMsg,    setAuditMsg]    = useState('')
-  const [auditDone,   setAuditDone]   = useState(false)
+  const [loadErr,    setLoadErr]    = useState('')
 
   // ── Load staff + shop coords ──
   const loadData = useCallback(async () => {
-    setLoading(true)
+    setLoading(true); setLoadErr('')
     try {
-      const [{ data: allStaff }, { data: todayData }, { data: settingsData }] = await Promise.all([
+      const [{ data: allStaff, error: e1 }, { data: todayData, error: e2 }, { data: settingsData, error: e3 }] = await Promise.all([
         authClient.from('staff').select('id,name,name_th,avatar_url,scheduled_start_time,face_descriptor').eq('is_active', true),
         supabase.rpc('get_staff_today_status'),
         supabase.rpc('get_site_settings'),
       ])
+      // without the shop location the distance check would be skipped without anyone knowing
+      const loadError = e1 ?? e2 ?? e3
+      if (loadError) { setLoadErr(dbErrorText(loadError)); return }
       type StaffRow = Omit<StaffEntry, 'face_descriptor'> & { face_descriptor: unknown }
       const list: StaffEntry[] = ((allStaff ?? []) as StaffRow[]).map(s => ({
         id: s.id, name: s.name, name_th: s.name_th ?? null,
@@ -723,7 +612,8 @@ export default function StaffClient() {
     if (!selected) return
     setSubmitting(true); setErrMsg('')
     try {
-      const uploadedUrl = photoBlob ? await uploadPhotoBlob(selected.id, action, photoBlob) : null
+      const photo = photoBlob ? await uploadPhotoBlob(selected.id, action, photoBlob) : { url: null, failed: false }
+      const uploadedUrl = photo.url
       if (action === 'in') {
         const { data, error } = await supabase.rpc('clock_in', {
           p_staff_id: selected.id, p_lat: gpsCoords?.lat ?? null, p_lng: gpsCoords?.lng ?? null,
@@ -732,7 +622,7 @@ export default function StaffClient() {
         if (error) { setErrMsg(error.message); return }
         const r = data as { success?: boolean; error?: string } | null
         if (!r?.success) { setErrMsg(r?.error ?? 'เกิดข้อผิดพลาด'); return }
-        setSuccessInfo({ action: 'in', name: selected.name, time: fmtTime(new Date().toISOString()) })
+        setSuccessInfo({ action: 'in', name: selected.name, time: fmtTime(new Date().toISOString()), photo_failed: photo.failed })
         setPhase('dashboard')
         void loadData()
       } else {
@@ -743,101 +633,13 @@ export default function StaffClient() {
         }).eq('staff_id', selected.id).eq('date', todayVientiane()).is('clock_out', null).select('id')
         if (error) { setErrMsg(dbErrorText(error)); return }
         if (!closed?.length) { setErrMsg('ไม่พบการลงเวลาเข้าของวันนี้ที่ยังไม่ได้ลงเวลาออก (ถ้าเข้างานก่อนเที่ยงคืน ให้แจ้งผู้จัดการแก้เวลา)'); return }
-        setSuccessInfo({ action: 'out', name: selected.name, time: fmtTime(new Date().toISOString()) })
+        setSuccessInfo({ action: 'out', name: selected.name, time: fmtTime(new Date().toISOString()), photo_failed: photo.failed })
         setPhase('success')
         setTimeout(() => {
           setPhase('select'); setSelected(null); setSuccessInfo(null); void loadData()
         }, 3000)
       }
     } finally { setSubmitting(false) }
-  }
-
-  // ── Purchase form actions ──
-  async function loadInventory() {
-    const { data } = await supabase.from('inventory').select('id,name,unit,cost_per_unit').eq('is_active', true).order('name')
-    setInvList((data ?? []) as InventorySimple[])
-  }
-
-  function resetPurchase() {
-    setPurchaseForm({ inventory_id: '', qty: '', unit_price: '', supplier: '' })
-    setReceiptBlob(null); setWeighBlob(null)
-    setReceiptPreview(null); setWeighPreview(null)
-    setPurchaseFlagged(false); setPurchaseFlagReason('')
-    setPurchaseMsg(''); setPurchaseStep('form')
-  }
-
-  function goToReceipt() {
-    const inv = invList.find(i => i.id === purchaseForm.inventory_id)
-    if (!inv) { setPurchaseMsg('เลือกวัตถุดิบ'); return }
-    if (!purchaseForm.qty || parseFloat(purchaseForm.qty) <= 0) { setPurchaseMsg('กรอกจำนวนที่ซื้อ'); return }
-    if (!purchaseForm.unit_price || parseFloat(purchaseForm.unit_price) <= 0) { setPurchaseMsg('กรอกราคาต่อหน่วย'); return }
-    setPurchaseMsg('')
-    const price = parseFloat(purchaseForm.unit_price)
-    const market = inv.cost_per_unit
-    if (market && market > 0 && price > market * 1.15) {
-      const pct = Math.round(((price / market) - 1) * 100)
-      setPurchaseFlagged(true); setPurchaseFlagReason(`ราคาสูงกว่าราคาตลาด ${pct}%`)
-    } else {
-      setPurchaseFlagged(false); setPurchaseFlagReason('')
-    }
-    setPurchaseStep('receipt')
-  }
-
-  async function submitPurchase() {
-    if (!selected) return
-    setPurchasing(true); setPurchaseMsg('')
-    try {
-      let receiptUrl: string | null = null
-      let weighUrl: string | null = null
-      if (receiptBlob) {
-        const path = `receipts/${selected.id}_${Date.now()}.jpg`
-        const { error: ue } = await supabase.storage.from('purchase-receipts').upload(path, receiptBlob, { upsert: true, contentType: 'image/jpeg' })
-        if (!ue) receiptUrl = supabase.storage.from('purchase-receipts').getPublicUrl(path).data?.publicUrl ?? null
-      }
-      if (weighBlob) {
-        const path = `weigh/${selected.id}_${Date.now()}.jpg`
-        const { error: ue } = await supabase.storage.from('purchase-receipts').upload(path, weighBlob, { upsert: true, contentType: 'image/jpeg' })
-        if (!ue) weighUrl = supabase.storage.from('purchase-receipts').getPublicUrl(path).data?.publicUrl ?? null
-      }
-      const inv = invList.find(i => i.id === purchaseForm.inventory_id)
-      const { error } = await supabase.from('purchase_logs').insert({
-        inventory_id:    purchaseForm.inventory_id,
-        staff_id:        selected.id,
-        qty_purchased:   parseFloat(purchaseForm.qty),
-        unit_price_lak:  parseFloat(purchaseForm.unit_price),
-        market_price_lak: inv?.cost_per_unit ?? null,
-        receipt_url:     receiptUrl,
-        weigh_image_url: weighUrl,
-        supplier:        purchaseForm.supplier || null,
-        status:          purchaseFlagged ? 'flagged' : 'pending',
-        flag_reason:     purchaseFlagged ? purchaseFlagReason : null,
-      })
-      if (error) { setPurchaseMsg(error.message); return }
-      setPurchaseStep('done')
-    } finally { setPurchasing(false) }
-  }
-
-  // ── Stock audit actions ──
-  async function startAudit() {
-    if (!selected) return
-    setAuditLoading(true); setAuditMsg(''); setAuditDone(false)
-    const { data, error } = await authClient.rpc('start_stock_audit', { p_staff_id: selected.id })
-    setAuditLoading(false)
-    if (error || !data) { setAuditMsg(error ? dbErrorText(error) : 'เกิดข้อผิดพลาด'); return }
-    setAuditItems((data as Omit<AuditItem, 'counted'>[]).map(d => ({ audit_id: d.audit_id, inventory_id: d.inventory_id, inventory_name: d.inventory_name, unit: d.unit, system_qty: d.system_qty ?? null, counted: '' })))
-  }
-
-  async function submitAudit() {
-    setAuditLoading(true); setAuditMsg('')
-    try {
-      for (const item of auditItems) {
-        if (item.counted === '') { setAuditMsg(`กรอกจำนวน: ${item.inventory_name}`); return }
-        const { error } = await authClient.rpc('submit_stock_audit', { p_audit_id: item.audit_id, p_counted_qty: parseFloat(item.counted) })
-        if (error) { setAuditMsg(dbErrorText(error)); return }
-      }
-      setAuditDone(true); setAuditMsg('✓ บันทึกผลการนับสต็อกแล้ว')
-      setTimeout(() => { setPhase('dashboard'); setAuditItems([]); setAuditMsg(''); setAuditDone(false) }, 2500)
-    } finally { setAuditLoading(false) }
   }
 
   // ── Select → PIN ──
@@ -850,7 +652,8 @@ export default function StaffClient() {
   async function verifyPin(code: string) {
     if (!selected) return
     const { data, error } = await supabase.rpc('verify_staff_pin', { p_staff_id: selected.id, p_pin: code })
-    if (error || !data) { setPinErr('PIN ไม่ถูกต้อง'); setTimeout(() => { setPin(''); setPinErr('') }, 900); return }
+    if (error) { setPinErr('ตรวจ PIN ไม่ได้: ' + dbErrorText(error)); setTimeout(() => { setPin(''); setPinErr('') }, 2500); return }
+    if (!data) { setPinErr('PIN ไม่ถูกต้อง'); setTimeout(() => { setPin(''); setPinErr('') }, 900); return }
     const today = todayMap[selected.id]
     setAction(!today?.clock_in ? 'in' : 'out')
     setPhotoBlob(null); setGpsStatus('idle'); setGpsCoords(null); setDistanceM(null); setErrMsg('')
@@ -886,6 +689,11 @@ export default function StaffClient() {
           {loading ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14 }}>
               {Array.from({ length: 6 }).map((_, i) => <div key={i} style={{ height: 110, borderRadius: 14, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)}
+            </div>
+          ) : loadErr ? (
+            <div style={{ padding: 20, borderRadius: 12, backgroundColor: `${RED}10`, border: `1px solid ${RED}44`, textAlign: 'center' }}>
+              <div style={{ color: RED, fontSize: 14, fontWeight: 600, marginBottom: 12 }}>โหลดรายชื่อพนักงานไม่ได้: {loadErr}</div>
+              <button onClick={() => void loadData()} style={{ padding: '9px 24px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>ลองใหม่</button>
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14 }}>
@@ -1018,21 +826,12 @@ export default function StaffClient() {
                 <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 99, backgroundColor: `${GREEN}18`, color: GREEN, fontWeight: 600 }}>● ออนดิวตี้</span>
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>เข้างาน {successInfo.time}</span>
               </div>
+              {successInfo.photo_failed && <div style={{ fontSize: 12, color: ORANGE, marginTop: 6 }}>บันทึกเวลาแล้ว แต่อัปโหลดรูปไม่สำเร็จ</div>}
             </div>
           </div>
 
           {/* Action buttons */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            <button onClick={() => { setPhase('purchase_form'); void loadInventory() }}
-              style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}08`, color: GOLD, cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 30 }}>🧾</span>
-              แจ้งซื้อวัตถุดิบ
-            </button>
-            <button onClick={() => { setPhase('stock_audit'); void startAudit() }}
-              style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 30 }}>📦</span>
-              นับสต็อก
-            </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
             <button onClick={() => setPhase('leave_request')}
               style={{ padding: '18px 16px', borderRadius: 14, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 30 }}>📅</span>
@@ -1063,282 +862,13 @@ export default function StaffClient() {
           <div style={{ fontSize: 64 }}>👋</div>
           <div style={{ fontSize: 26, fontWeight: 800 }}>ออกงานสำเร็จ!</div>
           <div style={{ fontSize: 16, color: 'rgba(255,255,255,0.6)' }}>{successInfo.name} — {successInfo.time}</div>
+          {successInfo.photo_failed && <div style={{ fontSize: 13, color: ORANGE }}>บันทึกเวลาแล้ว แต่อัปโหลดรูปไม่สำเร็จ</div>}
           {successInfo.hours_worked !== undefined && (
             <div style={{ padding: '10px 20px', borderRadius: 99, backgroundColor: `${GREEN}18`, color: GREEN, fontSize: 14, fontWeight: 600 }}>
               ทำงาน {successInfo.hours_worked.toFixed(1)} ชั่วโมง
             </div>
           )}
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', marginTop: 8 }}>กลับหน้าหลักใน 3 วินาที...</div>
-        </div>
-      )}
-
-      {/* ── PHASE: purchase_form ── */}
-      {phase === 'purchase_form' && selected && (
-        <div style={{ width: '100%', maxWidth: 480, padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <button onClick={() => {
-                if (purchaseStep === 'done' || purchaseStep === 'form') { resetPurchase(); setPhase('dashboard') }
-                else if (purchaseStep === 'receipt') setPurchaseStep('form')
-                else if (purchaseStep === 'weigh') setPurchaseStep('receipt')
-                else if (purchaseStep === 'confirm') setPurchaseStep('weigh')
-              }}
-              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>
-              ← {purchaseStep === 'done' ? 'กลับหน้าหลัก' : 'ย้อนกลับ'}
-            </button>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>โดย {staffLabel(selected)}</div>
-          </div>
-
-          <div style={{ fontSize: 18, fontWeight: 800 }}>🧾 แจ้งซื้อวัตถุดิบ</div>
-
-          {/* Step indicator */}
-          {purchaseStep !== 'done' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {(['form', 'receipt', 'weigh', 'confirm'] as const).map((s, i) => {
-                const steps = ['form', 'receipt', 'weigh', 'confirm'] as const
-                const cur = steps.indexOf(purchaseStep as typeof steps[number])
-                const isActive = purchaseStep === s, isDone = cur > i
-                return (
-                  <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < 3 ? 1 : 'none', gap: 6 }}>
-                    <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                      backgroundColor: isActive ? GOLD : isDone ? `${GOLD}50` : 'rgba(255,255,255,0.08)',
-                      color: isActive ? '#000' : isDone ? GOLD : 'rgba(255,255,255,0.3)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
-                      {isDone ? '✓' : i + 1}
-                    </div>
-                    {i < 3 && <div style={{ flex: 1, height: 1, backgroundColor: isDone ? `${GOLD}44` : 'rgba(255,255,255,0.08)' }} />}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* ── Step 1: Form ── */}
-          {purchaseStep === 'form' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {/* Inventory dropdown */}
-              <div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '1px' }}>วัตถุดิบ *</div>
-                <select value={purchaseForm.inventory_id} onChange={e => setPurchaseForm(f => ({ ...f, inventory_id: e.target.value }))}
-                  style={{ width: '100%', padding: '11px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14 }}>
-                  <option value="">-- เลือกรายการ --</option>
-                  {invList.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-                </select>
-                {/* Market price reference */}
-                {(() => {
-                  const inv = invList.find(i => i.id === purchaseForm.inventory_id)
-                  if (!inv?.cost_per_unit) return null
-                  return (
-                    <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
-                      ราคาอ้างอิง: <span style={{ color: GOLD }}>{inv.cost_per_unit.toLocaleString()} LAK/{inv.unit}</span>
-                    </div>
-                  )
-                })()}
-              </div>
-
-              {/* Qty */}
-              <div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  จำนวนที่ซื้อ {invList.find(i => i.id === purchaseForm.inventory_id)?.unit ? `(${invList.find(i => i.id === purchaseForm.inventory_id)?.unit})` : ''} *
-                </div>
-                <input type="number" inputMode="decimal" value={purchaseForm.qty} onChange={e => setPurchaseForm(f => ({ ...f, qty: e.target.value }))} placeholder="0"
-                  style={{ width: '100%', padding: '11px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 16, boxSizing: 'border-box', fontWeight: 600 }} />
-              </div>
-
-              {/* Price with numpad */}
-              <div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '1px' }}>ราคาต่อหน่วย (LAK) *</div>
-                <div style={{ padding: '12px 16px', borderRadius: 10, border: `1px solid ${GOLD}44`, backgroundColor: '#0f0f0f', textAlign: 'right', marginBottom: 8 }}>
-                  <span style={{ fontSize: 22, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: purchaseForm.unit_price ? '#fff' : 'rgba(255,255,255,0.2)' }}>
-                    {purchaseForm.unit_price ? parseInt(purchaseForm.unit_price).toLocaleString() : '0'} ₭
-                  </span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                  {['7','8','9','4','5','6','1','2','3','000','0','⌫'].map(k => (
-                    <button key={k} onClick={() => setPurchaseForm(f => {
-                      const p = f.unit_price
-                      if (k === '⌫') return { ...f, unit_price: p.slice(0, -1) }
-                      if (k === '000') return { ...f, unit_price: p === '' ? '' : p + '000' }
-                      return { ...f, unit_price: p + k }
-                    })} style={{ padding: '12px 0', borderRadius: 8, border: 'none',
-                      backgroundColor: k === '⌫' ? 'rgba(220,80,80,0.14)' : 'rgba(255,255,255,0.07)',
-                      color: k === '⌫' ? '#e07070' : '#fff', fontSize: 17, fontWeight: 700, cursor: 'pointer' }}>
-                      {k}
-                    </button>
-                  ))}
-                </div>
-                {/* Price vs market warning */}
-                {(() => {
-                  const inv = invList.find(i => i.id === purchaseForm.inventory_id)
-                  const market = inv?.cost_per_unit
-                  const price = parseFloat(purchaseForm.unit_price)
-                  if (!market || !price || price <= 0) return null
-                  const pct = Math.round(((price / market) - 1) * 100)
-                  if (pct > 15) return (
-                    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, backgroundColor: `${ORANGE}10`, border: `1px solid ${ORANGE}44` }}>
-                      <span style={{ color: ORANGE, fontSize: 13, fontWeight: 600 }}>⚠️ ราคาสูงกว่าตลาด {pct}% — จะถูกส่ง flag ให้ผู้จัดการ</span>
-                    </div>
-                  )
-                  return null
-                })()}
-              </div>
-
-              {/* Supplier */}
-              <div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '1px' }}>ซัพพลายเออร์</div>
-                <input value={purchaseForm.supplier} onChange={e => setPurchaseForm(f => ({ ...f, supplier: e.target.value }))} placeholder="ชื่อร้านค้า / บุคคล"
-                  style={{ width: '100%', padding: '11px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, backgroundColor: CARD, color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
-              </div>
-
-              {purchaseMsg && <div style={{ color: RED, fontSize: 13, fontWeight: 600 }}>{purchaseMsg}</div>}
-
-              <button onClick={goToReceipt}
-                style={{ padding: 16, borderRadius: 12, border: 'none', backgroundColor: GOLD, color: '#000', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
-                ถัดไป → ถ่ายใบเสร็จ
-              </button>
-            </div>
-          )}
-
-          {/* ── Step 2: Receipt (required) ── */}
-          {purchaseStep === 'receipt' && (
-            <PurchaseCamera
-              title="📄 ถ่ายรูปใบเสร็จ (บังคับ)"
-              required={true}
-              onCapture={(b, prev) => {
-                setReceiptBlob(b); setReceiptPreview(prev)
-                setPurchaseStep('weigh')
-              }}
-            />
-          )}
-
-          {/* ── Step 3: Weigh (optional) ── */}
-          {purchaseStep === 'weigh' && (
-            <PurchaseCamera
-              title="⚖️ ถ่ายรูปชั่งน้ำหนัก (ไม่บังคับ)"
-              required={false}
-              onCapture={(b, prev) => {
-                setWeighBlob(b); setWeighPreview(prev)
-                setPurchaseStep('confirm')
-              }}
-              onSkip={() => setPurchaseStep('confirm')}
-            />
-          )}
-
-          {/* ── Step 4: Confirm ── */}
-          {purchaseStep === 'confirm' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>ยืนยันคำขอซื้อ</div>
-              <div style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {[
-                  ['วัตถุดิบ', invList.find(i => i.id === purchaseForm.inventory_id)?.name ?? '—'],
-                  ['จำนวน', `${purchaseForm.qty} ${invList.find(i => i.id === purchaseForm.inventory_id)?.unit ?? ''}`],
-                  ['ราคาต่อหน่วย', `${parseInt(purchaseForm.unit_price || '0').toLocaleString()} LAK`],
-                  ['รวม', `${Math.round(parseFloat(purchaseForm.qty || '0') * parseFloat(purchaseForm.unit_price || '0')).toLocaleString()} LAK`],
-                  ...(purchaseForm.supplier ? [['ซัพพลายเออร์', purchaseForm.supplier]] : []),
-                ].map(([k, v]) => (
-                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>{k}</span>
-                    <span style={{ color: '#fff', fontWeight: 600 }}>{v}</span>
-                  </div>
-                ))}
-                {(receiptPreview || weighPreview) && (
-                  <div style={{ display: 'flex', gap: 10, marginTop: 4, paddingTop: 10, borderTop: `1px solid ${BORDER}` }}>
-                    {receiptPreview && (
-                      <div style={{ textAlign: 'center' }}>
-                        <img src={receiptPreview} style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 6, border: `1px solid ${BORDER}` }} alt="ใบเสร็จ" />
-                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>ใบเสร็จ</div>
-                      </div>
-                    )}
-                    {weighPreview && (
-                      <div style={{ textAlign: 'center' }}>
-                        <img src={weighPreview} style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 6, border: `1px solid ${BORDER}` }} alt="ชั่งน้ำหนัก" />
-                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>ชั่งน้ำหนัก</div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {purchaseFlagged && (
-                <div style={{ padding: '10px 14px', borderRadius: 9, backgroundColor: `${ORANGE}10`, border: `1px solid ${ORANGE}44` }}>
-                  <span style={{ color: ORANGE, fontSize: 13, fontWeight: 600 }}>⚠️ {purchaseFlagReason} — รอการอนุมัติจากผู้จัดการ</span>
-                </div>
-              )}
-
-              {purchaseMsg && <div style={{ color: RED, fontSize: 13 }}>{purchaseMsg}</div>}
-
-              <button onClick={() => void submitPurchase()} disabled={purchasing}
-                style={{ padding: 16, borderRadius: 12, border: 'none', backgroundColor: GREEN, color: '#fff', fontSize: 16, fontWeight: 800, cursor: 'pointer', opacity: purchasing ? 0.6 : 1 }}>
-                {purchasing ? 'กำลังส่ง...' : '✓ ยืนยันส่งคำขอ'}
-              </button>
-            </div>
-          )}
-
-          {/* ── Step Done ── */}
-          {purchaseStep === 'done' && (
-            <div style={{ padding: '48px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, textAlign: 'center' }}>
-              <div style={{ fontSize: 60 }}>✅</div>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>ส่งคำขอแล้ว!</div>
-              {purchaseFlagged ? (
-                <div style={{ padding: '12px 18px', borderRadius: 10, backgroundColor: `${ORANGE}10`, border: `1px solid ${ORANGE}44`, color: ORANGE, fontSize: 13, fontWeight: 600 }}>
-                  ⚠️ ราคาสูงกว่าตลาด — รอการอนุมัติจากผู้จัดการ
-                </div>
-              ) : (
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>คำขออยู่ในสถานะรออนุมัติ</div>
-              )}
-              <button onClick={() => { resetPurchase(); setPhase('dashboard') }}
-                style={{ padding: '12px 28px', borderRadius: 12, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>
-                ← กลับหน้าหลัก
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── PHASE: stock_audit ── */}
-      {phase === 'stock_audit' && selected && (
-        <div style={{ width: '100%', maxWidth: 460, padding: '36px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <button onClick={() => setPhase('dashboard')} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13 }}>← กลับ</button>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>📦 นับสต็อก</div>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>โดย {staffLabel(selected)}</div>
-
-          {auditLoading && auditItems.length === 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {Array.from({ length: 3 }).map((_, i) => <div key={i} style={{ height: 70, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)}
-            </div>
-          )}
-
-          {auditItems.length > 0 && !auditDone && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>ระบบสุ่ม {auditItems.length} รายการ — กรอกจำนวนที่นับได้จริง</div>
-              {auditItems.map((item, idx) => (
-                <div key={item.audit_id} style={{ padding: '14px 16px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{item.inventory_name}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
-                      หน่วย: {item.unit}
-                      {item.system_qty != null && (
-                        <span style={{ marginLeft: 10, color: 'rgba(255,255,255,0.22)' }}>ระบบ: <span style={{ color: '#c9a84c', fontWeight: 600 }}>{item.system_qty}</span></span>
-                      )}
-                    </div>
-                  </div>
-                  <input type="number" value={item.counted} onChange={e => setAuditItems(prev => prev.map((a, i) => i === idx ? { ...a, counted: e.target.value } : a))}
-                    placeholder="0" style={{ width: 90, padding: '10px 10px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: '#0f0f0f', color: '#fff', fontSize: 15, textAlign: 'right', fontWeight: 700 }} />
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 28 }}>{item.unit}</div>
-                </div>
-              ))}
-              <button onClick={() => void submitAudit()} disabled={auditLoading}
-                style={{ padding: 16, borderRadius: 12, border: 'none', backgroundColor: GREEN, color: '#fff', fontSize: 16, fontWeight: 800, cursor: 'pointer', opacity: auditLoading ? 0.6 : 1 }}>
-                {auditLoading ? 'กำลังบันทึก...' : '✓ ยืนยันการนับ'}
-              </button>
-            </div>
-          )}
-
-          {auditMsg && (
-            <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: auditMsg.startsWith('✓') ? `${GREEN}10` : `${RED}10`, color: auditMsg.startsWith('✓') ? GREEN : RED, fontSize: 14, fontWeight: 600 }}>
-              {auditMsg}
-            </div>
-          )}
         </div>
       )}
 

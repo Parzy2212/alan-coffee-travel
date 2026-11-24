@@ -50,7 +50,7 @@ const ORANGE  = '#ff9933'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'purchase' | 'finance' | 'ai' | 'audit' | 'recipe-cost' | 'schedule'
+type Tab = 'dashboard' | 'menu' | 'categories' | 'stock' | 'settings' | 'staff' | 'customers' | 'finance' | 'ai' | 'audit' | 'recipe-cost' | 'schedule'
 
 type ExtDashStats = {
   today_sales:     number
@@ -80,14 +80,6 @@ type StockVal = {
   total_value: number
   low_count:   number
   top_used:    { name: string; used_qty: number; unit: string }[]
-}
-
-type PurchaseEntry = {
-  id: string; inventory_name: string | null; unit: string | null; staff_name: string | null
-  qty_purchased: number; unit_price_lak: number; market_price_lak: number | null
-  supplier: string | null; status: string; flag_reason: string | null
-  receipt_url: string | null; weigh_image_url: string | null; created_at: string
-  inventory_id?: string; staff_id?: string
 }
 
 type AuditLog = {
@@ -463,7 +455,7 @@ function DashboardTab() {
   const [qperf,        setQperf]        = useState<QueuePerf | null>(null)
   const [sval,         setSval]         = useState<StockVal | null>(null)
   const [loading,      setLoading]      = useState(true)
-  const [rpcErr,       setRpcErr]       = useState(false)
+  const [rpcErr,       setRpcErr]       = useState<string | null>(null)
   const [period,       setPeriod]       = useState<'today' | 'week' | 'month'>('today')
   const [periodSales,  setPeriodSales]  = useState(0)
   const [periodOrders, setPeriodOrders] = useState(0)
@@ -483,31 +475,23 @@ function DashboardTab() {
         supabase.rpc('get_stock_value'),
       ])
 
-      const anyError = [sRes, hRes, mRes, cRes, qRes, svRes].some(r => r.error)
-      setRpcErr(anyError)
+      const firstError = [sRes, hRes, mRes, cRes, qRes, svRes].find(r => r.error)?.error
+      setRpcErr(firstError ? dbErrorText(firstError) : null)
 
-      if (!anyError) {
-        setStats(sRes.data as ExtDashStats)
-        setHourly((hRes.data as HourlySale[]) ?? [])
-        setMenu((mRes.data as MenuPerf[]) ?? [])
-        setCustom((cRes.data as CustomStat[]) ?? [])
-        setQperf(qRes.data as QueuePerf)
-        setSval(svRes.data as StockVal)
-      } else {
-        // Minimal fallback: direct orders query for today stats
-        const { data: rows } = await supabase
-          .from('orders').select('total_lak').eq('status', 'paid')
-          .gte('created_at', today + 'T00:00:00+07:00')
-          .lt('created_at',  today + 'T23:59:59+07:00')
-        const todaySales = (rows ?? []).reduce((a, o) => a + Number(o.total_lak ?? 0), 0)
-        setStats({ today_sales: todaySales, today_orders: (rows ?? []).length, today_items: 0, today_profit: 0, yesterday_sales: 0 })
-      }
+      // each figure that did load is shown; the banner names the first one that failed
+      if (!sRes.error)  setStats(sRes.data as ExtDashStats)
+      if (!hRes.error)  setHourly((hRes.data as HourlySale[]) ?? [])
+      if (!mRes.error)  setMenu((mRes.data as MenuPerf[]) ?? [])
+      if (!cRes.error)  setCustom((cRes.data as CustomStat[]) ?? [])
+      if (!qRes.error)  setQperf(qRes.data as QueuePerf)
+      if (!svRes.error) setSval(svRes.data as StockVal)
 
       // For week/month: fetch period revenue directly from orders table
       if (period !== 'today') {
         const from = new Date(Date.now() - pDays * 86400000).toISOString()
-        const { data: pRows } = await supabase
+        const { data: pRows, error: pErr } = await supabase
           .from('orders').select('total_lak').eq('status', 'paid').gte('created_at', from)
+        if (pErr) setRpcErr(dbErrorText(pErr))
         setPeriodSales((pRows ?? []).reduce((a: number, o: { total_lak: unknown }) => a + Number(o.total_lak ?? 0), 0))
         setPeriodOrders((pRows ?? []).length)
       }
@@ -521,8 +505,8 @@ function DashboardTab() {
     const ch = supabase
       .channel('dashboard_orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        supabase.rpc('get_dashboard_stats').then(({ data }) => { if (data) setStats(data as ExtDashStats) })
-        supabase.rpc('get_hourly_sales', { p_date: todayVientiane() }).then(({ data }) => { if (data) setHourly((data as HourlySale[]) ?? []) })
+        supabase.rpc('get_dashboard_stats').then(({ data, error }) => { if (error) setRpcErr(dbErrorText(error)); else if (data) setStats(data as ExtDashStats) })
+        supabase.rpc('get_hourly_sales', { p_date: todayVientiane() }).then(({ data, error }) => { if (error) setRpcErr(dbErrorText(error)); else setHourly((data as HourlySale[]) ?? []) })
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -559,10 +543,9 @@ function DashboardTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Migration warning */}
       {rpcErr && (
         <div style={{ padding: '12px 16px', backgroundColor: '#2a1a0a', border: `1px solid ${GOLD}44`, borderRadius: 8, fontSize: 13, color: GOLD }}>
-          RPCs ยังไม่ถูกสร้าง — กรุณา run <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>012_cafe_admin.sql</code>, <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>013_cafe_detail.sql</code> และ <code style={{ backgroundColor: '#111', padding: '2px 6px', borderRadius: 4 }}>014_dashboard_stats.sql</code>
+          โหลดตัวเลขแดชบอร์ดไม่ได้ (ตัวเลขด้านล่างอาจไม่ครบ): {rpcErr}
         </div>
       )}
 
@@ -1159,7 +1142,8 @@ function CategoriesTab() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.rpc('get_categories_tree')
+    const { data, error } = await supabase.rpc('get_categories_tree')
+    if (error) { showMsg('โหลดหมวดหมู่ไม่ได้: ' + dbErrorText(error)); setLoading(false); return }
     const flat = (data as CatNode[]) ?? []
     setAllFlat(flat)
 
@@ -2003,117 +1987,6 @@ function SettingsTab() {
 
 
 // CustomersTab extracted to components/cafe/CustomersTab.tsx
-
-// ─── PurchaseTab ──────────────────────────────────────────────────────────────
-
-function PurchaseTab() {
-  const [sub,      setSub]      = useState<'pending' | 'history'>('pending')
-  const [pending,  setPending]  = useState<PurchaseEntry[]>([])
-  const [history,  setHistory]  = useState<PurchaseEntry[]>([])
-  const [loading,  setLoading]  = useState(false)
-  const [actingId, setActingId] = useState<string | null>(null)
-
-  const loadPending = useCallback(async () => {
-    const { data } = await supabase.rpc('get_pending_purchases')
-    setPending((data as PurchaseEntry[]) ?? [])
-  }, [])
-  const loadHistory = useCallback(async () => {
-    const { data } = await supabase.rpc('get_all_purchases', { p_limit: 60 })
-    setHistory((data as PurchaseEntry[]) ?? [])
-  }, [])
-
-  useEffect(() => {
-    setLoading(true)
-    void Promise.all([loadPending(), loadHistory()]).finally(() => setLoading(false))
-  }, [loadPending, loadHistory])
-
-  async function act(id: string, approve: boolean) {
-    setActingId(id)
-    const { error } = await authClient.rpc('approve_purchase', { p_purchase_id: id, p_approve: approve })
-    if (error) alert(dbErrorText(error))
-    await Promise.all([loadPending(), loadHistory()])
-    setActingId(null)
-  }
-
-  function StatusBadge({ status, flag }: { status: string; flag: string | null }) {
-    const map: Record<string, [string, string]> = {
-      pending:  [GOLD,   'รออนุมัติ'],
-      flagged:  [ORANGE, '⚠ ตั้งข้อสังเกต'],
-      approved: [GREEN,  '✓ อนุมัติ'],
-      rejected: [RED,    '✗ ปฏิเสธ'],
-    }
-    const [color, label] = map[status] ?? ['#888', status]
-    return (
-      <div>
-        <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 99, border: `1px solid ${color}44`, color, backgroundColor: `${color}10` }}>{label}</span>
-        {flag && <div style={{ fontSize: 11, color: ORANGE, marginTop: 4 }}>{flag}</div>}
-      </div>
-    )
-  }
-
-  const subs = [{ id: 'pending' as const, label: 'รออนุมัติ' }, { id: 'history' as const, label: 'ประวัติ' }]
-  const rows = sub === 'pending' ? pending : history
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: `1px solid ${BORDER}` }}>
-        {subs.map(s => (
-          <button key={s.id} onClick={() => setSub(s.id)}
-            style={{ padding: '8px 20px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
-              color: sub === s.id ? GOLD : 'rgba(255,255,255,0.4)', fontWeight: sub === s.id ? 600 : 400,
-              borderBottom: sub === s.id ? `2px solid ${GOLD}` : '2px solid transparent', marginBottom: -1 }}>
-            {s.label} {s.id === 'pending' && pending.length > 0 && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, backgroundColor: ORANGE, color: '#000', marginLeft: 4 }}>{pending.length}</span>}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {Array.from({ length: 4 }).map((_, i) => <div key={i} style={{ height: 80, borderRadius: 12, backgroundColor: CARD, animation: 'pulse 1.5s infinite' }} />)}
-        </div>
-      ) : rows.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.25)' }}>ไม่มีรายการ</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {rows.map(p => (
-            <div key={p.id} style={{ padding: '16px 18px', borderRadius: 12, backgroundColor: CARD, border: `1px solid ${p.status === 'flagged' ? ORANGE + '66' : BORDER}` }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.inventory_name ?? '—'} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>({p.unit})</span></div>
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
-                    {p.qty_purchased} {p.unit} × {p.unit_price_lak?.toLocaleString()} LAK
-                    {p.market_price_lak ? ` | ราคาตลาด ${p.market_price_lak?.toLocaleString()}` : ''}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
-                    โดย {p.staff_name ?? '—'} — {new Date(p.created_at).toLocaleDateString('th-TH')}
-                    {p.supplier && ` | ${p.supplier}`}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                  <StatusBadge status={p.status} flag={p.flag_reason} />
-                  {(p.status === 'pending' || p.status === 'flagged') && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => void act(p.id, true)} disabled={actingId === p.id}
-                        style={{ padding: '5px 14px', borderRadius: 7, border: 'none', backgroundColor: GREEN, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: actingId === p.id ? 0.5 : 1 }}>อนุมัติ</button>
-                      <button onClick={() => void act(p.id, false)} disabled={actingId === p.id}
-                        style={{ padding: '5px 14px', borderRadius: 7, border: `1px solid ${RED}44`, backgroundColor: `${RED}10`, color: RED, cursor: 'pointer', fontSize: 12 }}>ปฏิเสธ</button>
-                    </div>
-                  )}
-                  {(p.receipt_url || p.weigh_image_url) && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {p.receipt_url && <a href={p.receipt_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: GOLD }}>ใบเสร็จ ↗</a>}
-                      {p.weigh_image_url && <a href={p.weigh_image_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: GOLD }}>รูปชั่ง ↗</a>}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ─── Finance Tab → see components/cafe/FinanceTab.tsx ──────────────────────────
 
@@ -3230,7 +3103,7 @@ function AuditTab() {
   const [staffFilter,  setStaffFilter]  = useState('')
   const [search,       setSearch]       = useState('')
   const [page,         setPage]         = useState(0)
-  const [noTable,      setNoTable]      = useState(false)
+  const [loadErr,      setLoadErr]      = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -3238,7 +3111,7 @@ function AuditTab() {
     if (dateFrom) q = q.gte('created_at', dateFrom)
     if (dateTo)   q = q.lte('created_at', dateTo + 'T23:59:59')
     const { data, error } = await q
-    if ((error as { code?: string } | null)?.code === '42P01') { setNoTable(true); setLoading(false); return }
+    setLoadErr(error ? dbErrorText(error) : null)
     setLogs((data as AuditLog[]) ?? [])
     setPage(0)
     setLoading(false)
@@ -3286,13 +3159,10 @@ function AuditTab() {
     URL.revokeObjectURL(url)
   }
 
-  if (noTable) return (
-    <div style={{ padding: '60px 0', textAlign: 'center', color: 'rgba(255,255,255,0.35)' }}>
-      <div style={{ fontSize: 36, marginBottom: 14 }}>📋</div>
-      <div style={{ fontSize: 15, marginBottom: 8 }}>ยังไม่มีตาราง audit_logs</div>
-      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
-        CREATE TABLE audit_logs (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, created_at timestamptz DEFAULT now(), staff_name text, action text, table_name text, record_id text, payload jsonb);
-      </div>
+  if (loadErr) return (
+    <div style={{ padding: '60px 0', textAlign: 'center' }}>
+      <div style={{ fontSize: 14, color: RED, marginBottom: 14 }}>โหลดบันทึกการใช้งานไม่ได้: {loadErr}</div>
+      <button onClick={() => void load()} style={{ padding: '8px 20px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, cursor: 'pointer' }}>ลองใหม่</button>
     </div>
   )
 
@@ -3489,7 +3359,6 @@ export default function CafeClient() {
         {tabWrap('staff',       <Suspense fallback={<LoadingSpinner />}><LazyStaffTab /></Suspense>)}
         {tabWrap('schedule',    <Suspense fallback={<LoadingSpinner />}><LazyScheduleTab /></Suspense>)}
         {tabWrap('customers',   <Suspense fallback={<LoadingSpinner />}><LazyCustomersTab /></Suspense>)}
-        {tabWrap('purchase',    <PurchaseTab />)}
         {tabWrap('finance',     <Suspense fallback={<LoadingSpinner />}><LazyFinanceTab /></Suspense>)}
         {tabWrap('ai',          <AITab />)}
         {tabWrap('audit',       <AuditTab />)}
