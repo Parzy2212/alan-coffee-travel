@@ -517,7 +517,8 @@ facts(fn, sort, what, detail) AS (
          data_type || COALESCE('(' || numeric_precision || ',' || numeric_scale || ')', '')
   FROM information_schema.columns
   WHERE table_schema = 'public' AND (table_name, column_name) IN (('inventory', 'cost_per_unit'), ('inventory', 'current_qty'),
-        ('purchase_logs', 'unit_price_lak'), ('purchase_logs', 'total_lak'), ('purchase_logs', 'qty_purchased'))
+        ('purchase_logs', 'unit_price_lak'), ('purchase_logs', 'total_lak'), ('purchase_logs', 'qty_purchased'),
+        ('purchase_logs', 'request_id'), ('cash_movements', 'purchase_id'))
   UNION ALL
   SELECT 'z facts', 600, 'view/rule on ' || t.relname, v.relname
   FROM pg_depend d JOIN pg_rewrite r ON r.oid = d.objid JOIN pg_class v ON v.oid = r.ev_class
@@ -541,9 +542,16 @@ facts(fn, sort, what, detail) AS (
   UNION ALL
   SELECT 'z facts', 950, 'already exists (must be none): ' || proname, '1'
   FROM pg_proc WHERE pronamespace = 'public'::regnamespace
-    AND proname IN ('stock_receive', 'stock_waste', 'stock_count_submit', 'stock_cut_for_order', 'stock_return_for_order')
+    AND proname IN ('stock_receive', 'stock_waste', 'stock_count_submit', 'stock_cut_for_order', 'stock_return_for_order',
+                    'stock_daily_usage', 'trg_fn_receive_paid_out_locked')
   UNION ALL
   SELECT 'z facts', 960, 'table stock_movements exists', (to_regclass('public.stock_movements') IS NOT NULL)::text
+  UNION ALL
+  SELECT 'z facts', 970, 'get_stock_analytics(integer, uuid) exists', (to_regprocedure('public.get_stock_analytics(integer, uuid)') IS NOT NULL)::text
+  UNION ALL
+  SELECT 'z facts', 980, 'paid-outs not voided with no cash_flow row (073 does not add these)',
+         count(*)::text FROM public.cash_movements m
+  WHERE m.kind = 'paid_out' AND m.voided_at IS NULL AND NOT EXISTS (SELECT 1 FROM public.cash_flow f WHERE f.reference_id = m.id)
 )
 SELECT fn, 0 AS sort, 'versions on production' AS what, COALESCE(max(versions)::text, '0 (missing)') AS detail
 FROM (SELECT fn FROM loc) f LEFT JOIN live USING (fn) GROUP BY fn

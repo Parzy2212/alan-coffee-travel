@@ -91,7 +91,7 @@ $body$;
   UPDATE public.cash_sessions SET status = 'closed' WHERE shop_id = c_shop AND status <> 'closed';
 
   -- T15 privileges (anon / signed-in non-member)
-  report := report || CASE WHEN NOT has_function_privilege('anon', 'public.stock_receive(uuid, numeric, numeric, boolean, text, text, text)', 'EXECUTE')
+  report := report || CASE WHEN NOT has_function_privilege('anon', 'public.stock_receive(uuid, numeric, numeric, boolean, text, text, text, uuid)', 'EXECUTE')
       AND NOT has_function_privilege('anon', 'public.stock_waste(uuid, numeric, text)', 'EXECUTE')
       AND NOT has_function_privilege('anon', 'public.stock_count_submit(jsonb, boolean, text)', 'EXECUTE')
       AND NOT has_function_privilege('authenticated', 'public.add_stock(uuid, numeric, numeric, text, timestamptz)', 'EXECUTE')
@@ -103,6 +103,8 @@ $body$;
       AND NOT has_function_privilege('authenticated', 'public.stock_return_for_order(uuid)', 'EXECUTE')
       AND NOT has_function_privilege('authenticated', 'public.trg_fn_paid_out_to_cashflow()', 'EXECUTE')
       AND NOT has_table_privilege('anon', 'public.stock_movements', 'SELECT')
+      AND NOT has_function_privilege('anon', 'public.stock_daily_usage(uuid, integer)', 'EXECUTE')
+      AND NOT has_function_privilege('authenticated', 'public.get_stock_analytics(integer, uuid)', 'EXECUTE')
       AND NOT has_table_privilege('authenticated', 'public.stock_movements', 'INSERT')
     THEN E'\nPASS T15 anon cannot receive / waste / count, old stock functions and internals closed'
     ELSE E'\nFAIL T15 privileges' END;
@@ -176,7 +178,8 @@ $body$;
   -- T6 receive 1,000 ml for 30,000 from the drawer: one paid-out in the drawer, one expense;
   --    each money figure moves by 30,000 exactly once
   m0 := pg_temp.t_money();
-  v_res := public.stock_receive(i_milk, 1000, 30000, false, 'drawer');
+  v_pur := gen_random_uuid();
+  v_res := public.stock_receive(i_milk, 1000, 30000, false, 'drawer', NULL, NULL, v_pur);
   m1 := pg_temp.t_money();
   SELECT id INTO v_mov FROM public.cash_movements WHERE session_id = v_session AND kind = 'paid_out' AND note LIKE 'รับของ: __073 milk 1000 ml';
   report := report || CASE WHEN v_mov IS NOT NULL
@@ -187,6 +190,19 @@ $body$;
       AND pg_temp.t_cost(i_milk) = 25
     THEN E'\nPASS T6 receive paid from drawer: 1 paid-out, 1 expense; balance -30,000, expenses +30,000, drawer -30,000 (once each)'
     ELSE E'\nFAIL T6 ' || pg_temp.t_delta(m0, m1) END;
+
+  -- T6b the same form sent again (connection dropped after the save): the first receive comes back, nothing is added
+  v_y := pg_temp.t_qty(i_milk);
+  m0 := pg_temp.t_money();
+  v_res := public.stock_receive(i_milk, 1000, 30000, false, 'drawer', NULL, NULL, v_pur);
+  m1 := pg_temp.t_money();
+  report := report || CASE WHEN (v_res->>'duplicate')::boolean AND pg_temp.t_qty(i_milk) = v_y AND pg_temp.t_cost(i_milk) = 25
+      AND pg_temp.t_moved(m0, m1, 0, 0, 0)
+      AND (SELECT count(*) FROM public.purchase_logs WHERE request_id = v_pur) = 1
+      AND (SELECT count(*) FROM public.cash_movements WHERE session_id = v_session) = 1
+      AND (SELECT count(*) FROM public.cash_movements WHERE session_id = v_session AND purchase_id = (v_res->>'purchase_id')::uuid) = 1
+    THEN E'\nPASS T6b same receive sent twice: second returns the first; stock, cost, drawer and expenses unchanged'
+    ELSE E'\nFAIL T6b ' || v_res::text || ' ' || pg_temp.t_delta(m0, m1) END;
 
   -- T7 a paid-out from the drawer screen (ice 20,000, cashier PIN): one expense too
   m0 := pg_temp.t_money();
@@ -207,7 +223,7 @@ $body$;
     THEN E'\nPASS T8 money put into the drawer: drawer +100,000, no cash_flow row'
     ELSE E'\nFAIL T8 ' || pg_temp.t_delta(m0, m1) END;
 
-  -- T9 voiding the ice paid-out (manager PIN) takes its expense away once; voiding the receive's paid-out too
+  -- T9 voiding the ice paid-out (manager PIN) takes its expense away once; the receive's own paid-out cannot be voided
   SELECT id INTO v_mov FROM public.cash_movements WHERE session_id = v_session AND category = 'ซื้อน้ำแข็ง';
   m0 := pg_temp.t_money();
   v_res := public.cash_movement_void(c_shop, v_mov, c_mgr_pin, 'test');
@@ -218,13 +234,15 @@ $body$;
     ELSE E'\nFAIL T9 ' || v_res::text || ' ' || pg_temp.t_delta(m0, m1) END;
   SELECT id INTO v_mov FROM public.cash_movements WHERE session_id = v_session AND note LIKE 'รับของ:%';
   m0 := pg_temp.t_money();
-  PERFORM public.cash_movement_void(c_shop, v_mov, c_mgr_pin, 'test');
+  v_n := 0;
+  BEGIN PERFORM public.cash_movement_void(c_shop, v_mov, c_mgr_pin, 'test'); EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'RECEIVE_PAID_OUT%' THEN v_n := 1; END IF; END;
   m1 := pg_temp.t_money();
-  report := report || CASE WHEN pg_temp.t_moved(m0, m1, 30000, -30000, 30000)
+  report := report || CASE WHEN v_n = 1 AND pg_temp.t_moved(m0, m1, 0, 0, 0)
+      AND (SELECT voided_at FROM public.cash_movements WHERE id = v_mov) IS NULL
       -- every paid-out of this drawer: exactly 1 expense row while it stands, none once voided
       AND NOT EXISTS (SELECT 1 FROM public.cash_movements m WHERE m.session_id = v_session AND m.kind = 'paid_out'
                       AND (SELECT count(*) FROM public.cash_flow f WHERE f.reference_id = m.id) <> CASE WHEN m.voided_at IS NULL THEN 1 ELSE 0 END)
-    THEN E'\nPASS T9b void the receive''s paid-out: back by 30,000 once; every paid-out has 1 expense row, voided ones none'
+    THEN E'\nPASS T9b the receive''s paid-out cannot be voided (the stock would stay with no expense); every paid-out has 1 expense row, voided ones none'
     ELSE E'\nFAIL T9b ' || pg_temp.t_delta(m0, m1) END;
 
   -- T10 waste 200 ml with a reason: stock -200, logged, money untouched; without a reason refused
@@ -271,10 +289,18 @@ $body$;
   BEGIN PERFORM public.stock_count_submit(jsonb_build_array(jsonb_build_object('inventory_id', i_cup, 'counted_qty', 41, 'unit_cost', 1)), true); EXCEPTION WHEN insufficient_privilege THEN v_n := v_n + 1; END;
   PERFORM public.stock_count_submit(jsonb_build_array(jsonb_build_object('inventory_id', i_cup, 'counted_qty', 39)));
   PERFORM public.stock_receive(i_cup, 1, 1500, false, 'owner');
+  -- a manager receives stock, so the movement history must be readable for them too
+  IF public.real_shop_role_in(ARRAY['owner', 'manager']) THEN v_n := v_n + 1; END IF;
   UPDATE public.shop_users SET role = 'owner' WHERE shop_id = c_shop AND user_id = c_owner;
-  report := report || CASE WHEN v_n = 2 AND pg_temp.t_cost(i_cup) = 1500 AND pg_temp.t_qty(i_cup) = 40 AND pg_temp.t_cost(i_coffee) = 0
+  PERFORM pg_temp.t_as(gen_random_uuid());
+  IF NOT public.real_shop_role_in(ARRAY['owner', 'manager']) THEN v_n := v_n + 1; END IF;
+  PERFORM pg_temp.t_as(c_owner);
+  report := report || CASE WHEN v_n = 4
+      AND (SELECT string_agg(qual, ' ') FROM pg_policies WHERE schemaname = 'public' AND tablename = 'stock_movements') LIKE '%real_shop_role_in%owner%manager%'
+      AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'stock_movements') = 1
+      AND pg_temp.t_cost(i_cup) = 1500 AND pg_temp.t_qty(i_cup) = 40 AND pg_temp.t_cost(i_coffee) = 0
       AND (SELECT count(*) FROM public.stock_movements WHERE inventory_id = i_cup AND kind = 'opening' AND unit_cost = 1500 AND qty_delta = -10) = 1
-    THEN E'\nPASS T12 opening count needs a cost (cost 0 accepted), sets it; a manager can count and receive but not open'
+    THEN E'\nPASS T12 opening count needs a cost (cost 0 accepted), sets it; a manager can count, receive and read the history but not open; a non-member cannot read it'
     ELSE E'\nFAIL T12 refused ' || v_n || ' cost ' || pg_temp.t_cost(i_cup) || ' qty ' || pg_temp.t_qty(i_cup) END;
   UPDATE public.inventory SET current_qty = 1000, cost_per_unit = 100 WHERE id = i_coffee;
   PERFORM pg_temp.t_as(NULL);
@@ -282,19 +308,25 @@ $body$;
   -- T13 a sale logs what it cut; changing the recipe before the void still gives back what was cut
   v_res := pg_temp.t_sell(jsonb_build_array(jsonb_build_object('recipe_id', v_menu, 'variant_id', v_menu_def, 'qty', 2)), 60000, v_cashier);
   v_order := (v_res->>'order_id')::uuid;
+  PERFORM pg_temp.t_as(c_owner);
+  SELECT used_qty INTO v_x FROM public.stock_daily_usage(i_coffee, 14) ORDER BY day DESC LIMIT 1;
+  SELECT count(*) INTO v_n FROM public.stock_daily_usage(i_coffee, 14);
   report := report || CASE WHEN pg_temp.t_qty(i_coffee) = 964 AND pg_temp.t_qty(i_cup) = 38
+      AND v_x = 36 AND v_n = 14
       AND (SELECT count(*) FROM public.stock_movements WHERE order_id = v_order AND kind = 'sale') = 2
       AND (SELECT qty_delta FROM public.stock_movements WHERE order_id = v_order AND inventory_id = i_coffee) = -36
       AND (SELECT qty_after FROM public.stock_movements WHERE order_id = v_order AND inventory_id = i_coffee) = 964
-    THEN E'\nPASS T13 sale of 2: coffee -36, cup -2, both logged with the amount after'
-    ELSE E'\nFAIL T13 coffee ' || pg_temp.t_qty(i_coffee) || ' cup ' || pg_temp.t_qty(i_cup) END;
+    THEN E'\nPASS T13 sale of 2: coffee -36, cup -2, both logged with the amount after; the 14-day chart shows 36 today'
+    ELSE E'\nFAIL T13 coffee ' || pg_temp.t_qty(i_coffee) || ' cup ' || pg_temp.t_qty(i_cup) || ' chart today ' || COALESCE(v_x::text, 'null') || ' days ' || v_n END;
   UPDATE public.recipe_ingredients SET qty_normal = 30 WHERE recipe_id = v_menu AND inventory_id = i_coffee;
   v_res := public.void_order_with_approval(v_order, c_shop, c_mgr_pin, 'test');
   report := report || CASE WHEN (v_res->>'ok')::boolean AND pg_temp.t_qty(i_coffee) = 1000 AND pg_temp.t_qty(i_cup) = 40
       AND (SELECT sum(qty_delta) FROM public.stock_movements WHERE order_id = v_order) = 0
       AND pg_temp.t_cost(i_coffee) = 100
-    THEN E'\nPASS T13b recipe changed 18 -> 30 g, then void: coffee back exactly 36 (not 60), cup 2, cost unchanged'
+      AND (SELECT used_qty FROM public.stock_daily_usage(i_coffee, 14) ORDER BY day DESC LIMIT 1) = 0
+    THEN E'\nPASS T13b recipe changed 18 -> 30 g, then void: coffee back exactly 36 (not 60), cup 2, cost unchanged; the chart nets the void to 0'
     ELSE E'\nFAIL T13b ' || v_res::text || ' coffee ' || pg_temp.t_qty(i_coffee) END;
+  PERFORM pg_temp.t_as(NULL);
 
   -- T14 a bill sold before 073 (no log) is voided with what the recipe says (as 072 did)
   v_res := pg_temp.t_sell(jsonb_build_array(jsonb_build_object('recipe_id', v_menu, 'variant_id', v_menu_def, 'qty', 1)), 30000, v_cashier);

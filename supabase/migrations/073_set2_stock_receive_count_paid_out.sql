@@ -3,15 +3,18 @@
 --  counted as an expense exactly once
 --
 --  * stock_movements: every change of an ingredient's stock (sale, void return, receive, waste,
---    count, opening count) with the amount after it. Owner reads it.
+--    count, opening count) with the amount after it. Owner and manager read it (they receive stock).
 --  * checkout_order logs what it cut ('sale'); void_order_with_approval gives back exactly
 --    that, so a recipe changed between the sale and the void no longer gives back the wrong
 --    amount. Bills sold before 073 have no log: they get back what order_stock_usage says.
 --  * stock_receive: amount + price (or "free") + paid from drawer / owner's money / transfer;
---    weighted average cost; the expense is written once (drawer: through the paid-out below).
+--    weighted average cost; the expense is written once (drawer: through the paid-out below);
+--    a repeat of the same form (p_request_id) returns the first receive.
 --  * stock_waste, stock_count_submit (also the opening count with a cost per unit).
+--  * stock_daily_usage: the stock screen's 14-day chart, from the log (get_stock_analytics closed).
 --  * cash_movements paid_out -> one cash_flow expense row (reference_id = the movement);
---    voiding the paid-out removes that row. The drawer count already reads cash_movements,
+--    voiding the paid-out removes that row (a receive's own paid-out cannot be voided: the stock
+--    would stay in with no expense). The drawer count already reads cash_movements,
 --    the money reports read cash_flow, so each paid-out is counted once in each.
 --  * old paths closed: last-price trigger and approve->cash_flow trigger on purchase_logs,
 --    add_stock / approve_purchase / start_stock_audit / submit_stock_audit /
@@ -68,9 +71,9 @@ ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.stock_movements FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.stock_movements TO authenticated;
 GRANT ALL ON public.stock_movements TO service_role;
-DROP POLICY IF EXISTS stock_movements_owner_read ON public.stock_movements;
-CREATE POLICY stock_movements_owner_read ON public.stock_movements
-  FOR SELECT TO authenticated USING (public.real_shop_role_in(ARRAY['owner']));
+DROP POLICY IF EXISTS stock_movements_read ON public.stock_movements;
+CREATE POLICY stock_movements_read ON public.stock_movements
+  FOR SELECT TO authenticated USING (public.real_shop_role_in(ARRAY['owner', 'manager']));
 
 -- the recipe-cost trigger names this column, so it is re-created around the type change
 DO $type$
@@ -94,7 +97,12 @@ $type$;
 ALTER TABLE public.purchase_logs
   ADD COLUMN IF NOT EXISTS paid_from   text CHECK (paid_from IN ('drawer', 'owner', 'transfer')),
   ADD COLUMN IF NOT EXISTS received_by uuid,
-  ADD COLUMN IF NOT EXISTS note        text;
+  ADD COLUMN IF NOT EXISTS note        text,
+  -- one id per receive form: a press repeated after a dropped connection returns the first receive
+  ADD COLUMN IF NOT EXISTS request_id  uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS purchase_logs_request_id_key ON public.purchase_logs (request_id) WHERE request_id IS NOT NULL;
+-- the drawer paid-out a receive made: voiding it alone would leave the stock in with no expense
+ALTER TABLE public.cash_movements ADD COLUMN IF NOT EXISTS purchase_id uuid REFERENCES public.purchase_logs(id);
 
 -- bills sold before this time were cut without a log; a void of one of them falls back to
 -- order_stock_usage. Created once, so a second run keeps the first install time.
@@ -148,8 +156,10 @@ REVOKE ALL ON FUNCTION public.stock_cut_for_order(uuid) FROM PUBLIC, anon, authe
 REVOKE ALL ON FUNCTION public.stock_return_for_order(uuid) FROM PUBLIC, anon, authenticated;
 
 -- 3) receive / waste / count (owner or manager of the real shop, signed in) -------------
+-- an earlier draft of this file had no p_request_id (local copies only)
+DROP FUNCTION IF EXISTS public.stock_receive(uuid, numeric, numeric, boolean, text, text, text);
 CREATE OR REPLACE FUNCTION public.stock_receive(p_inventory_id uuid, p_qty numeric, p_total_cost_lak numeric,
-  p_free boolean, p_paid_from text, p_supplier text DEFAULT NULL, p_note text DEFAULT NULL)
+  p_free boolean, p_paid_from text, p_supplier text DEFAULT NULL, p_note text DEFAULT NULL, p_request_id uuid DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
 DECLARE
   c_shop     constant uuid := '9afdd9eb-728d-4e36-8077-492c92dbef30';
@@ -188,6 +198,11 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'ingredient not found' USING ERRCODE = 'P0002';
   END IF;
+  -- checked after the lock, so a repeat sent while the first is still running waits and then sees it
+  SELECT id INTO v_purchase FROM public.purchase_logs WHERE request_id = p_request_id;
+  IF FOUND THEN
+    RETURN jsonb_build_object('ok', true, 'purchase_id', v_purchase, 'qty_after', inv.current_qty, 'duplicate', true);
+  END IF;
   IF v_paid = 'drawer' THEN
     SELECT id INTO v_session FROM public.cash_sessions WHERE shop_id = c_shop AND status = 'open' FOR UPDATE;
     IF v_session IS NULL THEN
@@ -202,9 +217,9 @@ BEGIN
   v_label := COALESCE(inv.name_th, inv.name) || ' ' || trim_scale(v_qty) || ' ' || inv.unit;
 
   INSERT INTO public.purchase_logs (inventory_id, qty_purchased, unit_price_lak, supplier, status,
-                                    paid_from, received_by, note)
+                                    paid_from, received_by, note, request_id)
   VALUES (inv.id, v_qty, v_unit, NULLIF(btrim(COALESCE(p_supplier, '')), ''), 'received',
-          v_paid, auth.uid(), v_note)
+          v_paid, auth.uid(), v_note, p_request_id)
   RETURNING id INTO v_purchase;
 
   UPDATE public.inventory SET current_qty = current_qty + v_qty, cost_per_unit = v_cost, updated_at = now()
@@ -214,8 +229,8 @@ BEGIN
 
   IF v_paid = 'drawer' THEN
     -- the paid-out trigger writes the expense; writing it here too would count it twice
-    INSERT INTO public.cash_movements (session_id, shop_id, kind, amount_lak, category, note)
-    VALUES (v_session, c_shop, 'paid_out', v_total, 'ซื้อนม/วัตถุดิบ', 'รับของ: ' || v_label);
+    INSERT INTO public.cash_movements (session_id, shop_id, kind, amount_lak, category, note, purchase_id)
+    VALUES (v_session, c_shop, 'paid_out', v_total, 'ซื้อนม/วัตถุดิบ', 'รับของ: ' || v_label, v_purchase);
   ELSIF v_paid IS NOT NULL THEN
     INSERT INTO public.cash_flow (type, category, amount_lak, description, reference_id, payment_method, date, shop_id)
     VALUES ('expense', 'วัตถุดิบ', v_total,
@@ -313,12 +328,43 @@ BEGIN
 END
 $fn$;
 
-REVOKE ALL ON FUNCTION public.stock_receive(uuid, numeric, numeric, boolean, text, text, text) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.stock_receive(uuid, numeric, numeric, boolean, text, text, text, uuid) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.stock_waste(uuid, numeric, text) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.stock_count_submit(jsonb, boolean, text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.stock_receive(uuid, numeric, numeric, boolean, text, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.stock_receive(uuid, numeric, numeric, boolean, text, text, text, uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.stock_waste(uuid, numeric, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.stock_count_submit(jsonb, boolean, text) TO authenticated;
+
+-- daily use of one ingredient (sales less voids) from the log, for the stock screen's chart.
+-- Replaces get_stock_analytics, which fails on production ("name" is ambiguous) and counted
+-- qty_normal only (no base recipes, hot/iced lines or sweetness). Days before 073 show 0.
+CREATE OR REPLACE FUNCTION public.stock_daily_usage(p_inventory_id uuid, p_days int DEFAULT 14)
+RETURNS TABLE (day date, used_qty numeric)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Asia/Vientiane')::date;
+  v_days  int := LEAST(GREATEST(COALESCE(p_days, 14), 1), 90);
+BEGIN
+  PERFORM public.require_real_shop_role('{owner,manager}'::text[]);
+  RETURN QUERY
+    SELECT d::date, COALESCE(sum(-m.qty_delta), 0)
+    FROM generate_series(v_today - (v_days - 1), v_today, interval '1 day') d
+    LEFT JOIN public.stock_movements m
+      ON m.inventory_id = p_inventory_id AND m.kind IN ('sale', 'void_return')
+     AND m.created_at >= (v_today - (v_days - 1))::timestamp AT TIME ZONE 'Asia/Vientiane'
+     AND (m.created_at AT TIME ZONE 'Asia/Vientiane')::date = d::date
+    GROUP BY d ORDER BY d;
+END
+$fn$;
+REVOKE ALL ON FUNCTION public.stock_daily_usage(uuid, int) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.stock_daily_usage(uuid, int) TO authenticated;
+DO $old$
+BEGIN
+  IF to_regprocedure('public.get_stock_analytics(integer, uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.get_stock_analytics(integer, uuid) FROM PUBLIC, anon, authenticated;
+  END IF;
+END
+$old$;
 
 -- 4) drawer paid-out = one expense in cash_flow ------------------------------------------
 -- a voided paid-out never happened, so its row is removed (cash_flow allows no negative
@@ -342,6 +388,20 @@ END
 $fn$;
 REVOKE ALL ON FUNCTION public.trg_fn_paid_out_to_cashflow() FROM PUBLIC, anon, authenticated;
 DROP TRIGGER IF EXISTS trg_paid_out_to_cashflow ON public.cash_movements;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_receive_paid_out_locked()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $fn$
+BEGIN
+  IF OLD.purchase_id IS NOT NULL AND OLD.voided_at IS NULL AND NEW.voided_at IS NOT NULL THEN
+    RAISE EXCEPTION 'RECEIVE_PAID_OUT: this paid-out came from receiving stock; fix the stock with a count instead' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+REVOKE ALL ON FUNCTION public.trg_fn_receive_paid_out_locked() FROM PUBLIC, anon, authenticated;
+DROP TRIGGER IF EXISTS trg_receive_paid_out_locked ON public.cash_movements;
+CREATE TRIGGER trg_receive_paid_out_locked BEFORE UPDATE OF voided_at ON public.cash_movements
+  FOR EACH ROW EXECUTE FUNCTION public.trg_fn_receive_paid_out_locked();
 CREATE TRIGGER trg_paid_out_to_cashflow AFTER INSERT OR UPDATE OF voided_at ON public.cash_movements
   FOR EACH ROW EXECUTE FUNCTION public.trg_fn_paid_out_to_cashflow();
 
