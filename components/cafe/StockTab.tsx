@@ -111,6 +111,44 @@ function itemToForm(item: StockDetail): InventoryForm {
   }
 }
 
+// "ไม่หวาน" on the POS takes 0 of the ingredients ticked here (072 set_inventory_sweetener); saved on tap
+function SweetenerToggle({ inventoryId }: { inventoryId: string }) {
+  const [on, setOn] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void supabase.from('inventory').select('is_sweetener').eq('id', inventoryId).maybeSingle().then(({ data, error }) => {
+      if (cancelled) return
+      if (error) { setErr('โหลดค่าความหวานไม่ได้: ' + dbErrorText(error)); return }
+      setOn(Boolean(data?.is_sweetener))
+    })
+    return () => { cancelled = true }
+  }, [inventoryId])
+
+  async function toggle(next: boolean) {
+    if (busy) return
+    setBusy(true); setErr(null)
+    const { error } = await authClient.rpc('set_inventory_sweetener', { p_inventory_id: inventoryId, p_is_sweetener: next })
+    setBusy(false)
+    if (error) { setErr(dbErrorText(error)); return }
+    setOn(next)
+  }
+
+  return (
+    <div style={{ marginTop: 14, padding: '10px 12px', backgroundColor: CARD2, borderRadius: 8 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: on === null || busy ? 'default' : 'pointer' }}>
+        <input type="checkbox" checked={on ?? false} disabled={on === null || busy} onChange={e => void toggle(e.target.checked)} style={{ width: 18, height: 18, accentColor: GOLD }} />
+        <span style={{ fontSize: 13, color: '#fff' }}>ใช้ให้ความหวาน (น้ำตาล ไซรัป นมข้น)</span>
+        {busy && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>กำลังบันทึก...</span>}
+      </label>
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4, marginLeft: 28 }}>ติ๊กแล้ว: ลูกค้าเลือก “ไม่หวาน” ระบบจะไม่ตัดวัตถุดิบนี้ · บันทึกทันทีที่กด</div>
+      {err && <div style={{ fontSize: 12, color: RED, marginTop: 4, marginLeft: 28 }}>{err}</div>}
+    </div>
+  )
+}
+
 function StockItemRow({ item, onReload, showMsg, onDelete }: {
   item: StockDetail; onReload: () => void; showMsg: (m: string) => void; onDelete: (item: StockDetail) => void
 }) {
@@ -520,6 +558,7 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
         <div style={{ backgroundColor: '#0d0d0d', border: `1px solid ${GOLD}33`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: 16 }}>
           <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 14 }}>แก้ไข: {item.name}</div>
           <InventoryFormFields data={editData} onChange={setEditData} />
+          <SweetenerToggle inventoryId={item.id} />
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button onClick={saveEdit} disabled={saving} style={btnStyle(GOLD)}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
             <button onClick={() => setPanel(null)} style={btnStyle('rgba(255,255,255,0.08)')}>ยกเลิก</button>

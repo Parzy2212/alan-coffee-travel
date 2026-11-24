@@ -16,6 +16,8 @@ import {
   fmtLAK, fmtK,
   ALLERGENS, toEdit, emptyEdit,
 } from '@/components/cafe/shared'
+import { useShop } from '@/lib/use-shop'
+import { ExtraShotSettings, VariantPriceLine, VariantPricesEditor, priceInMenuFormLocked, type MenuVariantRow } from '@/components/cafe/MenuVariants'
 void BLACK
 
 // ─── CSV download helper ──────────────────────────────────────────────────────
@@ -79,7 +81,7 @@ function Toggle({ on, onChange, label, icon }: { on: boolean; onChange: (v: bool
 // ─── MenuWizard ───────────────────────────────────────────────────────────────
 
 function MenuWizard({
-  data, onChange, categories, saving, onSave, onCancel, costPerCup, onSwitchToRecipeCost,
+  data, onChange, categories, saving, onSave, onCancel, costPerCup, onSwitchToRecipeCost, priceLocked,
 }: {
   data: RecipeFullEdit
   onChange: (d: RecipeFullEdit) => void
@@ -89,6 +91,7 @@ function MenuWizard({
   onCancel: () => void
   costPerCup?: number
   onSwitchToRecipeCost?: (menuId: string) => void
+  priceLocked?: boolean
 }) {
   const [step,           setStep]          = useState(1)
   const [showAltNames,   setShowAltNames]  = useState(!!(data.product_name || data.product_name_lo))
@@ -333,12 +336,16 @@ function MenuWizard({
             {/* Price — large prominent */}
             <div style={cardStyle}>
               <div style={sectionLabel}>ราคาขาย *</div>
+              {priceLocked && (
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>เมนูนี้แยกราคา ร้อน / เย็น — กดยกเลิกฟอร์มนี้ แล้วแก้ราคาที่ส่วน “ราคาขาย” ในการ์ดเมนู</div>
+              )}
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <MoneyInput
                   value={data.price_str}
                   onChange={v => onChange({ ...data, price_str: v })}
-                  style={{ ...inputStyle, fontSize: 24, height: 60, fontWeight: 800, paddingRight: 36, flex: 1 }}
+                  style={{ ...inputStyle, fontSize: 24, height: 60, fontWeight: 800, paddingRight: 36, flex: 1, opacity: priceLocked ? 0.5 : 1 }}
                   placeholder="0"
+                  disabled={priceLocked}
                 />
                 <span style={{ fontSize: 18, color: GOLD, fontWeight: 700, flexShrink: 0 }}>₭</span>
               </div>
@@ -462,9 +469,11 @@ function MenuWizard({
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
 
 function RecipeCard({
-  r, categories, onReload, onArchive, onSwitchToRecipeCost,
+  r, variants, isOwner, categories, onReload, onArchive, onSwitchToRecipeCost,
 }: {
   r: RecipeFull
+  variants: MenuVariantRow[] | null
+  isOwner: boolean
   categories: Category[]
   onReload: () => void
   onArchive: (id: string) => void
@@ -598,6 +607,7 @@ function RecipeCard({
           {/* Price + cost */}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: GOLD }}>{fmtLAK(r.price_lak)}</div>
+            <VariantPriceLine variants={variants ?? []} />
             {r.cost_per_cup_lak && (
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>
                 ต้นทุน {fmtLAK(r.cost_per_cup_lak)}
@@ -673,6 +683,13 @@ function RecipeCard({
       {/* ── Expanded detail ── */}
       {open && !editing && (
         <div style={{ borderTop: `1px solid ${BORDER}`, padding: '16px 16px', backgroundColor: '#0d0d0d' }}>
+          {variants === null ? (
+            <div style={{ marginBottom: 14, fontSize: 12, color: RED }}>โหลดราคา ร้อน / เย็น ไม่ได้ — แก้ราคาไม่ได้จนกว่าจะโหลดหน้าใหม่</div>
+          ) : isOwner ? (
+            <VariantPricesEditor recipeId={r.id} variants={variants} menuPrice={r.price_lak} onSaved={onReload} />
+          ) : (
+            <div style={{ marginBottom: 14, fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>ราคาขายแก้ได้เฉพาะบัญชีเจ้าของร้าน</div>
+          )}
           {(r.description_en || r.description_th || r.description_lo) && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>คำอธิบาย</div>
@@ -760,6 +777,7 @@ function RecipeCard({
             onCancel={() => setEditing(false)}
             costPerCup={r.cost_per_cup_lak ?? undefined}
             onSwitchToRecipeCost={onSwitchToRecipeCost}
+            priceLocked={variants === null || priceInMenuFormLocked(variants)}
           />
         </div>
       )}
@@ -830,6 +848,9 @@ function ArchivedCard({
 
 export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost?: (menuId: string) => void }) {
   const [recipes,      setRecipes]      = useState<RecipeFull[]>([])
+  const [variants,     setVariants]     = useState<MenuVariantRow[]>([])
+  const [variantsErr,  setVariantsErr]  = useState<string | null>(null)
+  const { shopId, loading: shopLoading, error: shopErr } = useShop()
   const [categories,   setCategories]   = useState<Category[]>([])
   const [loading,      setLoading]      = useState(true)
   const [showForm,     setShowForm]     = useState(false)
@@ -842,13 +863,16 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500) }
 
+  // the spinner only on the first load: a reload after a save must keep the open cards open
   const load = useCallback(async () => {
-    setLoading(true)
-    const [rRes, cRes] = await Promise.all([
+    const [rRes, cRes, vRes] = await Promise.all([
       supabase.rpc('get_menu_with_stats'),
       supabase.from('categories').select('id, name, name_th, name_lo, parent_id').eq('is_active', true).order('sort_order'),
+      supabase.from('menu_variants').select('id, recipe_id, kind, price_lak, is_active'),
     ])
     setRecipes((rRes.data as RecipeFull[]) ?? [])
+    setVariants((vRes.data as MenuVariantRow[]) ?? [])
+    setVariantsErr(vRes.error ? dbErrorText(vRes.error) : null)
     setCategories((cRes.data as Category[]) ?? [])
     setLoading(false)
   }, [])
@@ -998,12 +1022,19 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
         </div>
       )}
 
+      {shopId ? <ExtraShotSettings shopId={shopId} /> : !shopLoading && (
+        <div style={{ marginBottom: 12, fontSize: 12, color: shopErr ? RED : 'rgba(255,255,255,0.45)' }}>{shopErr || 'Extra shot และราคาขาย แก้ได้เฉพาะบัญชีเจ้าของร้าน'}</div>
+      )}
+      {variantsErr && <div style={{ marginBottom: 12, fontSize: 12, color: RED }}>โหลดราคา ร้อน / เย็น ไม่ได้: {variantsErr} — ราคาที่แสดงอาจไม่ครบ ลองโหลดหน้าใหม่</div>}
+
       {/* ── Grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 12 }}>
         {filtered.map(r => (
           <RecipeCard
             key={r.id}
             r={r}
+            variants={variantsErr ? null : variants.filter(v => v.recipe_id === r.id)}
+            isOwner={!!shopId}
             categories={categories}
             onReload={load}
             onArchive={(id) => {

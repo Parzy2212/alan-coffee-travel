@@ -9,9 +9,10 @@ interface MoneyInputProps {
   placeholder?: string
   disabled?: boolean
   autoFocus?: boolean
+  ariaLabel?: string
 }
 
-export function MoneyInput({ value, onChange, style, placeholder, disabled, autoFocus }: MoneyInputProps) {
+export function MoneyInput({ value, onChange, style, placeholder, disabled, autoFocus, ariaLabel }: MoneyInputProps) {
   const parseNum = (v: string | number) => {
     const n = typeof v === 'number' ? v : parseInt(String(v).replace(/[^0-9]/g, ''), 10)
     return isNaN(n) || n <= 0 ? 0 : n
@@ -59,6 +60,7 @@ export function MoneyInput({ value, onChange, style, placeholder, disabled, auto
       onBlur={handleBlur}
       style={style}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       disabled={disabled}
       autoFocus={autoFocus}
     />
