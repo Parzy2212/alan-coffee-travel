@@ -117,7 +117,7 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
   const [panel,       setPanel]       = useState<'detail' | 'add' | 'waste' | 'edit' | null>(null)
   const [addForm,     setAddForm]     = useState<ReceiveForm>(emptyReceive(item.supplier))
   const [priceOk,     setPriceOk]     = useState(false)
-  // one id per opened form: pressing again after a dropped connection must not receive twice
+  // one id per opened receive / waste form: pressing again after a dropped connection must not save twice
   // (closing the form or reloading the page starts a new id, so the screen text says so)
   const [requestId,   setRequestId]   = useState(() => crypto.randomUUID())
   const [wasteQty,    setWasteQty]    = useState('')
@@ -211,10 +211,17 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
     if (!(qty > 0)) { setFormErr('ใส่จำนวนที่ทิ้ง'); return }
     if (!wasteReason.trim()) { setFormErr('ต้องใส่เหตุผล'); return }
     setSaving(true); setFormErr(null)
-    const { error } = await authClient.rpc('stock_waste', { p_inventory_id: item.id, p_qty: qty, p_reason: wasteReason.trim() })
+    const { data, error } = await authClient.rpc('stock_waste', { p_inventory_id: item.id, p_qty: qty, p_reason: wasteReason.trim(), p_request_id: requestId })
     setSaving(false)
-    // a waste has no request id: pressing again after a lost answer would take it off twice
-    if (error) { setFormErr(isNetworkError(error) ? 'เชื่อมต่อไม่ได้ อาจบันทึกไปแล้ว — โหลดหน้าใหม่ ดูยอดหรือ "ประวัติ" ก่อนบันทึกซ้ำ' : stockErrorText(error)); return }
+    if (error) {
+      setFormErr(isNetworkError(error)
+        ? 'เชื่อมต่อไม่ได้ อาจบันทึกไปแล้ว — กด "บันทึกของเสีย" ซ้ำได้ ระบบจะไม่ตัดซ้ำ ถ้าไม่ปิดฟอร์มนี้ (ถ้าปิดหรือโหลดหน้าใหม่แล้ว ให้ดูประวัติก่อนตัดใหม่)'
+        : stockErrorText(error))
+      return
+    }
+    setRequestId(crypto.randomUUID())
+    const dup = data as { duplicate?: boolean; saved_qty?: number } | null
+    if (dup?.duplicate) { showMsg(`รายการนี้บันทึกไว้แล้วตั้งแต่ครั้งก่อน (ไม่ได้ตัดซ้ำ) — ตัดไป ${fmtQty(Number(dup.saved_qty))} ${item.unit} ตามครั้งแรก`); setPanel(null); onReload(); return }
     showMsg(`ตัดของเสีย ${item.name_th || item.name} -${fmtQty(qty)} ${item.unit}`)
     setPanel(null); onReload()
   }
@@ -322,8 +329,8 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
-            <button onClick={() => { openPanel('add'); setAddForm(emptyReceive(item.supplier)); setPriceOk(false); setRequestId(crypto.randomUUID()) }} style={btnStyleSm(panel === 'add' ? GOLD + '33' : GOLD + '22', GOLD)}>+ รับของ</button>
-            <button onClick={() => { openPanel('waste'); setWasteQty(''); setWasteReason('') }} style={btnStyleSm(panel === 'waste' ? ORANGE + '33' : ORANGE + '14', ORANGE)}>ตัดของเสีย</button>
+            <button onClick={() => { openPanel('add'); setAddForm(emptyReceive(item.supplier)); setPriceOk(false); setRequestId(crypto.randomUUID()) }} disabled={saving} style={btnStyleSm(panel === 'add' ? GOLD + '33' : GOLD + '22', GOLD)}>+ รับของ</button>
+            <button onClick={() => { openPanel('waste'); setWasteQty(''); setWasteReason(''); setRequestId(crypto.randomUUID()) }} disabled={saving} style={btnStyleSm(panel === 'waste' ? ORANGE + '33' : ORANGE + '14', ORANGE)}>ตัดของเสีย</button>
             <button onClick={() => openPanel('detail')} style={btnStyleSm('rgba(255,255,255,0.07)', 'rgba(255,255,255,0.55)')}>ประวัติ</button>
             <button onClick={() => openPanel('edit')} style={btnStyleSm('rgba(255,255,255,0.05)', 'rgba(255,255,255,0.4)')}>แก้ไข</button>
             <button
