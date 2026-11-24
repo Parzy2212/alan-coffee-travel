@@ -22,6 +22,7 @@ param(
   [string]$PgUser,
   [int]$Port = 5432,
   [string]$OutDir = 'D:\alan-backups',
+  [string]$Database = 'postgres',
   [string]$SslMode = 'require'
 )
 
@@ -50,7 +51,7 @@ $extraFile = Join-Path $OutDir $extraName
 
 function Invoke-Dump([string]$name, [string[]]$schemas) {
   $dumpArgs = @('run', '--rm', '-e', 'PGPASSWORD', '-e', 'PGSSLMODE', '-v', "${OutDir}:/out", 'postgres:17',
-    'pg_dump', '-h', $PgHost, '-p', "$Port", '-U', $PgUser, '-d', 'postgres',
+    'pg_dump', '-h', $PgHost, '-p', "$Port", '-U', $PgUser, '-d', $Database,
     '--format=custom', '--no-owner', "--file=/out/$name")
   foreach ($s in $schemas) { $dumpArgs += "--schema=$s" }
   & docker $dumpArgs | Out-Host
