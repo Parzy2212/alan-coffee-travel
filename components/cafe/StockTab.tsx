@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { authClient, dbErrorText } from '@/lib/supabase-auth'
+import { authClient, dbErrorText, isNetworkError } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   GOLD, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
@@ -118,6 +118,7 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
   const [addForm,     setAddForm]     = useState<ReceiveForm>(emptyReceive(item.supplier))
   const [priceOk,     setPriceOk]     = useState(false)
   // one id per opened form: pressing again after a dropped connection must not receive twice
+  // (closing the form or reloading the page starts a new id, so the screen text says so)
   const [requestId,   setRequestId]   = useState(() => crypto.randomUUID())
   const [wasteQty,    setWasteQty]    = useState('')
   const [wasteReason, setWasteReason] = useState('')
@@ -191,9 +192,15 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
       p_request_id: requestId,
     })
     setSaving(false)
-    if (error) { setFormErr(stockErrorText(error)); return }
+    if (error) {
+      setFormErr(isNetworkError(error)
+        ? 'เชื่อมต่อไม่ได้ อาจบันทึกไปแล้ว — กด "บันทึกรับของ" ซ้ำได้ ระบบจะไม่รับซ้ำ ถ้าไม่ปิดฟอร์มนี้ (ถ้าปิดหรือโหลดหน้าใหม่แล้ว ให้ดูประวัติก่อนรับใหม่)'
+        : stockErrorText(error))
+      return
+    }
     setRequestId(crypto.randomUUID())
-    if ((data as { duplicate?: boolean } | null)?.duplicate) { showMsg('รายการนี้บันทึกไว้แล้วตั้งแต่ครั้งก่อน (ไม่ได้รับซ้ำ)'); setPanel(null); onReload(); return }
+    // a retry after a lost answer keeps the first save, even if the numbers were changed in between
+    if ((data as { duplicate?: boolean } | null)?.duplicate) { showMsg('รายการนี้บันทึกไว้แล้วตั้งแต่ครั้งก่อน (ไม่ได้รับซ้ำ) — ระบบเก็บตามที่บันทึกครั้งแรก ดูยอดที่ "ประวัติ"'); setPanel(null); onReload(); return }
     showMsg(`รับ ${item.name_th || item.name} +${fmtQty(recvQty)} ${item.unit}` + (addForm.paidFrom === 'drawer' && !addForm.free ? ' (ลงจ่ายออกจากลิ้นชักแล้ว)' : ''))
     setPanel(null); onReload()
   }
@@ -206,7 +213,8 @@ function StockItemRow({ item, onReload, showMsg, onDelete }: {
     setSaving(true); setFormErr(null)
     const { error } = await authClient.rpc('stock_waste', { p_inventory_id: item.id, p_qty: qty, p_reason: wasteReason.trim() })
     setSaving(false)
-    if (error) { setFormErr(stockErrorText(error)); return }
+    // a waste has no request id: pressing again after a lost answer would take it off twice
+    if (error) { setFormErr(isNetworkError(error) ? 'เชื่อมต่อไม่ได้ อาจบันทึกไปแล้ว — โหลดหน้าใหม่ ดูยอดหรือ "ประวัติ" ก่อนบันทึกซ้ำ' : stockErrorText(error)); return }
     showMsg(`ตัดของเสีย ${item.name_th || item.name} -${fmtQty(qty)} ${item.unit}`)
     setPanel(null); onReload()
   }
