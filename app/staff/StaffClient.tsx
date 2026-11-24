@@ -41,12 +41,15 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
+type GpsResult = { lat: number; lng: number } | 'denied' | 'unavailable'
+const NET_HINT = 'เช็คว่าเครื่องต่ออินเทอร์เน็ตอยู่ แล้วกด "ลองใหม่" ถ้ายังไม่ได้ ให้แจ้งผู้จัดการ'
 async function getGPS() {
-  return new Promise<{ lat: number; lng: number } | null>(resolve => {
-    if (!navigator.geolocation) { resolve(null); return }
+  return new Promise<GpsResult>(resolve => {
+    if (!navigator.geolocation) { resolve('unavailable'); return }
     navigator.geolocation.getCurrentPosition(
       p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => resolve(null), { timeout: 8000, enableHighAccuracy: true },
+      e => resolve(e.code === e.PERMISSION_DENIED ? 'denied' : 'unavailable'),
+      { timeout: 8000, enableHighAccuracy: true },
     )
   })
 }
@@ -553,27 +556,28 @@ export default function StaffClient() {
 
   // ── Action phase ──
   const [action,     setAction]     = useState<'in' | 'out'>('in')
-  const [gpsStatus,  setGpsStatus]  = useState<'idle' | 'loading' | 'ok' | 'skip'>('idle')
+  const [gpsStatus,  setGpsStatus]  = useState<'idle' | 'loading' | 'ok' | 'denied' | 'unavailable'>('idle')
+  const gpsRun = useRef(0)
   const [gpsCoords,  setGpsCoords]  = useState<{ lat: number; lng: number } | null>(null)
   const [distanceM,  setDistanceM]  = useState<number | null>(null)
   const [photoBlob,  setPhotoBlob]  = useState<Blob | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [errMsg,     setErrMsg]     = useState('')
   const [successInfo,setSuccessInfo]= useState<SuccessInfo | null>(null)
-  const [loadErr,    setLoadErr]    = useState('')
+  const [loadErr,    setLoadErr]    = useState<{ msg: string; next: string } | null>(null)
+  const [shopErr,    setShopErr]    = useState<{ msg: string; next: string } | null>(null)
 
   // ── Load staff + shop coords ──
   const loadData = useCallback(async () => {
-    setLoading(true); setLoadErr('')
+    setLoading(true); setLoadErr(null)
     try {
       const [{ data: allStaff, error: e1 }, { data: todayData, error: e2 }, { data: settingsData, error: e3 }] = await Promise.all([
         authClient.from('staff').select('id,name,name_th,avatar_url,scheduled_start_time,face_descriptor').eq('is_active', true),
         supabase.rpc('get_staff_today_status'),
         supabase.rpc('get_site_settings'),
       ])
-      // without the shop location the distance check would be skipped without anyone knowing
-      const loadError = e1 ?? e2 ?? e3
-      if (loadError) { setLoadErr(dbErrorText(loadError)); return }
+      const listErr = e1 ?? e2
+      if (listErr) { setLoadErr({ msg: `โหลดรายชื่อพนักงานไม่ได้ (${dbErrorText(listErr)})`, next: NET_HINT }); return }
       type StaffRow = Omit<StaffEntry, 'face_descriptor'> & { face_descriptor: unknown }
       const list: StaffEntry[] = ((allStaff ?? []) as StaffRow[]).map(s => ({
         id: s.id, name: s.name, name_th: s.name_th ?? null,
@@ -586,10 +590,18 @@ export default function StaffClient() {
       for (const r of (todayData ?? [])) map[r.id] = { clock_in: r.clock_in ?? null, clock_out: r.clock_out ?? null, status: r.status ?? null }
       setTodayMap(map)
 
-      if (settingsData) {
-        const lat = parseFloat(settingsData.shop_lat), lng = parseFloat(settingsData.shop_lng)
-        if (!isNaN(lat) && !isNaN(lng)) setShopCoords({ lat, lng })
+      // without the shop location the distance check would be skipped without anyone knowing, so clock-in
+      // waits for it; clock-out never uses it
+      if (e3) { setShopErr({ msg: `โหลดตำแหน่งร้านไม่ได้ จึงยังเข้างานไม่ได้ (${dbErrorText(e3)})`, next: NET_HINT }); return }
+      const latText = String(settingsData?.shop_lat ?? '').trim(), lngText = String(settingsData?.shop_lng ?? '').trim()
+      const lat = Number(latText), lng = Number(lngText)
+      const valid = latText !== '' && lngText !== '' && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+      if (!valid) {
+        setShopErr({ msg: 'ยังไม่ได้ตั้งตำแหน่งร้าน (หรือตั้งผิด) จึงยังเข้างานไม่ได้', next: 'ให้เจ้าของร้านตั้งที่ /cafe → ตั้งค่า → ตำแหน่งร้าน แล้วกด "ลองใหม่"' })
+        return
       }
+      setShopErr(null)
+      setShopCoords(prev => prev && prev.lat === lat && prev.lng === lng ? prev : { lat, lng })
     } finally { setLoading(false) }
   }, [])
 
@@ -597,19 +609,25 @@ export default function StaffClient() {
 
 
   // ── GPS on action phase ──
-  useEffect(() => {
-    if (phase !== 'action') return
-    setGpsStatus('loading')
+  const locate = useCallback(() => {
+    const run = ++gpsRun.current
+    setGpsStatus('loading'); setGpsCoords(null); setDistanceM(null)
     void getGPS().then(pos => {
-      if (!pos) { setGpsStatus('skip'); return }
+      // an older request (retry pressed twice, or the screen was left) must not overwrite a newer one
+      if (run !== gpsRun.current) return
+      if (typeof pos === 'string') { setGpsStatus(pos); return }
       setGpsCoords(pos); setGpsStatus('ok')
       if (shopCoords) setDistanceM(Math.round(haversine(pos.lat, pos.lng, shopCoords.lat, shopCoords.lng)))
     })
-  }, [phase, shopCoords])
+  }, [shopCoords])
+  useEffect(() => {
+    if (phase === 'action' && action === 'in') locate()
+    else gpsRun.current++
+  }, [phase, action, locate])
 
   // ── Submit ──
   async function submitAction() {
-    if (!selected) return
+    if (!selected || (action === 'in' && shopErr)) return
     setSubmitting(true); setErrMsg('')
     try {
       const photo = photoBlob ? await uploadPhotoBlob(selected.id, action, photoBlob) : { url: null, failed: false }
@@ -692,7 +710,8 @@ export default function StaffClient() {
             </div>
           ) : loadErr ? (
             <div style={{ padding: 20, borderRadius: 12, backgroundColor: `${RED}10`, border: `1px solid ${RED}44`, textAlign: 'center' }}>
-              <div style={{ color: RED, fontSize: 14, fontWeight: 600, marginBottom: 12 }}>โหลดรายชื่อพนักงานไม่ได้: {loadErr}</div>
+              <div style={{ color: RED, fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{loadErr.msg}</div>
+              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 12 }}>{loadErr.next}</div>
               <button onClick={() => void loadData()} style={{ padding: '9px 24px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>ลองใหม่</button>
             </div>
           ) : (
@@ -767,14 +786,22 @@ export default function StaffClient() {
             </div>
           </div>
 
-          {/* GPS */}
-          <div style={{ padding: '12px 16px', backgroundColor: CARD, borderRadius: 10, border: `1px solid ${BORDER}` }}>
+          {action === 'in' && shopErr && (
+            <div style={{ padding: 16, borderRadius: 10, backgroundColor: `${RED}10`, border: `1px solid ${RED}44` }}>
+              <div style={{ color: RED, fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{(loadErr ?? shopErr).msg}</div>
+              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 10 }}>{(loadErr ?? shopErr).next}</div>
+              <button onClick={() => void loadData()} disabled={loading} style={{ padding: '7px 20px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 13, cursor: loading ? 'default' : 'pointer', fontWeight: 600 }}>{loading ? 'กำลังโหลด...' : 'ลองใหม่'}</button>
+            </div>
+          )}
+
+          {/* GPS: only clock-in stores the position */}
+          {action === 'in' && !shopErr && <div style={{ padding: '12px 16px', backgroundColor: CARD, borderRadius: 10, border: `1px solid ${BORDER}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span>📍</span>
               <div style={{ flex: 1, fontSize: 13, color: gpsStatus === 'ok' ? GREEN : gpsStatus === 'loading' ? GOLD : 'rgba(255,255,255,0.35)' }}>
                 {gpsStatus === 'loading' && 'กำลังระบุตำแหน่ง...'}
                 {gpsStatus === 'ok' && gpsCoords && `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}`}
-                {gpsStatus === 'skip' && 'ไม่สามารถระบุตำแหน่งได้'}
+                {(gpsStatus === 'denied' || gpsStatus === 'unavailable') && 'ไม่สามารถระบุตำแหน่งได้'}
                 {gpsStatus === 'idle' && '—'}
               </div>
               {distanceM !== null && (
@@ -784,12 +811,23 @@ export default function StaffClient() {
                 </span>
               )}
             </div>
+            {(gpsStatus === 'denied' || gpsStatus === 'unavailable') && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 200px', fontSize: 12, color: ORANGE }}>
+                  {gpsStatus === 'denied'
+                    ? 'เว็บนี้ถูกปิดสิทธิ์ใช้ตำแหน่ง: กดรูปแม่กุญแจข้างช่องที่อยู่เว็บ เปิด "ตำแหน่ง" (Location) แล้วกด "ลองใหม่"'
+                    : 'หาตำแหน่งไม่เจอ: เปิด GPS (ตำแหน่ง) ของเครื่อง หรือขยับไปใกล้หน้าต่าง แล้วกด "ลองใหม่"'}
+                  {' '}ถ้ายังไม่ได้ ให้แจ้งผู้จัดการ — กดเข้างานได้เลย แต่จะไม่มีตำแหน่งในบันทึก
+                </div>
+                <button onClick={locate} style={{ padding: '6px 16px', borderRadius: 8, border: `1px solid ${GOLD}44`, backgroundColor: `${GOLD}10`, color: GOLD, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>ลองใหม่</button>
+              </div>
+            )}
             {distanceM !== null && distanceM > 200 && (
               <div style={{ marginTop: 8, fontSize: 12, color: ORANGE, padding: '6px 10px', borderRadius: 7, backgroundColor: `${ORANGE}10` }}>
                 ⚠️ คุณอยู่ห่างจากร้าน {distanceM} เมตร — ยังสามารถ clock-in ได้
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Camera */}
           <div style={{ padding: '14px 16px', backgroundColor: CARD, borderRadius: 10, border: `1px solid ${BORDER}` }}>
@@ -799,10 +837,10 @@ export default function StaffClient() {
 
           {errMsg && <div style={{ color: RED, fontSize: 13 }}>{errMsg}</div>}
 
-          <button onClick={() => void submitAction()} disabled={submitting || gpsStatus === 'loading'}
+          <button onClick={() => void submitAction()} disabled={submitting || gpsStatus === 'loading' || (action === 'in' && !!shopErr)}
             style={{ padding: 18, borderRadius: 14, border: 'none', cursor: 'pointer', fontSize: 18, fontWeight: 800,
               backgroundColor: action === 'in' ? GREEN : ORANGE, color: '#fff',
-              opacity: (submitting || gpsStatus === 'loading') ? 0.6 : 1, transition: 'all .15s' }}>
+              opacity: (submitting || gpsStatus === 'loading' || (action === 'in' && shopErr)) ? 0.6 : 1, transition: 'all .15s' }}>
             {submitting ? 'กำลังบันทึก...' : action === 'in' ? '✓ เข้างาน' : '✓ ออกงาน'}
           </button>
         </div>
