@@ -466,7 +466,7 @@ export function ShopCostSection({ settings, onChange }: { settings: CostSettings
 
 // ─── ShopCostPanel: loads, edits and saves only the cost keys (owner-only RPC, signed-in session) ─
 
-export function ShopCostPanel({ onSaved }: { onSaved: () => void }) {
+export function ShopCostPanel() {
   const [settings,  setSettings]  = useState<CostSettings>({ ...COST_DEFAULTS })
   const [loading,   setLoading]   = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -508,7 +508,6 @@ export function ShopCostPanel({ onSaved }: { onSaved: () => void }) {
       await logAccountEvent('shop_settings_updated' as never, 'Shop costs updated').catch(() => {})
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
-      onSaved()
     } catch {
       setSaveError('บันทึกไม่สำเร็จ — เชื่อมต่อไม่ได้')
     } finally {

@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { authClient } from '@/lib/supabase-auth'
+import { authClient, dbErrorText } from '@/lib/supabase-auth'
+import type { MenuVariantRow } from '@/components/cafe/MenuVariants'
 import {
   GOLD, BLACK, CARD, CARD2, BORDER, RED, GREEN, ORANGE,
   inputStyle, btnStyle, btnStyleSm,
@@ -15,6 +16,326 @@ import { ShopCostPanel } from '@/components/cafe/ShopCostSection'
 type InvItem    = { id: string; name: string; name_th: string | null; unit: string; cost_per_unit: number | null; current_qty: number }
 type BaseRecipe = { id: string; name: string; unit: string; yield_qty: number }
 type BaseIng    = { base_id: string; inventory_id: string; qty: number }
+// one row per menu variant from get_menu_costs (075); a NULL cost = an ingredient without a cost yet
+export type MenuCostRow = { recipe_id: string; variant_id: string; kind: MenuVariantRow['kind']; price_lak: number; is_active: boolean
+  line_count: number; cost_less: number | null; cost_normal: number | null; cost_more: number | null; cost_none: number | null }
+const VARIANT_LABEL: Record<MenuVariantRow['kind'], string> = { default: 'ราคาเดียว', hot: 'ร้อน', iced: 'เย็น' }
+const VARIANT_ORDER: Record<MenuVariantRow['kind'], number> = { default: 0, hot: 1, iced: 2 }
+
+// ─── FormulaPanel ─────────────────────────────────────────────────────────────
+
+// module level, not inside RecipeCostTab: a component declared inside another is remounted on every
+// parent render (each toast), which wiped unsaved recipe lines and jumped back to the first menu item
+function FormulaPanel({ inventory, baseRecipes, baseCostPerUnit, setMsg }: {
+  inventory: InvItem[]; baseRecipes: BaseRecipe[]; baseCostPerUnit: (baseId: string) => number; setMsg: (m: string) => void
+}) {
+  // qty_less / qty_more '' = same as normal (stored NULL; 075)
+  type RIForm = { inventory_id: string | null; base_id: string | null; variant_id: string | null; qty_normal: string; qty_less: string; qty_more: string }
+  type MenuItem = { id: string; product_name: string; product_name_th: string | null; price_lak: number }
+
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [recipeId,  setRecipeId]  = useState('')
+  const [variants,  setVariants]  = useState<MenuVariantRow[]>([])
+  const [items,     setItems]     = useState<RIForm[]>([])
+  const [costs,     setCosts]     = useState<MenuCostRow[] | null>(null)
+  const [costErr,   setCostErr]   = useState<string | null>(null)
+  const [loadErr,   setLoadErr]   = useState<string | null>(null)
+  const [dirty,     setDirty]     = useState(false)
+  const [saving,    setSaving]    = useState(false)
+  const [loaded,    setLoaded]    = useState(false)
+
+  useEffect(() => {
+    supabase.from('recipes')
+      .select('id, product_name, product_name_th, price_lak')
+      .eq('is_active', true)
+      .neq('is_archived', true)
+      .order('product_name_th')
+      .then(({ data, error }) => {
+        if (error) setLoadErr('โหลดรายการเมนูไม่ได้: ' + dbErrorText(error))
+        const rows = (data ?? []) as MenuItem[]
+        setMenuItems(rows)
+        if (rows.length > 0) setRecipeId(rows[0].id)
+        setLoaded(true)
+      })
+  }, [])
+
+  const costReq = useRef(0)
+  const loadCosts = useCallback((id: string) => {
+    const req = ++costReq.current
+    setCosts(null)
+    authClient.rpc('get_menu_costs').then(({ data, error }) => {
+      if (req !== costReq.current) return
+      if (error) { setCostErr(dbErrorText(error)); setCosts([]); return }
+      setCostErr(null)
+      setCosts(((data ?? []) as MenuCostRow[]).filter(c => c.recipe_id === id))
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!recipeId) return
+    let cancelled = false
+    setDirty(false)
+    setLoadErr(null)
+    void Promise.all([
+      authClient.from('recipe_ingredients')
+        .select('inventory_id, base_id, variant_id, qty_normal, qty_less, qty_more, sort_order')
+        .eq('recipe_id', recipeId).order('sort_order'),
+      supabase.from('menu_variants').select('id, recipe_id, kind, price_lak, is_active').eq('recipe_id', recipeId),
+    ]).then(([ri, mv]) => {
+      if (cancelled) return
+      const err = ri.error ?? mv.error
+      // a failed load must not show an empty recipe that a save would then wipe
+      if (err) { setLoadErr('โหลดสูตรไม่ได้: ' + dbErrorText(err)); setItems([]); return }
+      setVariants((mv.data ?? []) as MenuVariantRow[])
+      const num = (v: number | null) => (v == null ? '' : String(Number(v)))
+      setItems(((ri.data ?? []) as { inventory_id: string | null; base_id: string | null; variant_id: string | null; qty_normal: number; qty_less: number | null; qty_more: number | null }[])
+        .map(r => ({ inventory_id: r.inventory_id, base_id: r.base_id, variant_id: r.variant_id,
+          qty_normal: num(r.qty_normal), qty_less: num(r.qty_less), qty_more: num(r.qty_more) })))
+    })
+    loadCosts(recipeId)
+    return () => { cancelled = true }
+  }, [recipeId, loadCosts])
+
+  const tempVariants = variants.filter(v => v.kind !== 'default' && (v.is_active || items.some(i => i.variant_id === v.id)))
+
+  function edit(next: RIForm[]) { setItems(next); setDirty(true) }
+
+  function addIngItem() {
+    if (!inventory.length) return
+    edit([...items, { inventory_id: inventory[0].id, base_id: null, variant_id: null, qty_normal: '', qty_less: '', qty_more: '' }])
+  }
+
+  function addBaseItem() {
+    if (!baseRecipes.length) return
+    edit([...items, { inventory_id: null, base_id: baseRecipes[0].id, variant_id: null, qty_normal: '', qty_less: '', qty_more: '' }])
+  }
+
+  function updateItem(idx: number, patch: Partial<RIForm>) {
+    edit(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)))
+  }
+
+  async function save() {
+    if (saving || !recipeId || loadErr) return
+    if (items.length === 0) { setMsg('กรุณาเพิ่มส่วนผสมอย่างน้อย 1 รายการก่อนบันทึก'); return }
+    const toNum = (s: string) => (s.trim() === '' ? null : Number(s))
+    const payload = items.map(it => ({
+      inventory_id: it.inventory_id, base_id: it.base_id, variant_id: it.variant_id,
+      qty_normal: Number(it.qty_normal), qty_less: toNum(it.qty_less), qty_more: toNum(it.qty_more),
+    }))
+    const bad = payload.some(p => !(p.qty_normal > 0) || [p.qty_less, p.qty_more].some(q => q !== null && !(q >= 0)))
+    if (bad) { setMsg('ทุกบรรทัดต้องใส่ปริมาณ "กลาง" มากกว่า 0 (น้อย/มาก เว้นว่างได้ = เท่ากลาง)'); return }
+    setSaving(true)
+    const { error } = await authClient.rpc('save_recipe_lines', { p_recipe_id: recipeId, p_items: payload })
+    setSaving(false)
+    if (error) { setMsg('บันทึกสูตรไม่ได้: ' + dbErrorText(error)); return }
+    setDirty(false)
+    setMsg('บันทึกสูตรแล้ว')
+    loadCosts(recipeId)
+  }
+
+  const levels: { key: 'qty_less' | 'qty_normal' | 'qty_more'; label: string; name: string; color: string }[] = [
+    { key: 'qty_less',   label: '🔵 น้อย', name: 'น้อย', color: '#4a9eff' },
+    { key: 'qty_normal', label: '🟡 กลาง', name: 'กลาง', color: GOLD      },
+    { key: 'qty_more',   label: '🔴 มาก',  name: 'มาก',  color: '#ff6b6b' },
+  ]
+  const costCards = (costs ?? []).filter(c => c.is_active).sort((a, b) => VARIANT_ORDER[a.kind] - VARIANT_ORDER[b.kind])
+
+  if (!loaded) return (
+    <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, padding: '60px 0', textAlign: 'center' }}>กำลังโหลด...</div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ── Menu selector ── */}
+      <div style={{ backgroundColor: CARD2, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 10 }}>เลือกเมนู</div>
+        {menuItems.length === 0 ? (
+          <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>
+            ยังไม่มีเมนู — ไปแท็บ &ldquo;เมนู&rdquo; แล้วเพิ่มเมนูก่อน
+          </div>
+        ) : (
+          <select
+            style={{ ...inputStyle, fontSize: 15, height: 50, fontWeight: 600 }}
+            value={recipeId}
+            disabled={saving}
+            onChange={e => { if (!dirty || window.confirm('สูตรที่แก้ยังไม่ได้บันทึก เปลี่ยนเมนูแล้วจะหาย ต่อไหม?')) setRecipeId(e.target.value) }}
+            aria-label="เลือกเมนู"
+          >
+            {menuItems.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.product_name_th || m.product_name} · {m.price_lak.toLocaleString()} ₭
+              </option>
+            ))}
+          </select>
+        )}
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 10, lineHeight: 1.5 }}>
+          ใส่แก้ว ฝา หลอด และน้ำแข็งเป็นส่วนผสมในสูตรด้วย — ต้นทุนต่อแก้วคิดจากส่วนผสมในสูตรเท่านั้น (ค่าเช่า ค่าไฟ เงินเดือน อยู่ที่แท็บต้นทุนร้าน)
+        </div>
+      </div>
+
+      {loadErr && <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: RED + '15', color: RED, fontSize: 13 }}>{loadErr} — ลองโหลดหน้าใหม่ (ปิดการบันทึกไว้ กันสูตรเดิมหาย)</div>}
+
+      {/* ── Ingredient builder ── */}
+      {recipeId && !loadErr && (
+        <div style={{ backgroundColor: CARD, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>ส่วนผสมในสูตร</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={btnStyle('#333')} onClick={addIngItem} disabled={!inventory.length}>
+                ➕ วัตถุดิบ
+              </button>
+              <button
+                style={{ ...btnStyle(GOLD + '22'), color: GOLD }}
+                onClick={addBaseItem}
+                disabled={!baseRecipes.length}
+                title={!baseRecipes.length ? 'สร้างสูตรพื้นฐานในแท็บ "สูตรพื้นฐาน" ก่อน' : undefined}
+              >
+                ➕ สูตรพื้นฐาน
+              </button>
+            </div>
+          </div>
+
+          {items.length === 0 ? (
+            <div style={{ padding: '36px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>
+              กดปุ่มด้านบนเพื่อเพิ่มส่วนผสม
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {items.map((item, idx) => {
+                const isBase = item.base_id !== null
+                const base   = isBase ? baseRecipes.find(b => b.id === item.base_id) : undefined
+                const inv    = !isBase ? inventory.find(i => i.id === item.inventory_id) : undefined
+                const unit   = isBase ? (base?.unit ?? '') : (inv?.unit ?? '')
+                const cpu    = isBase ? baseCostPerUnit(item.base_id!) : (inv?.cost_per_unit ?? 0)
+
+                return (
+                  <div key={idx} style={{ backgroundColor: CARD2, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                      {isBase && (
+                        <span style={{ fontSize: 10, backgroundColor: GOLD + '22', color: GOLD, padding: '2px 7px', borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>สูตรพื้นฐาน</span>
+                      )}
+                      <select
+                        style={{ ...inputStyle, flex: '1 1 160px', fontWeight: 600 }}
+                        value={isBase ? (item.base_id ?? '') : (item.inventory_id ?? '')}
+                        onChange={e => updateItem(idx, isBase ? { base_id: e.target.value } : { inventory_id: e.target.value })}
+                        aria-label={`ส่วนผสมบรรทัด ${idx + 1}`}
+                      >
+                        {isBase
+                          ? baseRecipes.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)
+                          : inventory.map(i => <option key={i.id} value={i.id}>{i.name_th || i.name} ({i.unit})</option>)
+                        }
+                      </select>
+                      {tempVariants.length > 0 && (
+                        <select
+                          style={{ ...inputStyle, width: 'auto', flex: '0 0 auto' }}
+                          value={item.variant_id ?? ''}
+                          onChange={e => updateItem(idx, { variant_id: e.target.value || null })}
+                          aria-label={`ใช้กับแบบไหน บรรทัด ${idx + 1}`}
+                        >
+                          <option value="">ทุกแบบ</option>
+                          {tempVariants.map(v => (
+                            <option key={v.id} value={v.id}>{VARIANT_LABEL[v.kind]}เท่านั้น{v.is_active ? '' : ' (ปิดอยู่)'}</option>
+                          ))}
+                        </select>
+                      )}
+                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                        {cpu.toFixed(2)} ₭/{unit}
+                      </span>
+                      <button
+                        onClick={() => edit(items.filter((_, i) => i !== idx))}
+                        aria-label={`ลบบรรทัด ${idx + 1}`}
+                        style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+                      >✕</button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                      {levels.map(lv => {
+                        const raw = item[lv.key]
+                        const qty = raw.trim() === '' && lv.key !== 'qty_normal' ? (parseFloat(item.qty_normal) || 0) : (parseFloat(raw) || 0)
+                        return (
+                          <div key={lv.key} style={{ backgroundColor: `${lv.color}12`, borderRadius: 10, padding: '8px', border: `1px solid ${lv.color}28`, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, color: lv.color, marginBottom: 6, fontWeight: 700, whiteSpace: 'nowrap' }}>{lv.label} <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 400 }}>{unit}</span></div>
+                            <div>
+                              <input
+                                style={{ ...inputStyle, width: '100%', minWidth: 0, padding: '8px 6px' }}
+                                type="number" min={0} step="any" inputMode="decimal"
+                                value={raw}
+                                placeholder={lv.key === 'qty_normal' ? '0' : '= กลาง'}
+                                onChange={e => updateItem(idx, { [lv.key]: e.target.value })}
+                                aria-label={`ปริมาณ${lv.name} บรรทัด ${idx + 1}`}
+                              />
+                            </div>
+                            <div style={{ fontSize: 12, color: lv.color, marginTop: 6, fontWeight: 600 }}>{(cpu * qty).toFixed(0)} ₭</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Cost per drink, from the database ── */}
+      {recipeId && !loadErr && (
+        <div style={{ backgroundColor: CARD, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 6 }}>ต้นทุนต่อแก้ว (จากสูตรที่บันทึกแล้ว)</div>
+          {dirty && <div style={{ fontSize: 12, color: ORANGE, marginBottom: 10 }}>สูตรยังไม่ได้บันทึก — ตัวเลขด้านล่างเป็นของสูตรเดิม กดบันทึกแล้วจะคิดใหม่</div>}
+          {costErr ? (
+            <div style={{ fontSize: 13, color: RED }}>โหลดต้นทุนไม่ได้: {costErr}</div>
+          ) : costs === null ? (
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>กำลังโหลด...</div>
+          ) : costCards.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>เมนูนี้ยังไม่มีราคาขายที่เปิดใช้</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 14, opacity: dirty ? 0.5 : 1 }}>
+              {costCards.map(c => {
+                const margin = c.cost_normal != null && c.price_lak > 0 ? ((c.price_lak - c.cost_normal) / c.price_lak) * 100 : null
+                const ok = margin != null && margin >= 60
+                return (
+                  <div key={c.variant_id} style={{ backgroundColor: CARD2, borderRadius: 12, padding: 16, border: `2px solid ${c.line_count === 0 || c.cost_normal == null ? BORDER : ok ? GREEN + '50' : RED + '50'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700 }}>{VARIANT_LABEL[c.kind]}</span>
+                      <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>ขาย {Number(c.price_lak).toLocaleString()} ₭</span>
+                    </div>
+                    {c.line_count === 0 ? (
+                      <div style={{ fontSize: 13, color: ORANGE }}>ยังไม่มีสูตรสำหรับแบบนี้</div>
+                    ) : c.cost_normal == null ? (
+                      <div style={{ fontSize: 13, color: ORANGE }}>มีวัตถุดิบที่ยังไม่มีราคาทุน — ใส่ราคาตอนรับของ หรือแก้ในหน้าสต็อก</div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: GOLD }}>{Math.round(c.cost_normal).toLocaleString()} ₭</div>
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+                          หวานน้อย {Math.round(c.cost_less ?? 0).toLocaleString()} · หวานมาก {Math.round(c.cost_more ?? 0).toLocaleString()} · ไม่หวาน {Math.round(c.cost_none ?? 0).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: 13, marginTop: 8, color: ok ? GREEN : RED, fontWeight: 700 }}>
+                          Margin {margin == null ? '—' : margin.toFixed(1) + '%'}{c.price_lak < c.cost_normal ? ' — ราคาขายต่ำกว่าต้นทุน!' : ''}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Save button ── */}
+      {recipeId && !loadErr && (
+        <button
+          style={{ ...btnStyle(GOLD), fontSize: 16, height: 56, borderRadius: 14, fontWeight: 800, letterSpacing: '0.5px', opacity: saving ? 0.6 : 1 }}
+          disabled={saving}
+          onClick={save}
+        >
+          {saving ? 'กำลังบันทึก...' : '✓ บันทึกสูตร'}
+        </button>
+      )}
+    </div>
+  )
+}
 
 // ─── RecipeCostTab ────────────────────────────────────────────────────────────
 
@@ -26,11 +347,6 @@ export default function RecipeCostTab() {
   const [baseRecipes,  setBaseRecipes] = useState<BaseRecipe[]>([])
   const [baseIngs,     setBaseIngs]    = useState<BaseIng[]>([])
   const [msg,          setMsg]         = useState<string | null>(null)
-
-  // Overhead from site_settings
-  const [packagingPerCup, setPackagingPerCup] = useState(0)
-  const [icePerCup,       setIcePerCup]       = useState(0)
-  const [overheadPerCup,  setOverheadPerCup]  = useState(0)
 
   const loadInventory = useCallback(() => {
     supabase.from('inventory')
@@ -47,32 +363,9 @@ export default function RecipeCostTab() {
       .then(({ data }) => { if (data) setBaseIngs(data as BaseIng[]) })
   }, [])
 
-  function loadOverhead() {
-    supabase.rpc('get_site_settings').then(({ data }) => {
-      if (!data) return
-      const s = data as Record<string, string>
-      const n = (k: string, d = 0) => parseFloat(s[k] ?? '') || d
-      const bagContrib   = n('cost_bag') * (n('cost_bag_pct') / 100)
-      const basePkg      = n('cost_cup_lid', 2500) + n('cost_straw', 210) + bagContrib + n('cost_other_pkg')
-      const pkg          = Math.round(basePkg * (1 + n('cost_waste_pct', 15) / 100))
-      const usableKg     = 30 * (1 - n('cost_ice_melt_pct', 30) / 100)
-      const cpg          = usableKg > 0 ? n('cost_ice_bag_price', 20000) / (usableKg * 1000) : 0
-      const ice          = Math.round(cpg * n('cost_ice_per_cup_g', 175))
-      const consumables  = (() => { try { const p = JSON.parse(s['overhead_consumables_json'] ?? ''); if (Array.isArray(p)) return p } catch {} return [] })()
-      const others       = (() => { try { const p = JSON.parse(s['overhead_other_json'] ?? ''); if (Array.isArray(p)) return p } catch {} return [] })()
-      const totalItemized = [...consumables, ...others].reduce((a: number, i: { amount?: number }) => a + (i.amount ?? 0), 0)
-      const totalOH      = n('overhead_rent') + n('overhead_electric') + n('overhead_water') + n('overhead_internet') + n('overhead_salary') + totalItemized
-      const targetCups   = Math.max(n('target_cups_month', 500) || 500, 1)
-      setPackagingPerCup(pkg)
-      setIcePerCup(ice)
-      setOverheadPerCup(Math.round(totalOH / targetCups))
-    })
-  }
-
   useEffect(() => {
     loadInventory()
     loadBases()
-    loadOverhead()
   }, [loadInventory, loadBases])
 
   // ── Cost helpers ─────────────────────────────────────────────────────────
@@ -352,342 +645,53 @@ export default function RecipeCostTab() {
 
   // ── Formula Builder Panel ─────────────────────────────────────────────────
 
-  function FormulaPanel() {
-    type RIForm = { inventory_id: string | null; base_id: string | null; qty_normal: string; qty_less: string; qty_more: string }
-    type MenuItem = { id: string; product_name: string; product_name_th: string | null; price_lak: number; uses_ice: boolean }
-
-    const [menuItems, setMenuItems] = useState<MenuItem[]>([])
-    const [recipeId,  setRecipeId]  = useState('')
-    const [usesIce,   setUsesIce]   = useState(false)
-    const [items,     setItems]     = useState<RIForm[]>([])
-    const [saving,    setSaving]    = useState(false)
-    const [loaded,    setLoaded]    = useState(false)
-
-    useEffect(() => {
-      supabase.from('recipes')
-        .select('id, product_name, product_name_th, price_lak, uses_ice')
-        .eq('is_active', true)
-        .neq('is_archived', true)
-        .order('product_name_th')
-        .then(({ data }) => {
-          const rows = (data ?? []) as MenuItem[]
-          setMenuItems(rows)
-          if (rows.length > 0) setRecipeId(rows[0].id)
-          setLoaded(true)
-        })
-    }, [])
-
-    useEffect(() => {
-      if (!recipeId || !loaded) return
-      const menu = menuItems.find(m => m.id === recipeId)
-      setUsesIce(menu?.uses_ice ?? false)
-      authClient.from('recipe_ingredients')
-        .select('id, inventory_id, base_id, qty_normal, qty_less, qty_more')
-        .eq('recipe_id', recipeId)
-        .then(({ data }) => {
-          if (data && data.length > 0) {
-            setItems((data as { inventory_id: string | null; base_id: string | null; qty_normal: number; qty_less: number; qty_more: number }[])
-              .map(r => ({
-                inventory_id: r.inventory_id,
-                base_id:      r.base_id,
-                qty_normal:   String(r.qty_normal),
-                qty_less:     String(r.qty_less),
-                qty_more:     String(r.qty_more),
-              })))
-          } else {
-            setItems([])
-          }
-        })
-    }, [recipeId, loaded, menuItems])
-
-    function addIngItem() {
-      if (!inventory.length) return
-      setItems(prev => [...prev, { inventory_id: inventory[0].id, base_id: null, qty_normal: '0', qty_less: '0', qty_more: '0' }])
-    }
-
-    function addBaseItem() {
-      if (!baseRecipes.length) return
-      setItems(prev => [...prev, { inventory_id: null, base_id: baseRecipes[0].id, qty_normal: '0', qty_less: '0', qty_more: '0' }])
-    }
-
-    function updateItem(idx: number, patch: Partial<RIForm>) {
-      setItems(prev => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
-    }
-
-    function itemCost(item: RIForm, field: 'qty_normal' | 'qty_less' | 'qty_more'): number {
-      const qty = parseFloat(item[field]) || 0
-      if (item.base_id) return baseCostPerUnit(item.base_id) * qty
-      const inv = inventory.find(i => i.id === item.inventory_id)
-      return (inv?.cost_per_unit ?? 0) * qty
-    }
-
-    function totalCost(field: 'qty_normal' | 'qty_less' | 'qty_more'): number {
-      return items.reduce((s, item) => s + itemCost(item, field), 0)
-    }
-
-    async function save() {
-      if (!recipeId) { setMsg('เลือกเมนูก่อน'); return }
-      if (items.length === 0) { setMsg('กรุณาเพิ่มส่วนผสมอย่างน้อย 1 รายการก่อนบันทึก'); return }
-      setSaving(true)
-      try {
-        const ingCost   = totalCost('qty_normal')
-        const fixedCost = packagingPerCup + (usesIce ? icePerCup : 0) + overheadPerCup
-        const { error } = await authClient.rpc('save_recipe_cost', {
-          p_recipe_id: recipeId,
-          p_uses_ice: usesIce,
-          p_cost_per_cup_lak: Math.round(ingCost + fixedCost),
-          p_items: items.map(item => ({
-            inventory_id: item.inventory_id,
-            base_id:      item.base_id,
-            qty_normal:   parseFloat(item.qty_normal) || 0,
-            qty_less:     parseFloat(item.qty_less)   || 0,
-            qty_more:     parseFloat(item.qty_more)   || 0,
-          })),
-        })
-        if (error) throw new Error('ไม่สามารถบันทึกสูตรได้: ' + error.message)
-
-        setMsg('บันทึกสูตรแล้ว')
-      } catch (e: unknown) {
-        setMsg(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
-      } finally { setSaving(false) }
-    }
-
-    const menu = menuItems.find(m => m.id === recipeId)
-    const levels: { key: 'qty_less' | 'qty_normal' | 'qty_more'; label: string; color: string }[] = [
-      { key: 'qty_less',   label: '🔵 น้อย', color: '#4a9eff' },
-      { key: 'qty_normal', label: '🟡 กลาง', color: GOLD      },
-      { key: 'qty_more',   label: '🔴 มาก',  color: '#ff6b6b' },
-    ]
-
-    if (!loaded) return (
-      <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, padding: '60px 0', textAlign: 'center' }}>กำลังโหลด...</div>
-    )
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-        {/* ── Menu selector ── */}
-        <div style={{ backgroundColor: CARD2, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 10 }}>เลือกเมนู</div>
-          {menuItems.length === 0 ? (
-            <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>
-              ยังไม่มีเมนู — ไปแท็บ &ldquo;เมนู&rdquo; แล้วเพิ่มเมนูก่อน
-            </div>
-          ) : (
-            <select
-              style={{ ...inputStyle, fontSize: 15, height: 50, fontWeight: 600 }}
-              value={recipeId}
-              onChange={e => setRecipeId(e.target.value)}
-            >
-              {menuItems.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.product_name_th || m.product_name} · {m.price_lak.toLocaleString()} ₭
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {/* ── uses_ice toggle ── */}
-        {recipeId && (
-          <div style={{ backgroundColor: CARD2, borderRadius: 12, padding: '16px 20px', border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase', flexShrink: 0 }}>เครื่องดื่มเย็น (มีน้ำแข็ง)</span>
-            <div
-              onClick={() => setUsesIce(v => !v)}
-              style={{
-                width: 48, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', position: 'relative',
-                backgroundColor: usesIce ? GOLD : 'rgba(255,255,255,0.12)', transition: 'background .2s', flexShrink: 0,
-              }}
-            >
-              <span style={{
-                position: 'absolute', top: 3, left: usesIce ? 25 : 3,
-                width: 20, height: 20, borderRadius: '50%',
-                backgroundColor: usesIce ? BLACK : 'rgba(255,255,255,0.5)',
-                transition: 'left .2s', display: 'block',
-              }} />
-            </div>
-            <span style={{ fontSize: 13, color: usesIce ? '#4a9eff' : 'rgba(255,255,255,0.35)' }}>
-              {usesIce ? `🧊 + ${icePerCup.toLocaleString()} ₭/แก้ว` : 'ปิด'}
-            </span>
-          </div>
-        )}
-
-        {/* ── Ingredient builder ── */}
-        {recipeId && (
-          <div style={{ backgroundColor: CARD, borderRadius: 14, padding: 20, border: `1px solid ${BORDER}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: GOLD, letterSpacing: '2px', textTransform: 'uppercase' }}>ส่วนผสมในสูตร</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={btnStyle('#333')} onClick={addIngItem} disabled={!inventory.length}>
-                  ➕ วัตถุดิบ
-                </button>
-                <button
-                  style={{ ...btnStyle(GOLD + '22'), color: GOLD }}
-                  onClick={addBaseItem}
-                  disabled={!baseRecipes.length}
-                  title={!baseRecipes.length ? 'สร้างสูตรพื้นฐานในแท็บ "สูตรพื้นฐาน" ก่อน' : undefined}
-                >
-                  ➕ สูตรพื้นฐาน
-                </button>
-              </div>
-            </div>
-
-            {items.length === 0 ? (
-              <div style={{ padding: '36px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>
-                กดปุ่มด้านบนเพื่อเพิ่มส่วนผสม
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {items.map((item, idx) => {
-                  const isBase = item.base_id !== null
-                  const base   = isBase ? baseRecipes.find(b => b.id === item.base_id) : undefined
-                  const inv    = !isBase ? inventory.find(i => i.id === item.inventory_id) : undefined
-                  const unit   = isBase ? (base?.unit ?? '') : (inv?.unit ?? '')
-                  const cpu    = isBase ? baseCostPerUnit(item.base_id!) : (inv?.cost_per_unit ?? 0)
-
-                  return (
-                    <div key={idx} style={{ backgroundColor: CARD2, borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                        {isBase && (
-                          <span style={{ fontSize: 10, backgroundColor: GOLD + '22', color: GOLD, padding: '2px 7px', borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>สูตรพื้นฐาน</span>
-                        )}
-                        <select
-                          style={{ ...inputStyle, flex: 1, fontWeight: 600 }}
-                          value={isBase ? (item.base_id ?? '') : (item.inventory_id ?? '')}
-                          onChange={e => updateItem(idx, isBase ? { base_id: e.target.value } : { inventory_id: e.target.value })}
-                        >
-                          {isBase
-                            ? baseRecipes.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)
-                            : inventory.map(i => <option key={i.id} value={i.id}>{i.name_th || i.name} ({i.unit})</option>)
-                          }
-                        </select>
-                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                          {cpu.toFixed(2)} ₭/{unit}
-                        </span>
-                        <button
-                          onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}
-                          style={{ background: 'none', border: 'none', color: RED, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
-                        >✕</button>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                        {levels.map(lv => {
-                          const cost = cpu * (parseFloat(item[lv.key]) || 0)
-                          return (
-                            <div key={lv.key} style={{ backgroundColor: `${lv.color}12`, borderRadius: 10, padding: '10px 12px', border: `1px solid ${lv.color}28` }}>
-                              <div style={{ fontSize: 11, color: lv.color, marginBottom: 6, fontWeight: 700 }}>{lv.label}</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <input
-                                  style={{ ...inputStyle, flex: 1 }}
-                                  type="number" min={0}
-                                  value={item[lv.key]}
-                                  onChange={e => updateItem(idx, { [lv.key]: e.target.value })}
-                                />
-                                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{unit}</span>
-                              </div>
-                              <div style={{ fontSize: 12, color: lv.color, marginTop: 6, fontWeight: 600 }}>{cost.toFixed(0)} ₭</div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Fixed-cost banner ── */}
-        {items.length > 0 && (packagingPerCup > 0 || overheadPerCup > 0) && (
-          <div style={{ backgroundColor: CARD2, borderRadius: 12, padding: '12px 16px', border: `1px solid ${BORDER}`, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: GOLD, letterSpacing: '1px', textTransform: 'uppercase', flexShrink: 0 }}>ต้นทุน fixed ต่อแก้ว</span>
-            {packagingPerCup > 0 && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>📦 packaging {packagingPerCup.toLocaleString()} ₭</span>}
-            {usesIce && icePerCup > 0 && <span style={{ fontSize: 12, color: '#4a9eff' }}>🧊 น้ำแข็ง {icePerCup.toLocaleString()} ₭</span>}
-            {overheadPerCup > 0 && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>🏠 overhead {overheadPerCup.toLocaleString()} ₭</span>}
-            <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: ORANGE, flexShrink: 0 }}>
-              fixed: {(packagingPerCup + (usesIce ? icePerCup : 0) + overheadPerCup).toLocaleString()} ₭
-            </span>
-          </div>
-        )}
-
-        {/* ── Cost summary per sweetness level ── */}
-        {items.length > 0 && menu && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-            {levels.map(lv => {
-              const ingCost   = totalCost(lv.key)
-              const fixedCost = packagingPerCup + (usesIce ? icePerCup : 0) + overheadPerCup
-              const total     = ingCost + fixedCost
-              const margin    = menu.price_lak > 0 ? ((menu.price_lak - total) / menu.price_lak) * 100 : 0
-              const ok        = margin >= 60
-              return (
-                <div key={lv.key} style={{ backgroundColor: CARD2, borderRadius: 14, padding: 18, border: `2px solid ${ok ? GREEN + '50' : RED + '50'}` }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: lv.color, marginBottom: 14 }}>{lv.label}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, padding: '8px 10px', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}><span>วัตถุดิบ</span><span>{ingCost.toFixed(0)} ₭</span></div>
-                    {packagingPerCup > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}><span>📦 packaging</span><span>{packagingPerCup.toLocaleString()} ₭</span></div>}
-                    {usesIce && icePerCup > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#4a9eff' }}><span>🧊 น้ำแข็ง</span><span>{icePerCup.toLocaleString()} ₭</span></div>}
-                    {overheadPerCup > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}><span>🏠 overhead</span><span>{overheadPerCup.toLocaleString()} ₭</span></div>}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: '#fff', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 2 }}><span>รวม</span><span>{total.toFixed(0)} ₭</span></div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>Margin จริง</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: ok ? GREEN : RED }}>{margin.toFixed(1)}%</div>
-                  </div>
-                  {menu.price_lak > 0 && menu.price_lak < total && (
-                    <div style={{ marginTop: 12, backgroundColor: RED + '22', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: RED, fontWeight: 600, border: `1px solid ${RED}44` }}>
-                      ⚠️ ราคาขายต่ำกว่าต้นทุน!
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* ── Save button ── */}
-        {recipeId && (
-          <button
-            style={{ ...btnStyle(GOLD), fontSize: 16, height: 56, borderRadius: 14, fontWeight: 800, letterSpacing: '0.5px', opacity: saving ? 0.6 : 1 }}
-            disabled={saving}
-            onClick={save}
-          >
-            {saving ? 'กำลังบันทึก...' : '✓ บันทึกสูตร'}
-          </button>
-        )}
-      </div>
-    )
-  }
-
   // ── Pricing Panel ─────────────────────────────────────────────────────────
 
   function PricingPanel() {
-    type PRow = { id: string; product_name: string; product_name_th: string | null; price_lak: number; cost_per_cup_lak: number | null; uses_ice: boolean }
+    // one row per active price (hot / iced / single); cost = normal sweetness, from get_menu_costs (075)
+    type PRow = { id: string; name: string; kind: MenuVariantRow['kind']; price_lak: number; cost: number | null; line_count: number }
 
     const [rows,         setRows]         = useState<PRow[]>([])
     const [loading,      setLoading]      = useState(true)
+    const [loadErr,      setLoadErr]      = useState<string | null>(null)
     const [globalMargin, setGlobalMargin] = useState(60)
     const [vatEnabled,   setVatEnabled]   = useState(false)
     const [vatRate,      setVatRate]      = useState(10)
 
     useEffect(() => {
-      supabase.from('recipes')
-        .select('id, product_name, product_name_th, price_lak, cost_per_cup_lak, uses_ice')
-        .eq('is_active', true)
-        .neq('is_archived', true)
-        .order('product_name_th')
-        .then(({ data }) => { if (data) setRows(data as PRow[]); setLoading(false) })
+      void Promise.all([
+        supabase.from('recipes')
+          .select('id, product_name, product_name_th')
+          .eq('is_active', true)
+          .neq('is_archived', true)
+          .order('product_name_th'),
+        authClient.rpc('get_menu_costs'),
+      ]).then(([rec, mc]) => {
+        const err = rec.error ?? mc.error
+        if (err) { setLoadErr(dbErrorText(err)); setLoading(false); return }
+        const costs = (mc.data ?? []) as MenuCostRow[]
+        const out: PRow[] = []
+        for (const r of (rec.data ?? []) as { id: string; product_name: string; product_name_th: string | null }[]) {
+          costs.filter(c => c.recipe_id === r.id && c.is_active)
+            .sort((a, b) => VARIANT_ORDER[a.kind] - VARIANT_ORDER[b.kind])
+            .forEach(c => out.push({ id: c.variant_id, name: r.product_name_th || r.product_name, kind: c.kind,
+              price_lak: Number(c.price_lak), cost: c.line_count > 0 ? c.cost_normal : null, line_count: c.line_count }))
+        }
+        setRows(out)
+        setLoading(false)
+      })
     }, [])
 
     function exportCsv() {
-      const withCost = rows.filter(r => r.cost_per_cup_lak != null)
+      const withCost = rows.filter(r => r.cost != null)
       const date = new Date().toISOString().slice(0, 10)
       const cc = (v: unknown) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s }
       const data = [
-        ['ชื่อเมนู', 'เย็น/ร้อน', 'ต้นทุน/แก้ว (₭)', 'ราคาขาย (₭)', 'Margin %', 'สถานะ'],
+        ['ชื่อเมนู', 'แบบ', 'ต้นทุน/แก้ว (₭)', 'ราคาขาย (₭)', 'Margin %', 'สถานะ'],
         ...withCost.map(r => {
-          const cost   = r.cost_per_cup_lak!
+          const cost   = Math.round(r.cost!)
           const margin = r.price_lak > 0 ? Math.round(((r.price_lak - cost) / r.price_lak) * 100) : 0
-          return [r.product_name_th || r.product_name, r.uses_ice ? 'เย็น' : 'ร้อน', cost, r.price_lak, margin + '%', margin >= globalMargin ? 'ดี' : 'ต่ำกว่าเป้า']
+          return [r.name, VARIANT_LABEL[r.kind], cost, r.price_lak, margin + '%', margin >= globalMargin ? 'ดี' : 'ต่ำกว่าเป้า']
         }),
       ]
       const blob = new Blob(['\uFEFF' + data.map(row => row.map(cc).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
@@ -700,8 +704,14 @@ export default function RecipeCostTab() {
       <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, padding: '60px 0', textAlign: 'center' }}>กำลังโหลด...</div>
     )
 
-    const withCost = rows.filter(r => r.cost_per_cup_lak != null)
-    const noCost   = rows.filter(r => r.cost_per_cup_lak == null)
+    if (loadErr) return (
+      <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: RED + '15', color: RED, fontSize: 13 }}>โหลดต้นทุนไม่ได้: {loadErr}</div>
+    )
+
+    const label    = (r: PRow) => r.kind === 'default' ? r.name : `${r.name} (${VARIANT_LABEL[r.kind]})`
+    const withCost = rows.filter(r => r.cost != null)
+    const noRecipe = rows.filter(r => r.line_count === 0)
+    const noPrice  = rows.filter(r => r.line_count > 0 && r.cost == null)
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -731,13 +741,18 @@ export default function RecipeCostTab() {
             </Field>
           </div>
           <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
-            ต้นทุนต่อแก้วอัปเดตอัตโนมัติจาก DB เมื่อราคาซื้อหรือสูตรเปลี่ยน
+            ต้นทุนต่อแก้ว = วัตถุดิบในสูตร (ความหวานปกติ) คิดจากราคาทุนล่าสุดในฐานข้อมูล
           </div>
         </SectionCard>
 
-        {noCost.length > 0 && (
+        {noRecipe.length > 0 && (
           <div style={{ padding: '12px 16px', backgroundColor: ORANGE + '12', borderRadius: 10, border: `1px solid ${ORANGE}33`, fontSize: 13, color: ORANGE }}>
-            {noCost.length} เมนูยังไม่มีสูตร: {noCost.slice(0, 5).map(r => r.product_name_th || r.product_name).join(', ')}{noCost.length > 5 ? ` +${noCost.length - 5} รายการ` : ''}
+            {noRecipe.length} รายการยังไม่มีสูตร: {noRecipe.slice(0, 5).map(label).join(', ')}{noRecipe.length > 5 ? ` +${noRecipe.length - 5} รายการ` : ''}
+          </div>
+        )}
+        {noPrice.length > 0 && (
+          <div style={{ padding: '12px 16px', backgroundColor: ORANGE + '12', borderRadius: 10, border: `1px solid ${ORANGE}33`, fontSize: 13, color: ORANGE }}>
+            {noPrice.length} รายการมีวัตถุดิบที่ยังไม่มีราคาทุน (คิดต้นทุนไม่ได้): {noPrice.slice(0, 5).map(label).join(', ')}{noPrice.length > 5 ? ` +${noPrice.length - 5} รายการ` : ''}
           </div>
         )}
 
@@ -747,7 +762,7 @@ export default function RecipeCostTab() {
           </div>
         ) : (
           <SectionCard
-            title={`ราคา vs ต้นทุน (${withCost.length} เมนู)`}
+            title={`ราคา vs ต้นทุน (${withCost.length} รายการ)`}
             action={
               <button onClick={exportCsv} style={{ fontSize: 11, color: GREEN, background: 'none', border: `1px solid ${GREEN}44`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                 ⬇ Export CSV
@@ -764,15 +779,15 @@ export default function RecipeCostTab() {
                 <span>สถานะ</span>
               </div>
               {withCost.map(r => {
-                const cost      = r.cost_per_cup_lak!
+                const cost      = Math.round(r.cost!)
                 const margin    = r.price_lak > 0 ? ((r.price_lak - cost) / r.price_lak) * 100 : 0
                 const isBad     = margin < globalMargin
                 const suggested = vatEnabled ? Math.round((cost / (1 - globalMargin / 100)) * (1 + vatRate / 100) / 1000) * 1000 : 0
                 return (
                   <div key={r.id} style={{ display: 'grid', gridTemplateColumns: vatEnabled ? '2fr 1fr 1fr 1fr 1fr 1fr' : '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '12px', borderRadius: 8, backgroundColor: isBad ? `${RED}0d` : CARD2, border: `1px solid ${isBad ? RED + '33' : 'transparent'}`, alignItems: 'center', fontSize: 14 }}>
                     <div>
-                      <div style={{ fontWeight: 600 }}>{r.product_name_th || r.product_name}</div>
-                      {r.uses_ice && <div style={{ fontSize: 11, color: '#4a9eff', marginTop: 2 }}>🧊 เย็น</div>}
+                      <div style={{ fontWeight: 600 }}>{r.name}</div>
+                      {r.kind !== 'default' && <div style={{ fontSize: 11, color: r.kind === 'iced' ? '#4a9eff' : ORANGE, marginTop: 2 }}>{VARIANT_LABEL[r.kind]}</div>}
                     </div>
                     <span style={{ color: GOLD, fontWeight: 700 }}>{cost.toLocaleString()} ₭</span>
                     <span>{r.price_lak.toLocaleString()} ₭</span>
@@ -815,10 +830,10 @@ export default function RecipeCostTab() {
       </div>
       {sub === 'ingredients' && <IngredientsPanel />}
       {sub === 'bases'       && <BaseRecipesPanel />}
-      {sub === 'recipes'     && <FormulaPanel />}
+      {sub === 'recipes'     && <FormulaPanel inventory={inventory} baseRecipes={baseRecipes} baseCostPerUnit={baseCostPerUnit} setMsg={setMsg} />}
       {sub === 'pricing'     && <PricingPanel />}
       {/* kept mounted so unsaved cost edits survive switching sub-tabs */}
-      <div style={{ display: sub === 'shopcost' ? undefined : 'none' }}><ShopCostPanel onSaved={loadOverhead} /></div>
+      <div style={{ display: sub === 'shopcost' ? undefined : 'none' }}><ShopCostPanel /></div>
     </div>
   )
 }

@@ -18,6 +18,7 @@ import {
 } from '@/components/cafe/shared'
 import { useShop } from '@/lib/use-shop'
 import { ExtraShotSettings, VariantPriceLine, VariantPricesEditor, priceInMenuFormLocked, type MenuVariantRow } from '@/components/cafe/MenuVariants'
+import type { MenuCostRow } from '@/components/cafe/RecipeCostTab'
 void BLACK
 
 // ─── CSV download helper ──────────────────────────────────────────────────────
@@ -78,6 +79,19 @@ function Toggle({ on, onChange, label, icon }: { on: boolean; onChange: (v: bool
   )
 }
 
+// cost and margin of each active price, from get_menu_costs (075); null = cost unknown
+function costSummary(costs: MenuCostRow[]) {
+  return costs.filter(c => c.is_active)
+    .sort((a, b) => (a.kind === 'iced' ? 1 : 0) - (b.kind === 'iced' ? 1 : 0))
+    .map(c => {
+      const cost = c.line_count > 0 ? c.cost_normal : null
+      const price = Number(c.price_lak)
+      return { key: c.variant_id, label: c.kind === 'hot' ? 'ร้อน ' : c.kind === 'iced' ? 'เย็น ' : '',
+        cost, margin: cost != null && price > 0 ? Math.round(((price - cost) / price) * 100) : null }
+    })
+}
+const marginColorOf = (m: number | null) => m === null ? 'rgba(255,255,255,0.3)' : m >= 60 ? GREEN : m >= 40 ? GOLD : RED
+
 // ─── MenuWizard ───────────────────────────────────────────────────────────────
 
 function MenuWizard({
@@ -97,7 +111,6 @@ function MenuWizard({
   const [showAltNames,   setShowAltNames]  = useState(!!(data.product_name || data.product_name_lo))
   const [uploading,      setUploading]     = useState(false)
   const [toastMsg,       setToastMsg]      = useState<string | null>(null)
-  const [costInputMode,  setCostInputMode] = useState(false)
 
   const showToast = (m: string) => { setToastMsg(m); setTimeout(() => setToastMsg(null), 3000) }
   const set = (k: keyof RecipeFullEdit) =>
@@ -105,7 +118,7 @@ function MenuWizard({
       onChange({ ...data, [k]: e.target.value })
 
   const price         = parseFloat(data.price_str) || 0
-  const effectiveCost = costPerCup ?? (parseFloat(data.cost_str) || 0)
+  const effectiveCost = costPerCup ?? 0
   const margin        = price > 0 && effectiveCost > 0
     ? Math.round(((price - effectiveCost) / price) * 100) : null
   const marginColor   = margin === null ? 'rgba(255,255,255,0.3)'
@@ -299,20 +312,13 @@ function MenuWizard({
                     </div>
                   </div>
                 </div>
-              ) : parseFloat(data.cost_str) > 0 && !costInputMode ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: CARD, borderRadius: 10 }}>
-                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-                    ต้นทุนที่บันทึกไว้: <span style={{ color: '#fff', fontWeight: 600 }}>{fmtLAK(parseFloat(data.cost_str))}</span>
-                  </div>
-                  <button type="button" onClick={() => setCostInputMode(true)} style={btnStyleSm(GOLD + '22', GOLD)}>แก้ไข</button>
-                </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ padding: '12px 16px', backgroundColor: GOLD + '0d', borderRadius: 10, border: `1px solid ${GOLD}22`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 16 }}>💡</span>
                       <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
-                        ยังไม่มีสูตรต้นทุน
+                        {priceLocked ? 'ต้นทุนแยกร้อน / เย็น ดูได้ในการ์ดเมนูและหน้าสร้างสูตร' : 'ยังคิดต้นทุนไม่ได้ — ยังไม่มีสูตร หรือวัตถุดิบยังไม่มีราคาทุน'}
                       </div>
                     </div>
                     {onSwitchToRecipeCost && (
@@ -324,10 +330,6 @@ function MenuWizard({
                         🧮 สร้างสูตร
                       </button>
                     )}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>หรือกรอกต้นทุนเองชั่วคราว</div>
-                    <MoneyInput value={data.cost_str} onChange={v => onChange({ ...data, cost_str: v })} style={inputStyle} placeholder="ต้นทุน/แก้ว (₭)" />
                   </div>
                 </div>
               )}
@@ -469,10 +471,11 @@ function MenuWizard({
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
 
 function RecipeCard({
-  r, variants, isOwner, categories, onReload, onArchive, onSwitchToRecipeCost,
+  r, variants, costs, isOwner, categories, onReload, onArchive, onSwitchToRecipeCost,
 }: {
   r: RecipeFull
   variants: MenuVariantRow[] | null
+  costs: MenuCostRow[] | null
   isOwner: boolean
   categories: Category[]
   onReload: () => void
@@ -515,6 +518,10 @@ function RecipeCard({
     const price = parseFloat(editData.price_str)
     if (isNaN(price) || price <= 0) { showMsg('ราคาต้องมากกว่า 0 ₭'); return }
     setSaving(true)
+    // update_recipe_full still writes this column: send the value save_recipe_lines last set,
+    // read now, not the one loaded with this tab (the recipe page may have changed it since)
+    const cur = await supabase.from('recipes').select('cost_per_cup_lak').eq('id', r.id).single()
+    if (cur.error) { showMsg('โหลดต้นทุนล่าสุดไม่ได้: ' + dbErrorText(cur.error)); setSaving(false); return }
     const { error } = await authClient.rpc('update_recipe_full', {
       p_recipe_id:      r.id,
       p_product_name:   editData.product_name || editData.product_name_th,
@@ -524,7 +531,7 @@ function RecipeCard({
       p_description_th: editData.description_th,
       p_description_lo: editData.description_lo,
       p_price:          price,
-      p_cost_per_cup:   parseFloat(editData.cost_str) || null,
+      p_cost_per_cup:   (cur.data as { cost_per_cup_lak: number | null }).cost_per_cup_lak,
       p_prep_time:      parseInt(editData.prep_str) || null,
       p_calories:       parseInt(editData.cal_str) || null,
       p_allergens:      editData.allergens,
@@ -554,7 +561,8 @@ function RecipeCard({
     }
   }
 
-  const marginColor = r.margin_pct >= 60 ? GREEN : r.margin_pct >= 40 ? GOLD : RED
+  const summary = costs ? costSummary(costs) : []
+  const single  = summary.length === 1 && summary[0].label === '' ? summary[0] : null
   const histMax = history ? Math.max(...history.map(d => d.sales), 1) : 1
   void histMax
 
@@ -608,9 +616,9 @@ function RecipeCard({
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: GOLD }}>{fmtLAK(r.price_lak)}</div>
             <VariantPriceLine variants={variants ?? []} />
-            {r.cost_per_cup_lak && (
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>
-                ต้นทุน {fmtLAK(r.cost_per_cup_lak)}
+            {summary.some(c => c.cost != null) && (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
+                ต้นทุน {summary.map(c => c.label + (c.cost != null ? fmtLAK(Math.round(c.cost)) : '—')).join(' · ')}
               </div>
             )}
           </div>
@@ -622,7 +630,13 @@ function RecipeCard({
         <div style={{ display: 'flex', gap: 14, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '1px' }}>Margin</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: marginColor }}>{r.margin_pct}%</span>
+            {costs === null ? (
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>—</span>
+            ) : summary.every(c => c.margin === null) ? (
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>ยังคิดไม่ได้</span>
+            ) : summary.map(c => (
+              <span key={c.key} style={{ fontSize: 12, fontWeight: 700, color: marginColorOf(c.margin) }}>{c.label}{c.margin === null ? '—' : c.margin + '%'}</span>
+            ))}
           </div>
           {r.preparation_time && (
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>⏱ {r.preparation_time}m</div>
@@ -753,13 +767,6 @@ function RecipeCard({
             )}
           </div>
 
-          {r.calc_cost > 0 && (
-            <div style={{ marginBottom: 8, fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
-              ต้นทุนจากสูตร: <span style={{ color: 'rgba(255,255,255,0.55)' }}>{fmtLAK(r.calc_cost)}</span>
-              &nbsp;&nbsp;Gross Margin: <span style={{ color: marginColor, fontWeight: 700 }}>{r.margin_pct}%</span>
-            </div>
-          )}
-
           {msg && <Toast msg={msg} />}
         </div>
       )}
@@ -775,7 +782,7 @@ function RecipeCard({
             saving={saving}
             onSave={saveEdit}
             onCancel={() => setEditing(false)}
-            costPerCup={r.cost_per_cup_lak ?? undefined}
+            costPerCup={single?.cost ?? undefined}
             onSwitchToRecipeCost={onSwitchToRecipeCost}
             priceLocked={variants === null || priceInMenuFormLocked(variants)}
           />
@@ -850,6 +857,8 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
   const [recipes,      setRecipes]      = useState<RecipeFull[]>([])
   const [variants,     setVariants]     = useState<MenuVariantRow[]>([])
   const [variantsErr,  setVariantsErr]  = useState<string | null>(null)
+  const [costs,        setCosts]        = useState<MenuCostRow[] | null>(null)
+  const [costsErr,     setCostsErr]     = useState<string | null>(null)
   const { shopId, loading: shopLoading, error: shopErr } = useShop()
   const [categories,   setCategories]   = useState<Category[]>([])
   const [loading,      setLoading]      = useState(true)
@@ -865,11 +874,15 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
 
   // the spinner only on the first load: a reload after a save must keep the open cards open
   const load = useCallback(async () => {
-    const [rRes, cRes, vRes] = await Promise.all([
+    const [rRes, cRes, vRes, mcRes] = await Promise.all([
       supabase.rpc('get_menu_with_stats'),
       supabase.from('categories').select('id, name, name_th, name_lo, parent_id').eq('is_active', true).order('sort_order'),
       supabase.from('menu_variants').select('id, recipe_id, kind, price_lak, is_active'),
+      authClient.rpc('get_menu_costs'),
     ])
+    // owner / manager only (42501 for anyone else: they see "—"); any other failure is shown
+    setCosts(mcRes.error ? null : (mcRes.data as MenuCostRow[]) ?? [])
+    setCostsErr(mcRes.error && mcRes.error.code !== '42501' ? dbErrorText(mcRes.error) : null)
     setRecipes((rRes.data as RecipeFull[]) ?? [])
     setVariants((vRes.data as MenuVariantRow[]) ?? [])
     setVariantsErr(vRes.error ? dbErrorText(vRes.error) : null)
@@ -893,7 +906,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
       p_description_th: newData.description_th,
       p_description_lo: newData.description_lo,
       p_price:          price,
-      p_cost_per_cup:   parseFloat(newData.cost_str) || null,
+      p_cost_per_cup:   null,
       p_prep_time:      parseInt(newData.prep_str) || null,
       p_calories:       parseInt(newData.cal_str) || null,
       p_allergens:      newData.allergens,
@@ -1025,6 +1038,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
       {shopId ? <ExtraShotSettings shopId={shopId} /> : !shopLoading && (
         <div style={{ marginBottom: 12, fontSize: 12, color: shopErr ? RED : 'rgba(255,255,255,0.45)' }}>{shopErr || 'Extra shot และราคาขาย แก้ได้เฉพาะบัญชีเจ้าของร้าน'}</div>
       )}
+      {costsErr && <div style={{ marginBottom: 12, fontSize: 12, color: RED }}>โหลดต้นทุนไม่ได้: {costsErr} — ลองโหลดหน้าใหม่</div>}
       {variantsErr && <div style={{ marginBottom: 12, fontSize: 12, color: RED }}>โหลดราคา ร้อน / เย็น ไม่ได้: {variantsErr} — ราคาที่แสดงอาจไม่ครบ ลองโหลดหน้าใหม่</div>}
 
       {/* ── Grid ── */}
@@ -1034,6 +1048,7 @@ export default function MenuTab({ onSwitchToRecipeCost }: { onSwitchToRecipeCost
             key={r.id}
             r={r}
             variants={variantsErr ? null : variants.filter(v => v.recipe_id === r.id)}
+            costs={costs && costs.filter(c => c.recipe_id === r.id)}
             isOwner={!!shopId}
             categories={categories}
             onReload={load}
