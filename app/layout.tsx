@@ -153,6 +153,31 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             document.documentElement.setAttribute('data-lang', 'en');
           }
         `}} />
+        {/* A page opened before a deploy can ask for a chunk the deploy deleted: reload once (at most
+            once a minute, so a chunk that is really missing does not loop) to get the new build.
+            A failed script reloads only while the page is still loading (Next shows "Application error" without
+            passing the error on); later, with a cart in progress, only chunk errors nobody handled do */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function () {
+            function reloadOnce() {
+              try {
+                var last = Number(sessionStorage.getItem('alan_chunk_reload')) || 0;
+                if (Date.now() - last < 60000) return;
+                sessionStorage.setItem('alan_chunk_reload', String(Date.now()));
+              } catch (e) { return; }
+              location.reload();
+            }
+            function isChunkError(x) {
+              return !!x && (x.name === 'ChunkLoadError' || /Loading (CSS )?chunk [^ ]+ failed/.test(x.message || ''));
+            }
+            window.addEventListener('error', function (e) {
+              var t = e.target;
+              var pageScript = t && t.tagName === 'SCRIPT' && (t.src || '').indexOf('/_next/static/') !== -1;
+              if ((pageScript && document.readyState !== 'complete') || isChunkError(e.error)) reloadOnce();
+            }, true);
+            window.addEventListener('unhandledrejection', function (e) { if (isChunkError(e.reason)) reloadOnce(); });
+          })();
+        `}} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
