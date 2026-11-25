@@ -38,7 +38,7 @@ const DEFAULT_TICKER =
 const GRAY = '#a3aab5'
 
 const COLUMNS = [
-  { status: 'waiting', en: 'Ordered', th: 'รับออเดอร์แล้ว', lo: 'ຮັບອໍເດີແລ້ວ', color: GRAY },
+  { status: 'waiting', en: 'Ordered', th: 'รับออเดอร์แล้ว', lo: 'ຮັບອໍເດີ້ແລ້ວ', color: GRAY },
   { status: 'making',  en: 'Making',  th: 'กำลังทำ',       lo: 'ກຳລັງເຮັດ',    color: GOLD },
   { status: 'ready',   en: 'Ready',   th: 'พร้อมแล้ว',      lo: 'ພ້ອມແລ້ວ',     color: GREEN },
 ] as const
