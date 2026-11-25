@@ -30,11 +30,18 @@ const GOLD  = '#c9a84c'
 const GREEN = '#4cba7f'
 const BLACK = '#0a0a0a'
 
+// Shop facts (Wi-Fi name, pick-up rules) go in ตั้งค่าร้าน > queue ticker text, not here.
 const DEFAULT_TICKER =
-  'ยินดีต้อนรับสู่ Alan Coffee & Travel   •   ' +
-  'ออเดอร์ที่เสร็จแล้วกรุณารับภายใน 10 นาที   •   ' +
-  'Wi-Fi: AlanCoffee   •   ' +
-  'ขอบคุณที่ใช้บริการ — Thank you for visiting!   •   '
+  'ยินดีต้อนรับสู่ Alan Coffee & Travel — Welcome to Alan Coffee & Travel   •   ' +
+  'ขอบคุณที่ใช้บริการ — Thank you for visiting!'
+
+const GRAY = '#a3aab5'
+
+const COLUMNS = [
+  { status: 'waiting', en: 'Ordered', th: 'รับออเดอร์แล้ว', lo: 'ຮັບອໍເດີແລ້ວ', color: GRAY },
+  { status: 'making',  en: 'Making',  th: 'กำลังทำ',       lo: 'ກຳລັງເຮັດ',    color: GOLD },
+  { status: 'ready',   en: 'Ready',   th: 'พร้อมแล้ว',      lo: 'ພ້ອມແລ້ວ',     color: GREEN },
+] as const
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +52,15 @@ function fmtQueue(n: number): string {
 function todayVientiane(): string {
   return new Date()
     .toLocaleDateString('en-CA', { timeZone: 'Asia/Vientiane' })
+}
+
+// "Wed 25 Nov 2026" in every browser (en-GB alone writes "Sept" in current ICU).
+function fmtDate(d: Date): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Vientiane' })
+      .formatToParts(d).map(p => [p.type, p.value]),
+  )
+  return `${parts.weekday} ${parts.day} ${parts.month} ${parts.year}`
 }
 
 function playBeep() {
@@ -82,7 +98,7 @@ function OrderCard({
       boxShadow: isNew ? `0 0 28px ${color}33` : 'none',
       transition: 'box-shadow 1.2s ease, background-color 1.2s ease, border-color 1.2s ease',
       animation: 'queueSlideIn 0.35s cubic-bezier(0.22,1,0.36,1)',
-      minWidth: 'clamp(180px, 22vw, 280px)',
+      minWidth: 'min(100%, clamp(180px, 22vw, 280px))',
       flex: '0 0 auto',
     }}>
       {/* Queue number */}
@@ -137,6 +153,46 @@ function OrderCard({
   )
 }
 
+// ─── Column ───────────────────────────────────────────────────────────────────
+
+function QueueColumn({
+  orders, color, newIds, last,
+}: {
+  orders: QueueOrder[]
+  color: string
+  newIds: Set<string>
+  last: boolean
+}) {
+  const endRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [orders.length])
+  return (
+    <div
+      className="queue-col"
+      style={{
+        flex: 1,
+        minWidth: 0,
+        borderRight: last ? undefined : '1px solid rgba(255,255,255,0.06)',
+        padding: '24px 20px',
+        overflowY: 'auto',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 16,
+        alignContent: 'flex-start',
+      } as React.CSSProperties}
+    >
+      {orders.length === 0
+        ? <EmptySlot />
+        : orders.map(o => <OrderCard key={o.id} order={o} color={color} isNew={newIds.has(o.id)} />)
+      }
+      <div ref={endRef} />
+    </div>
+  )
+}
+
 // ─── Empty State ──────────────────────────────────────────────────────────────
 
 function EmptySlot() {
@@ -154,6 +210,8 @@ function EmptySlot() {
   )
 }
 
+const NO_IDS: Set<string> = new Set()
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function QueueClient() {
@@ -162,8 +220,6 @@ export default function QueueClient() {
   const [now,      setNow]      = useState<Date | null>(null)
   const [newlyReadyIds, setNewlyReadyIds] = useState<Set<string>>(new Set())
 
-  const makingEndRef      = useRef<HTMLDivElement>(null)
-  const readyEndRef       = useRef<HTMLDivElement>(null)
   const fetchCountRef     = useRef(0)
   const prevReadyIdsRef   = useRef<Set<string>>(new Set())
 
@@ -193,7 +249,7 @@ export default function QueueClient() {
       .from('orders')
       .select('id, queue_number, queue_status, customer_name, order_items(qty, customization, recipes(product_name))')
       .eq('status', 'paid')
-      .in('queue_status', ['making', 'ready'])
+      .in('queue_status', ['waiting', 'making', 'ready'])
       .gte('created_at', today + 'T00:00:00+07:00')
       .lt('created_at',  today + 'T23:59:59+07:00')
       .order('queue_number', { ascending: true })
@@ -216,16 +272,10 @@ export default function QueueClient() {
     return () => { supabase.removeChannel(channel) }
   }, [fetchQueues])
 
-  const making = orders.filter(o => o.queue_status === 'making')
-  const ready  = orders.filter(o => o.queue_status === 'ready')
-
-  // Auto-scroll
-  useEffect(() => {
-    makingEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [making.length])
-  useEffect(() => {
-    readyEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [ready.length])
+  const waiting = orders.filter(o => o.queue_status === 'waiting')
+  const making  = orders.filter(o => o.queue_status === 'making')
+  const ready   = orders.filter(o => o.queue_status === 'ready')
+  const byStatus = { waiting, making, ready }
 
   // Beep + mark newly ready
   useEffect(() => {
@@ -259,10 +309,10 @@ export default function QueueClient() {
   const tickerFull = tickerText + '   •   ' + tickerText + '   •   '
 
   const timeStr = now
-    ? now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Vientiane' })
+    ? now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Vientiane' })
     : ''
   const dateStr = now
-    ? now.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Vientiane' })
+    ? fmtDate(now)
     : ''
 
   const firstLetter = shopName.trim()[0]?.toUpperCase() ?? 'A'
@@ -390,96 +440,43 @@ export default function QueueClient() {
           borderBottom: '1px solid rgba(255,255,255,0.07)',
           backgroundColor: '#0d0d0d',
         }}>
-          <div style={{
-            flex: 1, padding: '20px 0', textAlign: 'center',
-            borderRight: '1px solid rgba(255,255,255,0.07)',
-          }}>
-            <span style={{
-              fontSize: 'clamp(13px, 1.6vw, 22px)',
-              letterSpacing: '2px', textTransform: 'uppercase',
-              fontWeight: 700, color: GOLD,
-            }}>
-              🔄&nbsp; กำลังทำ
-            </span>
-            {making.length > 0 && (
-              <span style={{
-                marginLeft: 10, fontSize: 'clamp(11px, 1.2vw, 16px)',
-                color: `${GOLD}66`, fontVariantNumeric: 'tabular-nums',
+          {COLUMNS.map((c, i) => {
+            const count = byStatus[c.status].length
+            return (
+              <div key={c.status} style={{
+                flex: 1, minWidth: 0, padding: '16px 8px', textAlign: 'center',
+                borderRight: i < COLUMNS.length - 1 ? '1px solid rgba(255,255,255,0.07)' : undefined,
               }}>
-                ({making.length})
-              </span>
-            )}
-          </div>
-          <div style={{ flex: 1, padding: '20px 0', textAlign: 'center' }}>
-            <span style={{
-              fontSize: 'clamp(13px, 1.6vw, 22px)',
-              letterSpacing: '2px', textTransform: 'uppercase',
-              fontWeight: 700, color: GREEN,
-            }}>
-              ✅&nbsp; พร้อมแล้ว
-            </span>
-            {ready.length > 0 && (
-              <span style={{
-                marginLeft: 10, fontSize: 'clamp(11px, 1.2vw, 16px)',
-                color: `${GREEN}66`, fontVariantNumeric: 'tabular-nums',
-              }}>
-                ({ready.length})
-              </span>
-            )}
-          </div>
+                <div style={{
+                  fontSize: 'clamp(15px, 1.7vw, 26px)', fontWeight: 800,
+                  letterSpacing: '2px', textTransform: 'uppercase', color: c.color,
+                }}>
+                  {c.en}
+                  {count > 0 && (
+                    <span style={{ marginLeft: 10, fontSize: '0.75em', color: `${c.color}99`, fontVariantNumeric: 'tabular-nums' }}>
+                      ({count})
+                    </span>
+                  )}
+                </div>
+                <div style={{ marginTop: 4, fontSize: 'clamp(12px, 1.2vw, 18px)', fontWeight: 600, color: `${c.color}cc` }}>
+                  {c.th} · {c.lo}
+                </div>
+              </div>
+            )
+          })}
         </div>
 
         {/* Queue area */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-
-          {/* Making column */}
-          <div
-            className="queue-col"
-            style={{
-              flex: 1,
-              borderRight: '1px solid rgba(255,255,255,0.06)',
-              padding: '24px 20px',
-              overflowY: 'auto',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 16,
-              alignContent: 'flex-start',
-            } as React.CSSProperties}
-          >
-            {making.length === 0
-              ? <EmptySlot />
-              : making.map(o => (
-                  <OrderCard key={o.id} order={o} color={GOLD} isNew={false} />
-                ))
-            }
-            <div ref={makingEndRef} />
-          </div>
-
-          {/* Ready column */}
-          <div
-            className="queue-col"
-            style={{
-              flex: 1,
-              padding: '24px 20px',
-              overflowY: 'auto',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 16,
-              alignContent: 'flex-start',
-            } as React.CSSProperties}
-          >
-            {ready.length === 0
-              ? <EmptySlot />
-              : ready.map(o => (
-                  <OrderCard key={o.id} order={o} color={GREEN} isNew={newlyReadyIds.has(o.id)} />
-                ))
-            }
-            <div ref={readyEndRef} />
-          </div>
+          {COLUMNS.map((c, i) => (
+            <QueueColumn
+              key={c.status}
+              orders={byStatus[c.status]}
+              color={c.color}
+              newIds={c.status === 'ready' ? newlyReadyIds : NO_IDS}
+              last={i === COLUMNS.length - 1}
+            />
+          ))}
         </div>
 
         {/* Status bar */}
@@ -495,6 +492,8 @@ export default function QueueClient() {
           <span style={{ color: 'rgba(255,255,255,0.6)', letterSpacing: '2px', textTransform: 'uppercase', fontWeight: 700 }}>
             Live
           </span>
+          <span style={{ color: 'rgba(255,255,255,0.75)' }}>รับออเดอร์แล้ว {waiting.length} คิว</span>
+          <span style={{ color: 'rgba(255,255,255,0.35)' }}>·</span>
           <span style={{ color: 'rgba(255,255,255,0.75)' }}>กำลังทำ {making.length} คิว</span>
           <span style={{ color: 'rgba(255,255,255,0.35)' }}>·</span>
           <span style={{ color: 'rgba(255,255,255,0.75)' }}>พร้อมแล้ว {ready.length} คิว</span>
