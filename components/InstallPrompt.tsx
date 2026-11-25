@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 
 const THROTTLE_KEY = 'alan_install_prompt_dismissed'
 const THROTTLE_MS  = 7 * 24 * 60 * 60 * 1000 // 1 week
+// Screens nobody dismisses (queue TV, staff clock-in kiosk) and the POS, which has its own install button.
+const HIDDEN_ON = ['/queue', '/staff', '/pos']
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -13,6 +16,7 @@ type BeforeInstallPromptEvent = Event & {
 export function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [visible, setVisible] = useState(false)
+  const pathname = usePathname()
 
   useEffect(() => {
     const dismissed = localStorage.getItem(THROTTLE_KEY)
@@ -28,6 +32,7 @@ export function InstallPrompt() {
   }, [])
 
   if (!visible || !deferredPrompt) return null
+  if (HIDDEN_ON.some(p => pathname === p || pathname.startsWith(p + '/'))) return null
 
   async function handleInstall() {
     if (!deferredPrompt) return

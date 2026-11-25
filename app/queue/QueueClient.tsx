@@ -484,19 +484,20 @@ export default function QueueClient() {
 
         {/* Status bar */}
         <div style={{
-          height: 38, flexShrink: 0,
-          borderTop: '1px solid rgba(255,255,255,0.04)',
+          flexShrink: 0,
+          borderTop: '1px solid rgba(255,255,255,0.08)',
           backgroundColor: '#080808',
           display: 'flex', alignItems: 'center',
-          padding: '0 20px', gap: 20,
+          padding: 'clamp(8px, 1vw, 14px) 20px', gap: 'clamp(12px, 1.6vw, 24px)',
+          fontSize: 'clamp(14px, 1.4vw, 28px)',
         }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#4cba7f', boxShadow: '0 0 6px #4cba7f', display: 'inline-block' }} />
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', letterSpacing: '2px', textTransform: 'uppercase' }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#4cba7f', boxShadow: '0 0 6px #4cba7f', display: 'inline-block' }} />
+          <span style={{ color: 'rgba(255,255,255,0.6)', letterSpacing: '2px', textTransform: 'uppercase', fontWeight: 700 }}>
             Live
           </span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)' }}>กำลังทำ {making.length} คิว</span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.12)' }}>·</span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)' }}>พร้อมแล้ว {ready.length} คิว</span>
+          <span style={{ color: 'rgba(255,255,255,0.75)' }}>กำลังทำ {making.length} คิว</span>
+          <span style={{ color: 'rgba(255,255,255,0.35)' }}>·</span>
+          <span style={{ color: 'rgba(255,255,255,0.75)' }}>พร้อมแล้ว {ready.length} คิว</span>
         </div>
       </div>
     </div>

@@ -1962,14 +1962,14 @@ function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, to
               todayOrders.map(order => {
                 const isVoid = order.status === 'void'
                 const payIcon = PAY_METHODS.find(m => m.value === order.payment_method)?.icon ?? '—'
-                const summary = order.items.slice(0, 2).map(i => `${i.qty}× ${i.name}`).join(', ') + (order.items.length > 2 ? ` +${order.items.length - 2}` : '')
+                const summary = order.items.map(i => `${i.qty}× ${i.name}${i.note ? ` (${i.note})` : ''}`).join(', ')
                 return (
                   <div key={order.id} style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: isVoid ? 0.4 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 13, color: isVoid ? 'rgba(255,255,255,0.2)' : GOLD, minWidth: 40, fontVariantNumeric: 'tabular-nums' }}>{fmtQueue(order.queue_number)}</span>
                       <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', minWidth: 36 }}>{fmtTime(order.created_at_vt)}</span>
                       {order.status === 'test' && <span title="บิลทดสอบ: ไม่นับยอดขาย ไม่ตัดสต็อก" style={{ fontSize: 9, fontWeight: 700, color: '#f59e0b', border: '1px solid rgba(245,158,11,0.5)', borderRadius: 4, padding: '0 4px', flexShrink: 0 }}>TEST</span>}
-                      <span style={{ flex: 1, fontSize: 11, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</span>
+                      <span style={{ flex: 1 }} />
                       <span style={{ fontSize: 12, fontWeight: 700, color: isVoid ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtLak(order.total_lak)}</span>
                       <span style={{ fontSize: 14, flexShrink: 0 }}>{payIcon}</span>
                       {isVoid ? (
@@ -1981,6 +1981,7 @@ function OrdersDrawer({ open, onClose, queueEntries, todayOrders, todayTotal, to
                         </>
                       )}
                     </div>
+                    <div style={{ fontSize: 12, color: isVoid ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)', marginTop: 2, paddingLeft: 46, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{summary}</div>
                     {!isVoid && reprintErr[order.id] && (
                       <div role="alert" style={{ fontSize: 12, color: '#ff6b6b', marginTop: 4, paddingLeft: 46, lineHeight: 1.4 }}>พิมพ์ไม่สำเร็จ: {reprintErr[order.id]}</div>
                     )}
@@ -2675,6 +2676,7 @@ export default function POSClient() {
     setSelectedCustomer(null)
     try { localStorage.removeItem('pos_cart') } catch { /* ignore */ }
     setShowCharge(false)
+    fetchTodayQueue()
     loadTodayOrders()
 
     // Receipt fields come from ตั้งค่าร้าน (site_settings) only, then defaults.
