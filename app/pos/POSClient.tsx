@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
+import { authClient, isNetworkError } from '@/lib/supabase-auth'
 import { MoneyInput } from '@/components/MoneyInput'
 import { PinPad } from '@/components/pos/PinPad'
 import { CashDrawer } from '@/components/pos/CashDrawer'
@@ -262,6 +263,13 @@ function nextOfflineQueueNumber(): number {
   n = n >= 99 ? 1 : n + 1
   try { localStorage.setItem(key, String(n)) } catch { /* storage blocked */ }
   return 900 + n
+}
+
+// 42501: the account signed in on this device is not a shop owner / manager / cashier (076)
+function heldErrText(error: { code?: string; message: string }): string {
+  if (error.code === '42501') return 'บัญชีที่เข้าสู่ระบบบนเครื่องนี้ไม่มีสิทธิ์พักบิล — เข้าสู่ระบบด้วยบัญชีของร้าน'
+  if (isNetworkError(error)) return 'เชื่อมต่อไม่ได้ อินเทอร์เน็ตอาจหลุด ลองใหม่'
+  return error.message
 }
 
 // Bills saved before 055 were {p_cart, p_customer_id, _meta} and never synced (the old replay sent _meta to the RPC).
@@ -2348,16 +2356,14 @@ export default function POSClient() {
     if (!navigator.onLine) {
       try { const cached = localStorage.getItem('pos_shop_id'); if (cached) setShopId(s => s ?? cached) } catch { /* storage blocked */ }
     }
-    import('@/lib/supabase-auth').then(({ authClient }) => {
-      authClient.auth.getUser().then(({ data: { user } }) => {
-        if (!user) return
-        authClient.from('shop_users').select('shop_id').eq('user_id', user.id).maybeSingle()
-          .then(({ data }) => {
-            if (!data?.shop_id) return
-            setShopId(data.shop_id as string)
-            try { localStorage.setItem('pos_shop_id', data.shop_id as string) } catch { /* storage blocked */ }
-          })
-      })
+    authClient.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      authClient.from('shop_users').select('shop_id').eq('user_id', user.id).maybeSingle()
+        .then(({ data }) => {
+          if (!data?.shop_id) return
+          setShopId(data.shop_id as string)
+          try { localStorage.setItem('pos_shop_id', data.shop_id as string) } catch { /* storage blocked */ }
+        })
     })
   }, [])
 
@@ -2750,13 +2756,14 @@ export default function POSClient() {
     setTodayOrders((data as TodayOrder[]) ?? [])
   }, [])
 
+  // held bills need the shop account signed in on this device (076), not the public key
   const loadHeldOrders = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await authClient
       .from('held_orders')
       .select('*')
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
-    if (error) { setHeldLoadErr(`โหลดรายการบิลพักไม่ได้: ${error.message}`); return }
+    if (error) { setHeldLoadErr(`โหลดรายการบิลพักไม่ได้: ${heldErrText(error)}`); return }
     setHeldLoadErr(null)
     setHeldOrders((data as HeldOrder[]) ?? [])
   }, [])
@@ -2765,7 +2772,7 @@ export default function POSClient() {
     if (cart.length === 0 || holdSaving) return
     setHoldSaving(true)
     setHeldErr(null)
-    const { error } = await supabase.from('held_orders').insert({
+    const { error } = await authClient.from('held_orders').insert({
       table_number:  tableName  || null,
       customer_name: customerName || null,
       cart_items:    cart,
@@ -2773,7 +2780,7 @@ export default function POSClient() {
       expires_at:    new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     })
     setHoldSaving(false)
-    if (error) { setHeldErr(`พักบิลไม่สำเร็จ ตะกร้ายังอยู่ ลองใหม่: ${error.message}`); return }
+    if (error) { setHeldErr(`พักบิลไม่สำเร็จ ตะกร้ายังอยู่: ${heldErrText(error)}`); return }
     setCart([])
     setDiscountPreset('')
     setDiscountOtherAmt('')
@@ -2790,10 +2797,11 @@ export default function POSClient() {
     resumingRef.current = true
     setHeldErr(null)
     try {
-      const { data, error } = await supabase.from('held_orders').delete().eq('id', held.id).select('id')
-      if (error) { setHeldErr(`เรียกคืนบิลไม่สำเร็จ ลองใหม่: ${error.message}`); return false }
+      const { data, error } = await authClient.from('held_orders').delete().eq('id', held.id).select('id')
+      if (error) { setHeldErr(`เรียกคืนบิลไม่สำเร็จ: ${heldErrText(error)}`); return false }
       loadHeldOrders()
-      if (!data?.length) { setHeldErr('บิลนี้ถูกเรียกคืนหรือลบไปแล้ว'); return false }
+      // RLS refuses a delete by removing 0 rows (a viewer account), not with an error
+      if (!data?.length) { setHeldErr('เรียกคืนไม่ได้: บิลนี้ถูกเรียกคืน/ลบไปแล้ว หรือบัญชีบนเครื่องนี้ไม่มีสิทธิ์'); return false }
       setCart(held.cart_items)
       return true
     } finally {
@@ -2803,8 +2811,9 @@ export default function POSClient() {
 
   async function deleteHeld(id: string) {
     setHeldErr(null)
-    const { error } = await supabase.from('held_orders').delete().eq('id', id)
-    if (error) setHeldErr(`ลบบิลพักไม่สำเร็จ: ${error.message}`)
+    const { data, error } = await authClient.from('held_orders').delete().eq('id', id).select('id')
+    if (error) setHeldErr(`ลบบิลพักไม่สำเร็จ: ${heldErrText(error)}`)
+    else if (!data?.length) setHeldErr('ลบไม่ได้: บิลนี้ถูกเรียกคืน/ลบไปแล้ว หรือบัญชีบนเครื่องนี้ไม่มีสิทธิ์')
     loadHeldOrders()
   }
 
