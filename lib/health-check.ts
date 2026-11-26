@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { authClient } from './supabase-auth'
 import { testModeLocallyOn } from './test-mode'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'loading'
@@ -30,7 +31,7 @@ export async function runHealthCheck(): Promise<HealthReport> {
   ] = await Promise.all([
     supabase.from('recipes').select('id, price_lak, requires_customization', { count: 'exact' }).eq('is_active', true),
     supabase.from('inventory').select('id, current_qty', { count: 'exact' }).eq('is_active', true),
-    supabase.from('employees').select('id', { count: 'exact' }),
+    authClient.from('employees').select('id', { count: 'exact', head: true }),
     supabase.rpc('get_site_settings'),
     supabase.from('recipes').select('id').eq('is_active', true).eq('price_lak', 0),
   ])

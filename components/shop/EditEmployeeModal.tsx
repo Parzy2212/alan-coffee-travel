@@ -62,13 +62,14 @@ export function EditEmployeeModal({ employee, onSaved, onClose, initialTab = 'in
     setSaving(true); setError('')
     try {
       const { authClient } = await import('@/lib/supabase-auth')
-      const { error: err } = await authClient.from('employees').update({
+      const { data: changed, error: err } = await authClient.from('employees').update({
         name:        trimmedName,
         role,
         hourly_rate: hourlyRate ? parseFloat(hourlyRate) : null,
         notes:       notes.trim() || null,
-      }).eq('id', employee.id)
+      }).eq('id', employee.id).select('id')
       if (err) throw err
+      if (!changed?.length) throw new Error('บัญชีนี้ไม่มีสิทธิ์แก้ข้อมูลพนักงาน (เฉพาะเจ้าของร้านหรือผู้จัดการ) — ไม่ได้บันทึก')
       await logAccountEvent('shop_settings_updated' as never, `Employee updated: ${trimmedName}`)
       onSaved()
     } catch (e) {
@@ -86,12 +87,13 @@ export function EditEmployeeModal({ employee, onSaved, onClose, initialTab = 'in
       const pinHash = await hashEmployeePin(pin)
       if (!pinHash) throw new Error('ไม่สามารถเข้ารหัส PIN ได้')
       const { authClient } = await import('@/lib/supabase-auth')
-      const { error: err } = await authClient.from('employees').update({ pin_hash: pinHash }).eq('id', employee.id)
+      const { data: changed, error: err } = await authClient.from('employees').update({ pin_hash: pinHash }).eq('id', employee.id).select('id')
       if (err) {
         if (err.message.includes('unique')) { setPinError('PIN นี้ถูกใช้แล้ว กรุณาเลือก PIN อื่น') }
         else throw err
         return
       }
+      if (!changed?.length) throw new Error('บัญชีนี้ไม่มีสิทธิ์แก้ข้อมูลพนักงาน (เฉพาะเจ้าของร้านหรือผู้จัดการ) — ไม่ได้บันทึก')
       await logAccountEvent('shop_settings_updated' as never, `Employee PIN changed: ${employee.name}`)
       onSaved()
     } catch (e) {

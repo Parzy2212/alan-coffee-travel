@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authClient } from '@/lib/supabase-auth'
 
 const GOLD  = '#c9a84c'
 const GREEN = '#4cba7f'
@@ -40,7 +41,7 @@ export function GettingStartedChecklist() {
     Promise.all([
       supabase.from('recipes').select('id', { count: 'exact', head: true }),
       supabase.from('inventory').select('id', { count: 'exact', head: true }),
-      supabase.from('employees').select('id', { count: 'exact', head: true }),
+      authClient.from('employees').select('id', { count: 'exact', head: true }),
       supabase.from('orders').select('id', { count: 'exact', head: true }),
       supabase.rpc('get_site_settings'),
     ]).then(([r, inv, emp, ord, site]) => {
